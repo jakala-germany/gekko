@@ -1,0 +1,10 @@
+name: Double tap and long press
+steps:
+  - say: The target waits for a gesture
+    do: { assertVisible: { id: sample.gesture.result, text: "Gesture: none" } }
+  - say: Double tap the target
+    do: { doubleTap: { id: sample.gesture } }
+  - do: { assertVisible: { id: sample.gesture.result, text: "Gesture: double tap" } }
+  - say: Long press the target
+    do: { longPress: { id: sample.gesture, holdMs: 900 } }
+  - do: { assertVisible: { id: sample.gesture.result, text: "Gesture: long press" } }

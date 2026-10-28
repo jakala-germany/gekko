@@ -1,0 +1,11 @@
+name: Search opens the detail page
+tags: [smoke]
+steps:
+  - say: Search for "tent"
+    do: { use: search-field-enter-term, with: { term: tent } }
+  - say: Open the first result
+    do: { tap: { id: Search.Result.0 } }
+    until: { assertVisible: { id: Detail.Title } }   # repeat the tap when a reloading list swallowed it
+    attempts: 3
+  - say: The search results are gone
+    do: { assertNotVisible: { id: Search.Result.0 } }

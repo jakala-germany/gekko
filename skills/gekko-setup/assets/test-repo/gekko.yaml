@@ -1,0 +1,22 @@
+# Required: gekko stops with exit code 2 without this file. Relative paths are relative to this file.
+app:
+  android: com.example.app                        # applicationId of the debug build
+  androidActivity: com.example.app.MainActivity   # needed when several launcher activities exist
+  ios: com.example.app                            # bundle id of the debug build
+android:
+  permissions: []                                 # granted before every fresh start, e.g. android.permission.POST_NOTIFICATIONS
+ios:
+  permissions: []                                 # simctl privacy services, e.g. location, photos
+  agentFramework: installed                       # inject the agent that scripts/install.sh installed (iOS only; GEKKO_IOS_AGENT wins)
+# The system runners are found without a setting: scripts/install.sh puts them into ~/.gekko/runners, and in CI the setup
+# action sets GEKKO_RUNNER_APK, GEKKO_IOS_RUNNER_DIR and GEKKO_IOS_AGENT (they win over the keys of this file). To use
+# local copies instead (they stay on your machine: `tools/` is git-ignored, and CI does not need them), name them here
+# (the value `installed` means the installed one):
+#   android: { runnerApk: tools/gekko-system-runner.apk }
+#   ios: { runnerDir: tools/gekko-ios-runner, agentFramework: tools/gekko-ios-agent/GekkoAgent.framework }
+defaultTimeoutMs: 8000
+# tapIntervalMs: 650                              # only for apps that throttle clicks; default is no pacing
+# device: { language: en-US, timeFormat: 24h }    # app language and time format for all tests
+# Credentials: list the NAMES of the variables tests may read, never the values. Use ${env.TEST_USER} in a step; the
+# value comes from the process environment (CI secrets) or a git-ignored .env file next to this file.
+# env: [TEST_USER, TEST_PASSWORD]

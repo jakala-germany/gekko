@@ -1,0 +1,13 @@
+name: Greeting is shown and list scrolls to row 30
+tags: [greeting, list]
+steps:
+  - say: Greet Grace
+    do: { use: greet, with: { name: Grace } }
+  - say: Greeting is visible
+    do: { assertVisible: { id: sample.greeting, text: "Hello Grace" } }
+  - say: Close the keyboard
+    do: { hideKeyboard: true }
+  - say: Scroll the list down
+    do: { scrollUntilVisible: { id: sample.row.30, in: { id: sample.list }, direction: down, maxScrolls: 10 } }
+  - say: Row 30 is visible
+    do: { assertVisible: { id: sample.row.30 } }

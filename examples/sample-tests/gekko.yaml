@@ -1,0 +1,9 @@
+app:
+  android: com.jakala.gekko.sample
+  ios: com.jakala.gekko.sample
+android:
+  runnerApk: ../../system-runner-android/build/outputs/apk/debug/system-runner-android-debug.apk
+defaultTimeoutMs: 5000
+ios:
+  runnerDir: ../../dist/gekko-ios-runner
+  app: ../../sample-ios/build/Sample.app

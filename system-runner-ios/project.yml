@@ -1,0 +1,34 @@
+name: GekkoRunner
+options:
+  bundleIdPrefix: com.jakala.gekko
+  deploymentTarget:
+    iOS: "15.0"
+targets:
+  GekkoRunnerHost:
+    type: application
+    platform: iOS
+    sources: [Host]
+    settings:
+      PRODUCT_BUNDLE_IDENTIFIER: com.jakala.gekko.runnerhost
+      GENERATE_INFOPLIST_FILE: YES
+      INFOPLIST_KEY_UILaunchScreen_Generation: YES
+  GekkoRunnerUITests:
+    type: bundle.ui-testing
+    platform: iOS
+    sources: [Tests]
+    dependencies:
+      - target: GekkoRunnerHost
+    settings:
+      PRODUCT_BUNDLE_IDENTIFIER: com.jakala.gekko.runneruitests
+      GENERATE_INFOPLIST_FILE: YES
+      TEST_TARGET_NAME: GekkoRunnerHost
+      GEKKO_VERSION: unknown
+      INFOPLIST_FILE: Info/RunnerTests.plist
+schemes:
+  GekkoRunner:
+    build:
+      targets:
+        GekkoRunnerHost: all
+        GekkoRunnerUITests: [test]
+    test:
+      targets: [GekkoRunnerUITests]
