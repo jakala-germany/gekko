@@ -1,0 +1,43 @@
+# Runs the whole gekko suite on a schedule, split into shards that run in parallel, and on demand.
+# Copy it next to run-tests.yml in .github/workflows/.
+#
+# ADAPT
+#   - The schedule and the shards (`--shard i/n`, see pr.yml).
+#   - The runner is chosen in run-tests.yml (see the comment at its top).
+#   - Scheduled workflows run on the default branch only. GitHub switches them off in a public repository after 60
+#     days without activity; run the workflow once by hand to switch it on again.
+name: 'Nightly full suite'
+on:
+  schedule:
+    - cron: '0 1 * * 1-5' # Weekdays at 01:00 UTC | Min Hour DayOfMonth Month DayOfWeek
+  workflow_dispatch:
+    inputs:
+      app-ref:
+        description: 'Branch, tag or commit of the app repository to test (empty: main)'
+        type: string
+        required: false
+        default: ''
+
+concurrency:
+  group: ${{ github.workflow }}
+  cancel-in-progress: false
+
+permissions: {}
+
+jobs:
+  run:
+    name: 'shard ${{ matrix.shard }}'
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [ '1/2', '2/2' ]
+    permissions:
+      contents: read # checkout
+      checks: write # the JUnit report is published as a check run
+    uses: ./.github/workflows/run-tests.yml
+    with:
+      shard: ${{ matrix.shard }}
+      app-ref: ${{ inputs.app-ref || 'main' }} # ADAPT: the app branch that the nightly run tests
+    secrets:
+      GEKKO_LLM_API_KEY: ${{ secrets.GEKKO_LLM_API_KEY }}
+      APP_REPOSITORY_TOKEN: ${{ secrets.APP_REPOSITORY_TOKEN }}

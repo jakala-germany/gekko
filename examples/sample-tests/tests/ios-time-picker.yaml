@@ -1,0 +1,12 @@
+name: Time wheel can be set
+tags: [ios-only]
+steps:
+  - say: Set the time on the wheel picker
+    platform: ios
+    do: { type: { id: sample.time, value: "20:15" } }
+  - say: The chosen time is shown
+    platform: ios
+    do: { assertVisible: { id: sample.timeLabel, textContains: "15" } }
+  - say: A row is found inside the list container
+    platform: ios
+    do: { assertVisible: { within: sample.list, id: sample.row.1 } }

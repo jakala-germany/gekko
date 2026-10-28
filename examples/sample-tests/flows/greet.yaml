@@ -1,0 +1,7 @@
+name: greet
+params: [name]
+steps:
+  - say: Enter the name
+    do: { type: { id: sample.name, value: "${name}" } }
+  - say: Press greet
+    do: { tap: { id: sample.greet } }

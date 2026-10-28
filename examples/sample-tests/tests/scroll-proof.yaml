@@ -1,0 +1,14 @@
+name: Scrolling moves the list
+tags: [list]
+steps:
+  - say: The first row is visible at the start
+    do: { assertVisible: { id: sample.row.1 } }
+  - say: The last row is not on screen yet
+    do: { assertNotVisible: { id: sample.row.60 }, }
+    timeout: 500
+  - say: Scroll the list
+    do: { scroll: { id: sample.list, direction: down, distance: 2000 } }
+  - say: A late row is now visible
+    do: { assertVisible: { id: sample.row.60 } }
+  - say: The first row has scrolled away
+    do: { assertNotVisible: { id: sample.row.1 } }

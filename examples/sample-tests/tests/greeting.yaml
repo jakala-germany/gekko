@@ -1,0 +1,7 @@
+name: Greeting is shown
+tags: [smoke]
+steps:
+  - say: Greet Ada
+    do: { use: greet, with: { name: Ada } }
+  - say: Greeting is visible
+    do: { assertVisible: { id: sample.greeting, text: "Hello Ada" } }

@@ -1,0 +1,11 @@
+# Configuration of actionlint, the linter for the GitHub Actions workflows (see ci.yml).
+paths:
+  .github/workflows/*.{yaml,yml}:
+    ignore:
+      - 'constant expression \"(true|false)\" in condition'
+  # The templates for adopting repositories: they call ./.github/workflows/run-tests.yml, which only exists there, and
+  # actionlint.yml among them is the configuration of the adopters (comments only), not a workflow.
+  skills/gekko-setup/assets/workflows/*.yml:
+    ignore:
+      - 'could not read reusable workflow file for "\./\.github/workflows/run-tests\.yml"'
+      - 'workflow is empty'

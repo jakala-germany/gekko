@@ -1,0 +1,226 @@
+name: 'CI'
+on:
+  pull_request:
+  push:
+    branches:
+      - 'main'
+  workflow_call:
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+permissions:
+  contents: read
+
+env:
+  GRADLE_OPTS: '-Dorg.gradle.daemon=false'
+
+jobs:
+  hygiene:
+    name: 'Hygiene'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: 'Checkout'
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: 'No secrets or internal names in the tracked files and the history'
+        run: ./scripts/check-hygiene.sh HEAD
+        shell: bash
+
+      - name: 'Install actionlint'
+        run: go install github.com/rhysd/actionlint/cmd/actionlint@v1.7.12
+        shell: bash
+
+      - name: 'Lint the workflows and the workflow templates'
+        run: |
+          "$(go env GOPATH)/bin/actionlint" -config-file .github/actionlint.yml
+          "$(go env GOPATH)/bin/actionlint" -config-file .github/actionlint.yml skills/gekko-setup/assets/workflows/*.yml
+        shell: bash
+
+  unit:
+    name: 'Unit tests'
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - name: 'Checkout'
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: 'Set up JDK'
+        uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6 # v6.0.1
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+
+      - name: 'Validate the Gradle wrapper'
+        uses: gradle/actions/wrapper-validation@3f5f9adaf7d9fecd50b5935e54106014257a94e6 # v6.4.0
+
+      - name: 'Set up Gradle'
+        uses: gradle/actions/setup-gradle@3f5f9adaf7d9fecd50b5935e54106014257a94e6 # v6.4.0
+
+      - name: 'The libraries and the Gradle plugin have the same version'
+        run: |
+          test "$(sed -n 's/^VERSION_NAME=//p' gradle.properties)" = "$(sed -n 's/^VERSION_NAME=//p' gradle-plugin/gradle.properties)"
+        shell: bash
+
+      - name: 'Check formatting (run ./gradlew ktfmtFormat if this fails)'
+        run: |
+          ./gradlew ktfmtCheck
+          (cd gradle-plugin && ../gradlew ktfmtCheck)
+        shell: bash
+
+      - name: 'Test the JVM modules and the Linux binary'
+        run: ./gradlew :protocol:jvmTest :cli:jvmTest :transport-jvm:test :protocol:linuxX64Test :cli:linuxX64Test
+        shell: bash
+
+      - name: 'Test the Gradle plugin'
+        run: (cd gradle-plugin && ../gradlew test)
+        shell: bash
+
+      - name: 'Build the Android modules and the sample app'
+        run: ./gradlew :agent-android:assembleRelease :system-runner-android:assembleDebug :sample-android:assembleDebug
+        shell: bash
+
+      - name: 'Upload test reports'
+        if: failure()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: unit-test-reports
+          path: '**/build/reports/tests'
+          if-no-files-found: ignore
+
+  apple:
+    name: 'Apple build and tests'
+    runs-on: macos-15
+    timeout-minutes: 60
+    steps:
+      - name: 'Checkout'
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: 'Set up JDK'
+        uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6 # v6.0.1
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+
+      - name: 'Set up Gradle'
+        uses: gradle/actions/setup-gradle@3f5f9adaf7d9fecd50b5935e54106014257a94e6 # v6.4.0
+
+      - name: 'Test the macOS binary'
+        run: ./gradlew :protocol:macosArm64Test :cli:macosArm64Test
+        shell: bash
+
+      - name: 'Install xcodegen'
+        run: brew install xcodegen
+        shell: bash
+
+      - name: 'Build the iOS agent and the iOS system runner'
+        run: ./scripts/build-ios-runner.sh
+        shell: bash
+
+      - name: 'Build the iOS sample app'
+        run: ./scripts/build-sample-ios.sh
+        shell: bash
+
+  android-e2e:
+    name: 'Android end to end'
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - name: 'Checkout'
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: 'Set up JDK'
+        uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6 # v6.0.1
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+
+      - name: 'Set up Gradle'
+        uses: gradle/actions/setup-gradle@3f5f9adaf7d9fecd50b5935e54106014257a94e6 # v6.4.0
+
+      - name: 'Enable KVM for the emulator'
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+        shell: bash
+
+      - name: 'Build the CLI, the sample app and the system runner'
+        run: ./gradlew :cli:linkReleaseExecutableLinuxX64 :sample-android:assembleDebug :system-runner-android:assembleDebug
+        shell: bash
+
+      - name: 'Run the sample tests on an emulator'
+        uses: reactivecircus/android-emulator-runner@e89f39f1abbbd05b1113a29cf4db69e7540cae5a # v2.37.0
+        with:
+          api-level: 34
+          arch: x86_64
+          target: google_apis
+          disable-animations: true
+          script: ./scripts/e2e-android.sh
+
+      - name: 'Upload the results'
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: android-e2e-results
+          path: build/e2e
+          if-no-files-found: ignore
+
+  # Slow and the most likely to flake: after a merge and before a release, not on every pull request
+  ios-e2e:
+    name: 'iOS end to end'
+    if: ${{ github.event_name != 'pull_request' }}
+    runs-on: macos-15
+    timeout-minutes: 75
+    steps:
+      - name: 'Checkout'
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: 'Set up JDK'
+        uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6 # v6.0.1
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+
+      - name: 'Set up Gradle'
+        uses: gradle/actions/setup-gradle@3f5f9adaf7d9fecd50b5935e54106014257a94e6 # v6.4.0
+
+      - name: 'Install xcodegen'
+        run: brew install xcodegen
+        shell: bash
+
+      - name: 'Build the CLI'
+        run: ./gradlew :cli:linkReleaseExecutableMacosArm64
+        shell: bash
+
+      - name: 'Build the iOS system runner, the agent and the sample app'
+        run: |
+          ./scripts/build-ios-runner.sh
+          ./scripts/build-sample-ios.sh
+        shell: bash
+
+      - name: 'Run the sample tests on a simulator'
+        run: ./scripts/e2e-ios.sh
+        shell: bash
+
+      - name: 'Upload the results'
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: ios-e2e-results
+          path: build/e2e
+          if-no-files-found: ignore

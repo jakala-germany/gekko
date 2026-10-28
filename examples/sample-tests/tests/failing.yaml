@@ -1,0 +1,6 @@
+name: Failing test
+tags: [broken]
+steps:
+  - say: Element that does not exist
+    do: { tap: { id: sample.missing }, }
+    timeout: 500

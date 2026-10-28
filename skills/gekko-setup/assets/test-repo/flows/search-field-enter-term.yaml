@@ -1,0 +1,5 @@
+name: search-field-enter-term
+params: [term]
+steps:
+  - say: Enter the search term
+    do: { type: { id: Search.Field, value: "${term}" } }

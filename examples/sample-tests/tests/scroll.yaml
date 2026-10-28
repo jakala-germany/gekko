@@ -1,0 +1,7 @@
+name: List scrolls
+tags: [smoke, list]
+steps:
+  - say: Scroll the list
+    do: { scroll: { id: sample.list, direction: down, distance: 1000 } }
+  - say: A late row is visible
+    do: { assertVisible: { id: "sample.row.40" } }

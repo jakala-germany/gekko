@@ -1,0 +1,16 @@
+# Configuration of actionlint (https://github.com/rhysd/actionlint), the linter for GitHub Actions workflows.
+# Copy it to .github/actionlint.yml and run: actionlint -config-file .github/actionlint.yml
+#
+# The workflows from gekko run on GitHub-hosted runners (ubuntu-latest), which actionlint knows. If you move a job to
+# your own runner, list its custom labels here, or actionlint reports them as unknown:
+#
+# self-hosted-runner:
+#   labels:
+#     - my-android-runner
+#
+# To silence a message that you have checked and accept, filter it by a regular expression of its text:
+#
+# paths:
+#   .github/workflows/*.{yaml,yml}:
+#     ignore:
+#       - 'part of the message'

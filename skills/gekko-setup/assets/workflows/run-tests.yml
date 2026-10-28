@@ -1,0 +1,249 @@
+# Reusable workflow (workflow_call): runs the gekko tests of THIS repository against the debug app of another repository
+# on an Android emulator. Copy it to .github/workflows/run-tests.yml; pr.yml and nightly.yml call it.
+#
+# ADAPT
+#   - The three APP_* values in `env` below and the default of the `app-ref` input.
+#   - The runner: the job runs on `ubuntu-latest`, a GitHub-hosted runner with KVM for the emulator (the udev step
+#     below switches it on). To use your own runner, change the `runs-on:` line of the job, for example to
+#     `[ self-hosted, android ]`. Never run pull requests from forks on a self-hosted runner that holds secrets or can
+#     reach your network: a pull request can change the tests and the build files and so run any code on that machine.
+#     Keep fork pull requests on hosted runners.
+#   - A private app repository (optional): create the secret APP_REPOSITORY_TOKEN with a read-only token, for example a
+#     fine-grained token with "Contents: read" on the app repository only. Without the secret the app is checked out
+#     with the token of this workflow, which is enough for a public app repository.
+#   - Healing (optional): `gekko run --heal api` asks an OpenAI-compatible model which element fits a step whose id is
+#     gone. It is on when the input `heal` is true AND the repository variables GEKKO_LLM_BASE_URL and GEKKO_LLM_MODEL
+#     are set; otherwise the tests run without it. An endpoint that needs a key gets it from the secret
+#     GEKKO_LLM_API_KEY; without that secret no key is sent. The model only picks an element, it never decides pass or
+#     fail. The values are given to the gekko step only, not to the job.
+#   - Credentials for the tests: names listed in `env:` of gekko.yaml are read from the environment of the gekko step.
+#     Add them as secrets (workflow_call secrets, and pass them from pr.yml and nightly.yml) and to the `env` of the
+#     "Check the tests" and "Run the tests" steps (`gekko check` reads the values too). Test credentials never belong
+#     into the YAML tests.
+#   - Pull requests from forks: the token of such a run is read-only whatever `permissions:` says, so the result check
+#     cannot be written there (the "Report the test results" step may fail without failing the job) and only the
+#     healed steps show up as annotations.
+#   - Pin `jakala-germany/setup-gekko-cli-action` to the commit SHA of its tag after you have checked that commit.
+name: 'Run gekko tests'
+on:
+  workflow_call:
+    inputs:
+      tags:
+        type: string
+        required: false
+        default: ''
+        description: 'Comma separated gekko tags; a test runs if it has any of them. Empty runs every test'
+      exclude-tags:
+        type: string
+        required: false
+        default: ''
+        description: 'Comma separated gekko tags; a test with any of them does not run (applied after tags)'
+      shard:
+        type: string
+        required: false
+        default: ''
+        description: 'Run only shard i of n of the selected tests, for example 1/2. Empty runs everything'
+      heal:
+        type: boolean
+        required: false
+        default: true
+        description: 'Run gekko with --heal api when the model is configured (see the comment at the top)'
+      app-ref:
+        type: string
+        required: false
+        default: 'main'
+        description: 'Branch, tag or commit of the app repository to test'
+    secrets:
+      GEKKO_LLM_API_KEY:
+        required: false
+        description: 'API key of the OpenAI-compatible model used by --heal api'
+      APP_REPOSITORY_TOKEN:
+        required: false
+        description: 'Read-only token for a private app repository'
+
+# Nothing by default; the job asks for what it needs.
+permissions: {}
+
+env:
+  APP_REPOSITORY: 'OWNER/app-repo' # ADAPT: the repository of the app under test
+  APP_GRADLE_TASK: ':app:assembleDebug' # ADAPT: the Gradle task that builds the debug app (a flavor: :app:assembleStageDebug)
+  APP_APK: 'app/build/outputs/apk/debug/app-debug.apk' # ADAPT: where that task writes the APK, relative to the app repository
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  run:
+    name: 'gekko ${{ inputs.shard }}'
+    runs-on: ubuntu-latest # ADAPT: or the label(s) of your own runner, see the comment at the top
+    timeout-minutes: 90
+    permissions:
+      contents: read # checkout
+      checks: write # the JUnit report is published as a check run
+    steps:
+      - name: 'Checkout the tests'
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: 'Checkout the app'
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: ${{ env.APP_REPOSITORY }}
+          ref: ${{ inputs.app-ref }}
+          token: ${{ secrets.APP_REPOSITORY_TOKEN || github.token }}
+          path: app-under-test
+          persist-credentials: false
+
+      - name: 'Set up JDK'
+        uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6 # v6.0.1
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+
+      - name: 'Validate the Gradle wrapper'
+        uses: gradle/actions/wrapper-validation@3f5f9adaf7d9fecd50b5935e54106014257a94e6 # v6.4.0
+
+      - name: 'Set up Gradle'
+        uses: gradle/actions/setup-gradle@3f5f9adaf7d9fecd50b5935e54106014257a94e6 # v6.4.0
+
+      - name: 'Build the debug app'
+        working-directory: app-under-test
+        run: ./gradlew "$APP_GRADLE_TASK"
+
+      - name: 'Install the gekko CLI and the system runner'
+        # Tag = version. Pin the commit SHA of this tag after you have checked it (gh api repos/jakala-germany/setup-gekko-cli-action/commits/1.0.0 --jq .sha).
+        # The action puts gekko on the PATH and exports GEKKO_RUNNER_APK; the inputs cli-sha256 and system-runner-sha256 pin the downloads.
+        uses: jakala-germany/setup-gekko-cli-action@1.0.0
+        with:
+          version: '1.0.0'
+
+      - name: 'Check the tests'
+        # Reads every test and flow without a device: a broken file or a missing value fails here in seconds (exit code
+        # 2), not after the emulator has booted. It reads the `${env.NAME}` values too: when gekko.yaml lists `env:`
+        # names, give this step the same values as "Run the tests" below, for example:
+        #   env:
+        #     TEST_USER: ${{ secrets.TEST_USER }}
+        #     TEST_PASSWORD: ${{ secrets.TEST_PASSWORD }}
+        run: gekko check
+
+      - name: 'Enable KVM for the emulator'
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+
+      - name: 'Write the test script'
+        # The `script:` lines of the emulator action run one by one, so the logic lives in a file. The quoted heredoc
+        # keeps every variable unexpanded: the script reads them from the environment of the emulator step.
+        run: |
+          cat > "$RUNNER_TEMP/run-gekko.sh" <<'SCRIPT'
+          #!/usr/bin/env bash
+          set -uo pipefail
+          mkdir -p gekko-results
+          args=(run --app "app-under-test/${APP_APK}" --record failures
+            --output gekko-results --junit gekko-results/junit.xml --junit-healed gekko-results/junit-healed.xml)
+          if [ -n "${TESTS_TAGS:-}" ]; then args+=(--tags "${TESTS_TAGS}"); fi
+          if [ -n "${TESTS_EXCLUDE_TAGS:-}" ]; then args+=(--exclude-tags "${TESTS_EXCLUDE_TAGS}"); fi
+          if [ -n "${TESTS_SHARD:-}" ]; then args+=(--shard "${TESTS_SHARD}"); fi
+          # A secret that is not set arrives as an empty string; an endpoint without a key must not get an empty one.
+          if [ -z "${GEKKO_LLM_API_KEY:-}" ]; then unset GEKKO_LLM_API_KEY; fi
+          if [ "${TESTS_HEAL:-false}" = "true" ]; then
+            if [ -n "${GEKKO_LLM_BASE_URL:-}" ] && [ -n "${GEKKO_LLM_MODEL:-}" ]; then
+              args+=(--heal api)
+            else
+              echo "::notice::Healing is off: set the variables GEKKO_LLM_BASE_URL and GEKKO_LLM_MODEL (and the secret GEKKO_LLM_API_KEY if the endpoint needs a key) to turn it on"
+            fi
+          fi
+          echo "gekko ${args[*]}"
+          exec gekko "${args[@]}"
+          SCRIPT
+          chmod +x "$RUNNER_TEMP/run-gekko.sh"
+
+      - name: 'Run the tests'
+        id: tests
+        # The job fails in the last step, so that the reports and the artifacts below are published first.
+        continue-on-error: true
+        uses: reactivecircus/android-emulator-runner@e89f39f1abbbd05b1113a29cf4db69e7540cae5a # v2.37.0
+        env:
+          # Inputs go through the environment, never into a script. The model settings are only on this step.
+          TESTS_TAGS: ${{ inputs.tags }}
+          TESTS_EXCLUDE_TAGS: ${{ inputs.exclude-tags }}
+          TESTS_SHARD: ${{ inputs.shard }}
+          TESTS_HEAL: ${{ inputs.heal }}
+          GEKKO_LLM_BASE_URL: ${{ vars.GEKKO_LLM_BASE_URL }}
+          GEKKO_LLM_MODEL: ${{ vars.GEKKO_LLM_MODEL }}
+          GEKKO_LLM_API_KEY: ${{ secrets.GEKKO_LLM_API_KEY }}
+          # Names listed in `env:` of gekko.yaml, for example:
+          # TEST_USER: ${{ secrets.TEST_USER }}
+          # TEST_PASSWORD: ${{ secrets.TEST_PASSWORD }}
+        with:
+          api-level: 34
+          arch: x86_64
+          target: google_apis
+          disable-animations: true
+          script: bash "$RUNNER_TEMP/run-gekko.sh"
+
+      - name: 'Show healed steps'
+        if: ${{ !cancelled() }}
+        # Healed steps pass with a warning; the report names every id that was missing and what was used instead.
+        run: |
+          if [ -f gekko-results/gekko-heal-report.md ]; then
+            cat gekko-results/gekko-heal-report.md >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+      - name: 'Report the test results'
+        if: ${{ !cancelled() }}
+        # On a pull request from a fork the token is read-only, the check run cannot be created and this step fails
+        # with "Resource not accessible by integration". That must not turn the job red: the last step decides.
+        continue-on-error: true
+        uses: mikepenz/action-junit-report@bccf2e31636835cf0874589931c4116687171386 # v6.4.0
+        with:
+          report_paths: 'gekko-results/junit.xml'
+          check_name: ${{ format('gekko tests{0}', inputs.shard != '' && format(' (shard {0})', inputs.shard) || '') }}
+          # The result of the job is decided by the last step, which also catches a run that never produced a report.
+          fail_on_failure: false
+          require_tests: false
+
+      - name: 'Report the healed steps'
+        if: ${{ !cancelled() && inputs.heal }}
+        # One failed testcase per healed step, shown as annotations only: no check run is created and the job never
+        # fails because of it. Set annotate_only to false to get a separate check run instead (its conclusion is
+        # "failure" when steps were healed; do not make that check required).
+        uses: mikepenz/action-junit-report@bccf2e31636835cf0874589931c4116687171386 # v6.4.0
+        with:
+          report_paths: 'gekko-results/junit-healed.xml'
+          check_name: 'gekko healed steps'
+          annotate_only: true
+          job_summary: false
+          fail_on_failure: false
+          require_tests: false
+
+      - name: 'Name the results'
+        id: results
+        if: ${{ !cancelled() }}
+        env:
+          SHARD: ${{ inputs.shard }}
+        run: |
+          slug="$(printf '%s' "$SHARD" | tr -c 'A-Za-z0-9' '-')"
+          echo "name=gekko-results-${slug:-all}" >> "$GITHUB_OUTPUT"
+
+      - name: 'Upload the results of a failed run'
+        if: ${{ !cancelled() && steps.tests.outcome == 'failure' }}
+        # Screenshots, view trees and videos can show the UI of the app. Anyone who can read the workflow run can
+        # download them, so keep the retention short and do not run this against an app whose screens are confidential
+        # in a public repository.
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: ${{ steps.results.outputs.name }}
+          path: gekko-results
+          retention-days: 14
+          overwrite: true
+          if-no-files-found: ignore
+
+      - name: 'Fail when tests failed'
+        if: ${{ steps.tests.outcome == 'failure' }}
+        run: |
+          echo "::error::gekko did not pass (a test failed, or the setup, a device or the app did); see the log of 'Run the tests'"
+          exit 1

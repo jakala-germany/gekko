@@ -1,0 +1,40 @@
+# Runs the whole gekko suite of this repository on every pull request, split into shards that run in parallel.
+# Copy it next to run-tests.yml in .github/workflows/.
+#
+# ADAPT
+#   - The branches below, and the shards: the matrix runs shard i of n (`--shard i/n`); for a bigger suite list more,
+#     for example '1/3', '2/3', '3/3'. A shard that gets no test passes with a note.
+#   - The runner is chosen in run-tests.yml (see the comment at its top). Pull requests from forks must never run on a
+#     self-hosted runner that holds secrets. Keep this workflow on the `pull_request` event: `pull_request_target`
+#     would run the code of a fork with your secrets.
+#   - Pull requests from forks get no secrets: there the tests run without healing, and a private app repository
+#     cannot be checked out. Their token is read-only too: the result check cannot be written there and only the healed
+#     steps show up as annotations (the job result still follows the tests, see run-tests.yml).
+name: 'Pull request'
+on:
+  pull_request:
+    branches:
+      - 'main'
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+permissions: {}
+
+jobs:
+  run:
+    name: 'shard ${{ matrix.shard }}'
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [ '1/2', '2/2' ]
+    permissions:
+      contents: read # checkout
+      checks: write # the JUnit report is published as a check run
+    uses: ./.github/workflows/run-tests.yml
+    with:
+      shard: ${{ matrix.shard }}
+    secrets:
+      GEKKO_LLM_API_KEY: ${{ secrets.GEKKO_LLM_API_KEY }}
+      APP_REPOSITORY_TOKEN: ${{ secrets.APP_REPOSITORY_TOKEN }}
