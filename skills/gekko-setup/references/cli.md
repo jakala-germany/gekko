@@ -38,6 +38,7 @@ Without `-s`, Android uses the one attached device and iOS the one booted simula
 | `gekko launch [--fresh]` | Start the app from `gekko.yaml`; `--fresh` clears its data first and grants the configured permissions. Prints `ok` once the agent answers |
 | `gekko run [PATH...] [flags]` | Run YAML tests, see below |
 | `gekko check [FILE...] [--project DIR]` | Read all tests and the flows they use, no device needed: broken YAML, unknown keys, steps with two actions or none, missing flows or parameters, flows that call themselves. Prints `N tests ok` or the problems and exits 2. It reads `${env.NAME}` values, so they must be set |
+| `gekko llm-check [--heal claude\|opencode\|api]` | Ask the model of `--heal` (default `api`) one short question and print the answer, no device needed: tries `GEKKO_LLM_*` or the local CLI. Exit 3 when the model does not answer, 2 when it is not configured |
 | `gekko --version` | The version of the CLI |
 
 `SELECTOR` for `tap`, `type`, `scroll` and `assert` is one or more of `--id`, `--text`, `--text-contains`, `--text-matches` (regular expression for the whole text), `--action` (`click`, `setText`, `scroll`), `--within ID`, plus `--index N`, `--timeout MS` (default 5000) and `--system` (use the system runner: permission dialogs, the browser). At least one of `--id`, `--text`, `--text-contains`, `--text-matches`, `--action` is required.
@@ -162,7 +163,7 @@ Values of `env:` names come from the process environment first, then from a `.en
 | `GEKKO_IOS_AGENT` | `GekkoAgent.framework` for simulators; wins over `ios.agentFramework` and switches the injection on |
 | `GEKKO_IOS_RUNNER_DIR` | iOS system runner directory; wins over `ios.runnerDir` |
 | `GEKKO_HOME` | Where `scripts/install.sh` puts the runners and where the CLI looks for them: `$GEKKO_HOME/runners` (default `~/.gekko`) |
-| `GEKKO_LLM_BASE_URL`, `GEKKO_LLM_MODEL`, `GEKKO_LLM_API_KEY` | OpenAI-compatible endpoint for `--heal api` (the API key is optional for endpoints that need none) |
+| `GEKKO_LLM_BASE_URL`, `GEKKO_LLM_MODEL`, `GEKKO_LLM_API_KEY`, `GEKKO_LLM_CA_CERT` | OpenAI-compatible endpoint for `--heal api` (the API key is optional for endpoints that need none; `GEKKO_LLM_CA_CERT` is the PEM file of a private CA) |
 | `GEKKO_HEAL_MODEL` | Model for `--heal claude` (default `haiku`) and `--heal opencode` (`provider/model`, else the model configured in opencode) |
 | `GEKKO_HEAL_AGENT` | opencode agent to use instead of gekko's own deny-all agent `gekko-heal` (the explicit opt-out) |
 | `GEKKO_OPENCODE_COMMAND` | Launcher used instead of `opencode`, e.g. a script that sets an isolated config in CI |
@@ -182,7 +183,7 @@ The variables of the install script itself (not read by the CLI): `GEKKO_BIN_DIR
 |---|---|
 | `--heal claude` | The local `claude` CLI (the tester's own subscription), small model by default (`GEKKO_HEAL_MODEL` to change it). Started with no tools, no MCP servers, no project settings and no session files, in a private temporary directory. |
 | `--heal opencode` | The local `opencode` CLI with the model configured there, run with an agent that gekko defines for the call (`gekko-heal`): every permission is denied, so it can answer but cannot read files, run commands or fetch pages; project configuration is switched off. `GEKKO_HEAL_AGENT` names another agent instead. |
-| `--heal api` | An OpenAI-compatible `/chat/completions` endpoint (`GEKKO_LLM_BASE_URL`, `GEKKO_LLM_MODEL`, `GEKKO_LLM_API_KEY`). This is the source for CI. The native binary uses the HTTP client of the Ktor CIO engine with its own TLS implementation; `https://` endpoints are meant to work, but if the connection to a provider fails, point `GEKKO_LLM_BASE_URL` at a gateway you control or use `claude` / `opencode`. |
+| `--heal api` | An OpenAI-compatible `/chat/completions` endpoint (`GEKKO_LLM_BASE_URL`, `GEKKO_LLM_MODEL`, `GEKKO_LLM_API_KEY`). This is the source for CI. The request goes through `curl` (the native binary has no TLS of its own); a private CA is named in `GEKKO_LLM_CA_CERT`. Try the settings first with `gekko llm-check`. |
 
 If the named source is not usable (no such CLI on `PATH`, `GEKKO_LLM_*` not set) the run stops with a message (exit 2) before any test.
 
