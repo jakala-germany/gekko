@@ -6,11 +6,12 @@
 
 **New**
 
-- Upcoming additions go here
+- `gekko llm-check` asks the model of `--heal` one short question and prints the answer, so `GEKKO_LLM_*` (or the local CLI) can be tried without a device
+- `GEKKO_LLM_CA_CERT` names the PEM file of a private CA for `--heal api`
 
 **Changed**
 
-- Upcoming changes go here
+- `--heal api` works over `https://` in the native binary: the request goes through `curl`, because Ktor CIO has no TLS on Kotlin/Native (the heal failed with "TLS sessions are not supported on Native platform"). `curl` must be on the `PATH`
 
 ## [1.0.0]
 

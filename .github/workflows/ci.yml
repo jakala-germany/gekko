@@ -167,6 +167,10 @@ jobs:
         run: ./gradlew :cli:linkReleaseExecutableLinuxX64 :sample-android:assembleDebug :system-runner-android:assembleDebug
         shell: bash
 
+      - name: 'Check --heal api over HTTPS against a fake endpoint'
+        run: ./scripts/e2e-llm.sh
+        shell: bash
+
       - name: 'Run the sample tests on an emulator'
         uses: reactivecircus/android-emulator-runner@e89f39f1abbbd05b1113a29cf4db69e7540cae5a # v2.37.0
         with:
@@ -212,6 +216,10 @@ jobs:
 
       - name: 'Build the CLI'
         run: ./gradlew :cli:linkReleaseExecutableMacosArm64
+        shell: bash
+
+      - name: 'Check --heal api over HTTPS against a fake endpoint'
+        run: ./scripts/e2e-llm.sh
         shell: bash
 
       - name: 'Build the iOS system runner, the agent and the sample app'

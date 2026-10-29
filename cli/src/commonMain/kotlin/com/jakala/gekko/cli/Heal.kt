@@ -1,15 +1,6 @@
 package com.jakala.gekko.cli
 
 import com.jakala.gekko.protocol.Selector
-import io.ktor.client.HttpClient
-import io.ktor.client.engine.cio.CIO
-import io.ktor.client.plugins.HttpTimeout
-import io.ktor.client.request.header
-import io.ktor.client.request.post
-import io.ktor.client.request.setBody
-import io.ktor.client.statement.bodyAsText
-import io.ktor.http.ContentType
-import io.ktor.http.contentType
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.buildJsonArray
 import kotlinx.serialization.json.buildJsonObject
@@ -96,10 +87,57 @@ class OpenCodeCliClient(
     }
 }
 
-/** OpenAI-compatible chat endpoint (the model endpoint of CI). */
-class OpenAiCompatibleClient(private val config: LlmConfig) : LlmClient {
-    private val http = HttpClient(CIO) { install(HttpTimeout) { requestTimeoutMillis = 300_000 } }
+/** The answer of an HTTP endpoint. */
+class HttpAnswer(val status: Int, val body: String)
 
+/**
+ * The request goes through `curl`: the native binary has no TLS of its own, and every machine that runs gekko has curl.
+ * The key and the CA file (`GEKKO_LLM_CA_CERT`, for a private CA) reach curl through a configuration file in a private
+ * directory, never through its command line; a line break cannot start another option.
+ */
+private const val CURL_SCRIPT =
+    "umask 077; " +
+        "escape() { printf '%s' \"\$1\" | tr -d '\\r\\n' | sed 's/[\\\\\"]/\\\\&/g'; }; " +
+        "{ [ -z \"\${GEKKO_LLM_API_KEY:-}\" ] || printf 'header = \"Authorization: Bearer %s\"\\n' \"\$(escape \"\$GEKKO_LLM_API_KEY\")\"; " +
+        "[ -z \"\${GEKKO_LLM_CA_CERT:-}\" ] || printf 'cacert = \"%s\"\\n' \"\$(escape \"\$GEKKO_LLM_CA_CERT\")\"; } > curl.cfg; " +
+        "printf '%s' \"\$2\" | curl -sS --max-time $MODEL_TIMEOUT_SECONDS --config curl.cfg " +
+        "--header 'Content-Type: application/json' --data-binary @- --write-out '\\n%{http_code}' \"\$1\""
+
+private fun postWithCurl(url: String, body: String): HttpAnswer {
+    val result =
+        runProcess(
+            listOf("sh", "-c", "$PRIVATE_DIRECTORY; $CURL_SCRIPT", "gekko", url, body),
+            mergeStderr = false,
+            timeoutSeconds = MODEL_TIMEOUT_SECONDS + 20,
+        )
+    check(result.exitCode == 0) { "the model endpoint is not reachable: ${curlProblem(result.exitCode)}" }
+    val text = result.stdout.decodeToString()
+    val status = text.substringAfterLast('\n').trim().toIntOrNull()
+    checkNotNull(status) { "the model endpoint sent no HTTP status" }
+    return HttpAnswer(status, text.substringBeforeLast('\n'))
+}
+
+/** What the exit code of curl means for the person who set up `GEKKO_LLM_BASE_URL`. */
+internal fun curlProblem(exitCode: Int): String {
+    val reason =
+        when (exitCode) {
+            6 -> "the host name is not known"
+            7 -> "the connection was refused"
+            28 -> "the request timed out"
+            35 -> "the TLS handshake failed"
+            58,
+            77 -> "the CA file of GEKKO_LLM_CA_CERT cannot be read"
+            60 -> "the certificate is not trusted (a private CA: set GEKKO_LLM_CA_CERT to its PEM file)"
+            else -> "curl failed"
+        }
+    return "$reason (curl exit $exitCode; the line above has the details)"
+}
+
+/** OpenAI-compatible chat endpoint (the model endpoint of CI). */
+class OpenAiCompatibleClient(
+    private val config: LlmConfig,
+    private val post: (url: String, body: String) -> HttpAnswer = ::postWithCurl,
+) : LlmClient {
     override suspend fun complete(system: String, user: String): String {
         val request = buildJsonObject {
             put("model", config.model)
@@ -122,21 +160,35 @@ class OpenAiCompatibleClient(private val config: LlmConfig) : LlmClient {
                 },
             )
         }
-        val response =
-            http
-                .post("${config.baseUrl}/chat/completions") {
-                    contentType(ContentType.Application.Json)
-                    config.apiKey?.let { header("Authorization", "Bearer $it") }
-                    setBody(request.toString())
-                }
-                .bodyAsText()
-        return Json.parseToJsonElement(response)
-            .jsonObject["choices"]!!
-            .jsonArray[0]
-            .jsonObject["message"]!!
-            .jsonObject["content"]!!
-            .jsonPrimitive
-            .content
+        val answer = post("${config.baseUrl}/chat/completions", request.toString())
+        check(answer.status in 200..299) {
+            "the model endpoint answered HTTP ${answer.status}: ${errorMessage(answer.body)}"
+        }
+        return content(answer.body)
+    }
+
+    private fun content(body: String): String {
+        val text = runCatching {
+            Json.parseToJsonElement(body)
+                .jsonObject["choices"]!!
+                .jsonArray[0]
+                .jsonObject["message"]!!
+                .jsonObject["content"]!!
+                .jsonPrimitive
+                .content
+        }
+            .getOrNull()
+        return checkNotNull(text) { "the model endpoint answered without a chat completion: ${errorMessage(body)}" }
+    }
+
+    /** The `error.message` of an OpenAI style answer, else the start of the body. */
+    private fun errorMessage(body: String): String {
+        val message = runCatching {
+            val error = Json.parseToJsonElement(body).jsonObject["error"]!!
+            error.jsonObject["message"]?.jsonPrimitive?.contentOrNull ?: error.toString()
+        }
+            .getOrNull()
+        return Masker.mask((message ?: body).take(300))
     }
 }
 
@@ -173,7 +225,12 @@ object LlmClients {
                 }
                 OpenCodeCliClient(command = command)
             }
-            HealSource.Api -> OpenAiCompatibleClient(LlmConfig.fromEnv())
+            HealSource.Api -> {
+                check(commandAvailable("curl")) {
+                    "there is no curl on PATH (the request to the endpoint goes through curl)"
+                }
+                OpenAiCompatibleClient(LlmConfig.fromEnv())
+            }
         }
     }
 }

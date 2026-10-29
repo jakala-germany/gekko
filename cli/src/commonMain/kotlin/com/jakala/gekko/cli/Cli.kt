@@ -52,6 +52,7 @@ fun runCli(args: List<String>) {
                 LaunchCommand(),
                 RunCommand(),
                 CheckCommand(),
+                LlmCheckCommand(),
             )
     try {
         command.main(args)
@@ -398,7 +399,7 @@ private class RunCommand : DeviceCommand("run") {
                 metavar = "claude|opencode|api",
                 help =
                     "When an id is not found, ask a model which element fits the step's `say`; healed steps only warn. " +
-                        "claude and opencode use the local CLI, api uses the OpenAI-compatible endpoint (GEKKO_LLM_BASE_URL, GEKKO_LLM_MODEL, GEKKO_LLM_API_KEY)",
+                        "claude and opencode use the local CLI, api uses the OpenAI-compatible endpoint through curl (GEKKO_LLM_BASE_URL, GEKKO_LLM_MODEL, GEKKO_LLM_API_KEY, GEKKO_LLM_CA_CERT for a private CA)",
             )
             .choice(HealSource.entries.associateBy { it.key })
     val uninstall by
@@ -678,6 +679,32 @@ private class RunCommand : DeviceCommand("run") {
         val count = parts.getOrNull(1)?.toIntOrNull()
         if (index == null || count == null || index !in 1..count) fail("--shard must look like 1/3")
         return items.filterIndexed { position, _ -> position % count == index - 1 }
+    }
+}
+
+/** Asks the model of `--heal` one short question, so `GEKKO_LLM_*` (or the local CLI) can be tried without a device. */
+private class LlmCheckCommand : CliktCommand(name = "llm-check") {
+    val source by
+        option("--heal", metavar = "claude|opencode|api", help = "The model to try (default: api)")
+            .choice(HealSource.entries.associateBy { it.key })
+            .default(HealSource.Api)
+
+    override fun help(context: Context): String {
+        return "Ask the model of --heal one short question and print the answer: checks GEKKO_LLM_BASE_URL, GEKKO_LLM_MODEL, " +
+            "GEKKO_LLM_API_KEY and GEKKO_LLM_CA_CERT (or the local CLI) without a device; exit 3 when the model does not answer"
+    }
+
+    override fun run() {
+        val client =
+            try {
+                LlmClients.create(source)
+            } catch (error: IllegalStateException) {
+                echo("--heal ${source.key}: ${error.message}", err = true)
+                exitProcess(ExitCode.USAGE)
+            }
+        val answer = runBlocking { client.complete("Connectivity check. Answer with the single word: pong", "ping") }
+        check(answer.isNotBlank()) { "the model answered with nothing" }
+        echo("${source.key}: ok, the model answered: ${answer.trim().take(200)}")
     }
 }
 

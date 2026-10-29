@@ -9,6 +9,61 @@ import kotlin.test.assertTrue
 import kotlinx.coroutines.test.runTest
 
 class HealTest {
+    private val config = LlmConfig("https://llm.example/v1", "secret-key", "stub")
+
+    private fun api(status: Int, body: String, seen: MutableList<Pair<String, String>> = mutableListOf()): LlmClient {
+        return OpenAiCompatibleClient(config) { url, request ->
+            seen += url to request
+            HttpAnswer(status, body)
+        }
+    }
+
+    @Test
+    fun theApiClientPostsToTheChatEndpointAndReturnsTheContent() = runTest {
+        val seen = mutableListOf<Pair<String, String>>()
+        val client = api(200, """{"choices":[{"message":{"role":"assistant","content":"pong"}}]}""", seen)
+
+        assertEquals("pong", client.complete("system text", "user text"))
+
+        assertEquals("https://llm.example/v1/chat/completions", seen.single().first)
+        assertTrue(seen.single().second.contains(""""model":"stub""""))
+        assertTrue(seen.single().second.contains("user text"))
+    }
+
+    @Test
+    fun anErrorStatusNamesTheStatusAndTheMessageOfTheEndpoint() = runTest {
+        val failure =
+            assertFailsWith<IllegalStateException> {
+                api(401, """{"error":{"message":"Incorrect API key"}}""").complete("s", "u")
+            }
+
+        assertTrue(failure.message.orEmpty().contains("HTTP 401: Incorrect API key"))
+    }
+
+    @Test
+    fun anAnswerThatIsNoChatCompletionIsReportedWithItsStart() = runTest {
+        val failure =
+            assertFailsWith<IllegalStateException> { api(200, "<html>login required</html>").complete("s", "u") }
+
+        assertTrue(failure.message.orEmpty().contains("login required"))
+    }
+
+    @Test
+    fun curlExitCodesAreExplained() {
+        assertTrue(curlProblem(60).contains("GEKKO_LLM_CA_CERT"))
+        assertTrue(curlProblem(6).contains("host name"))
+        assertTrue(curlProblem(7).contains("refused"))
+        assertTrue(curlProblem(99).contains("curl exit 99"))
+    }
+
+    @Test
+    fun theApiSourceNeedsCurl() {
+        val failure =
+            assertFailsWith<IllegalStateException> { LlmClients.create(HealSource.Api, commandAvailable = { false }) }
+
+        assertTrue(failure.message.orEmpty().contains("curl"))
+    }
+
     private class FakeLlm(private val answer: String) : LlmClient {
         override suspend fun complete(system: String, user: String): String = answer
     }
