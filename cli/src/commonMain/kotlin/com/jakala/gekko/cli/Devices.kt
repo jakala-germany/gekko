@@ -181,6 +181,14 @@ interface Device {
         error("setLocation is not supported on this device")
     }
 
+    /**
+     * Switches the system runner on as the mock location app, so that it can answer for the location of a device that
+     * has no emulator console; the runner has to be installed.
+     */
+    fun allowMockLocation() {
+        error("setLocation is not supported on this device")
+    }
+
     /** Grants (true) or revokes (false) permissions of the app under test; keys are test-level names. */
     fun setPermissions(config: GekkoConfig, permissions: Map<String, Boolean>) {
         error("setPermissions is not supported on this device")
@@ -397,6 +405,13 @@ class AdbDevice(val serial: String?) : Device {
         val result = adb("emu", "geo", "fix", longitude.toString(), latitude.toString())
         check(result.exitCode == 0 && result.text.contains("OK")) {
             "setLocation works on Android emulators only: ${result.text}"
+        }
+    }
+
+    override fun allowMockLocation() {
+        val result = shell("appops", "set", Drivers.RUNNER_PACKAGE, "android:mock_location", "allow")
+        check(result.exitCode == 0 && !result.text.contains("Exception") && !result.text.startsWith("Error")) {
+            "Could not allow mock locations for the gekko system runner: ${result.text}"
         }
     }
 
@@ -620,6 +635,8 @@ class Drivers(
             is Command.Swipe -> durationMs
             is Command.TapAt,
             is Command.SetOrientation,
+            is Command.SetLocation,
+            Command.ClearLocation,
             Command.HideKeyboard,
             Command.Hello,
             Command.Metrics,

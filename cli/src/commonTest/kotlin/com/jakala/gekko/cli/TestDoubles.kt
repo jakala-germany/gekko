@@ -19,7 +19,24 @@ internal class FakeClient(private val answer: suspend (Command) -> Response) : C
     override fun close() {}
 }
 
-internal class FakeDevice(override val supportsWaitFor: Boolean, private val appRunning: Boolean? = null) : Device {
+internal class FakeDevice(
+    override val supportsWaitFor: Boolean,
+    private val appRunning: Boolean? = null,
+    /** An emulator or simulator takes the location from its console; a physical device does not have one. */
+    private val locationConsole: Boolean = true,
+) : Device {
+    val locations = mutableListOf<Pair<Double, Double>>()
+    var mockLocationAllowed = 0
+
+    override fun setLocation(latitude: Double, longitude: Double) {
+        check(locationConsole) { "setLocation works on Android emulators only" }
+        locations += latitude to longitude
+    }
+
+    override fun allowMockLocation() {
+        mockLocationAllowed++
+    }
+
     override fun isAppRunning(config: GekkoConfig): Boolean? {
         return appRunning
     }

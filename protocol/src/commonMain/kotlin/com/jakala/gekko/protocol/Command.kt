@@ -68,6 +68,14 @@ sealed interface Command {
     /** Closes the on-screen keyboard; the iOS agent serves it, on Android the CLI presses back over adb. */
     @Serializable @SerialName("hideKeyboard") data object HideKeyboard : Command
 
+    /** Mocks the location of the device with test location providers; only the Android system runner serves it. */
+    @Serializable
+    @SerialName("setLocation")
+    data class SetLocation(val latitude: Double, val longitude: Double) : Command
+
+    /** Ends the mock location of [SetLocation]; only the Android system runner serves it. */
+    @Serializable @SerialName("clearLocation") data object ClearLocation : Command
+
     /** Rotates the device; only the system runner serves it. */
     @Serializable @SerialName("setOrientation") data class SetOrientation(val landscape: Boolean) : Command
 

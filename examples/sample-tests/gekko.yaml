@@ -1,5 +1,6 @@
 app:
   android: com.jakala.gekko.sample
+  androidActivity: com.jakala.gekko.sample.MainActivity
   ios: com.jakala.gekko.sample
 android:
   runnerApk: ../../system-runner-android/build/outputs/apk/debug/system-runner-android-debug.apk

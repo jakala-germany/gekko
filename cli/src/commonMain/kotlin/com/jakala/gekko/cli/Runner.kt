@@ -123,6 +123,7 @@ class TestRunner(
 ) {
     private val heals = mutableListOf<HealRecord>()
     private var rotated = false
+    private var locationMocked = false
     private var currentTest = ""
     private var restoreSettings: () -> Unit = {}
     private val screenshots = mutableListOf<String>()
@@ -182,6 +183,10 @@ class TestRunner(
         if (rotated) {
             runCatching { drivers.send(Command.SetOrientation(false), forceSystem = true) }
             rotated = false
+        }
+        if (locationMocked) {
+            runCatching { drivers.send(Command.ClearLocation, forceSystem = true) }
+            locationMocked = false
         }
         runCatching { device.terminate(project.config) }
         runCatching { restoreSettings() }
@@ -688,8 +693,7 @@ class TestRunner(
             action.setDarkMode != null -> onDevice { restoreLater(device.setDarkMode(action.setDarkMode)) }
             action.setAirplaneMode != null -> onDevice { restoreLater(device.setAirplaneMode(action.setAirplaneMode)) }
             action.setOrientation != null -> setOrientation(action.setOrientation == "landscape")
-            action.setLocation != null ->
-                onDevice { device.setLocation(action.setLocation.latitude, action.setLocation.longitude) }
+            action.setLocation != null -> setLocation(action.setLocation.latitude, action.setLocation.longitude)
             action.setPermissions.isNotEmpty() ->
                 onDevice {
                     device.setPermissions(
@@ -745,6 +749,31 @@ class TestRunner(
     private suspend fun setOrientation(landscape: Boolean) {
         expectOk(drivers.send(Command.SetOrientation(landscape), forceSystem = true))
         rotated = landscape
+    }
+
+    /**
+     * An emulator or a simulator takes the location from its console. Any other Android device gets it from the system
+     * runner, which feeds Android's test location providers once the CLI has switched it on as the mock location app;
+     * it is cleared when the test ends. `GEKKO_MOCK_LOCATION=1` takes that way on an emulator too.
+     */
+    private suspend fun setLocation(latitude: Double, longitude: Double) {
+        if (env("GEKKO_MOCK_LOCATION") != "1") {
+            try {
+                device.setLocation(latitude, longitude)
+                return
+            } catch (error: IllegalStateException) {
+                if (platform != Platform.Android) {
+                    throw StepFailure(error.message ?: error.toString())
+                }
+            }
+        }
+        if (!locationMocked) {
+            // The runner has to be installed before appops can name it
+            drivers.send(Command.Hello, forceSystem = true)
+            onDevice { device.allowMockLocation() }
+        }
+        expectOk(drivers.send(Command.SetLocation(latitude, longitude), forceSystem = true))
+        locationMocked = true
     }
 
     /** Settings changed during a test are put back when it ends, like the ones from `device:`. */

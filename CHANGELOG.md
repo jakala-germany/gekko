@@ -6,6 +6,7 @@
 
 **New**
 
+- `setLocation` works on physical Android devices: the system runner feeds Android's mock location providers (`gps`, `network`), gekko switches it on as the mock location app with `appops` and ends the mock location when the test ends
 - `gekko llm-check` asks the model of `--heal` one short question and prints the answer, so `GEKKO_LLM_*` (or the local CLI) can be tried without a device
 - `GEKKO_LLM_CA_CERT` names the PEM file of a private CA for `--heal api`
 

@@ -20,7 +20,7 @@ xcrun simctl bootstatus "$UDID" -b
 
 "$GEKKO" --version
 "$GEKKO" install sample-ios/build/Sample.app --project examples/sample-tests --platform ios -s "$UDID"
-"$GEKKO" run --project examples/sample-tests --platform ios -s "$UDID" --exclude-tags broken \
+"$GEKKO" run --project examples/sample-tests --platform ios -s "$UDID" --exclude-tags broken,android-only \
   --junit "$OUT/junit.xml" --output "$OUT/results"
 
 status=0

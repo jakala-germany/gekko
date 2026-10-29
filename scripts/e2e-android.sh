@@ -23,6 +23,9 @@ adb install -r sample-android/build/outputs/apk/debug/sample-android-debug.apk
 "$GEKKO" run --project examples/sample-tests --exclude-tags broken,ios-only \
   --junit "$OUT/junit.xml" --output "$OUT/results"
 
+# The location of a physical device comes from the system runner; GEKKO_MOCK_LOCATION=1 takes that way on the emulator
+GEKKO_MOCK_LOCATION=1 "$GEKKO" run --project examples/sample-tests --tags android-only --output "$OUT/mock-location"
+
 # A failing test exits with 1 and leaves its artifacts; the exit code is part of the CLI contract
 status=0
 "$GEKKO" run --project examples/sample-tests --tags broken --output "$OUT/failing" || status=$?

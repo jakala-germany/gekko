@@ -34,6 +34,7 @@ import org.junit.Test
 class SystemRunnerTest {
     private val instrumentation = InstrumentationRegistry.getInstrumentation()
     private val device = UiDevice.getInstance(instrumentation)
+    private val mockLocation by lazy { MockLocation(instrumentation.targetContext) }
 
     @Test
     fun serve() {
@@ -152,6 +153,11 @@ class SystemRunnerTest {
                 }
             is Command.Scroll -> scroll(command)
             is Command.SetOrientation -> setOrientation(command.landscape)
+            is Command.SetLocation -> setLocation(command)
+            Command.ClearLocation -> {
+                mockLocation.clear()
+                Response.Ok
+            }
             is Command.Swipe -> {
                 device.swipe(command.fromX, command.fromY, command.toX, command.toY, SWIPE_STEPS)
                 Response.Ok
@@ -166,6 +172,18 @@ class SystemRunnerTest {
     /** The reading direction of the device; accessibility nodes do not tell it per window. */
     private fun isRtl(): Boolean {
         return instrumentation.targetContext.resources.configuration.layoutDirection == View.LAYOUT_DIRECTION_RTL
+    }
+
+    private fun setLocation(command: Command.SetLocation): Response {
+        return try {
+            mockLocation.set(command.latitude, command.longitude)
+            Response.Ok
+        } catch (error: SecurityException) {
+            Response.Error(
+                "Mock locations are not allowed for ${instrumentation.targetContext.packageName}: ${error.message}",
+                ErrorKind.REJECTED,
+            )
+        }
     }
 
     private fun setOrientation(landscape: Boolean): Response {

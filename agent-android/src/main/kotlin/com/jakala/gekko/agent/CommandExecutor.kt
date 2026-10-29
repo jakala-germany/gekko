@@ -34,6 +34,8 @@ internal class CommandExecutor(private val application: Application, private val
             Command.Screenshot -> unsupported("Screenshot is handled by the host CLI")
             is Command.SetOrientation -> unsupported("Rotating the device is served by the system runner")
             Command.HideKeyboard -> unsupported("The CLI closes the keyboard over adb")
+            is Command.SetLocation,
+            Command.ClearLocation -> unsupported("Mock locations are served by the system runner")
             is Command.WaitIdle -> waitIdle(command.timeoutMs)
             is Command.WaitFor -> waitFor(command)
             is Command.Tap -> tap(command)

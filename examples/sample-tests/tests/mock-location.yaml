@@ -1,0 +1,15 @@
+name: The device location can be set
+tags: [android-only]
+steps:
+  - say: Allow the location for the sample app
+    platform: android
+    do: { setPermissions: { location: allow } }
+  - say: Put the device in Hamburg
+    platform: android
+    do: { setLocation: { latitude: 53.5511, longitude: 9.9937 } }
+  # An emulator needs a moment for its first GPS fix, so the app is asked again
+  - say: Ask the sample app for its location
+    platform: android
+    do: { tap: { id: sample.locate } }
+    until: { assertVisible: { id: sample.location, textContains: "53.5511,9.9937" } }
+    attempts: 8

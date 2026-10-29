@@ -45,9 +45,10 @@ class RunnerTest {
         suggestIds: Boolean,
         log: MutableList<String> = mutableListOf(),
         healer: Healer? = null,
+        device: FakeDevice = FakeDevice(supportsWaitFor = true),
+        system: FakeClient = FakeClient { Response.Ok },
     ): TestRunner {
-        val device = FakeDevice(supportsWaitFor = true)
-        val drivers = Drivers(device, GekkoConfig(), agent = client, system = FakeClient { Response.Ok })
+        val drivers = Drivers(device, GekkoConfig(), agent = client, system = system)
         return TestRunner(
             Project("/tmp/gekko-runner-test", GekkoConfig()),
             platform,
@@ -109,6 +110,56 @@ class RunnerTest {
 
     private fun test(yaml: String): TestFile {
         return Yamls.parse(TestFile.serializer(), yaml.trimIndent())
+    }
+
+    private val locationTest =
+        """
+        name: Location
+        steps:
+          - say: Put the device in Hamburg
+            do: { setLocation: { latitude: 53.5511, longitude: 9.9937 } }
+        """
+
+    @Test
+    fun anEmulatorTakesTheLocationFromItsConsole() = runTest {
+        val device = FakeDevice(supportsWaitFor = true)
+        val system = FakeClient { Response.Ok }
+        val runner = runner(Platform.Android, agent(Response.Ok), suggestIds = false, device = device, system = system)
+
+        val result = runner.run(test(locationTest), "tests/location.yaml")
+
+        assertNull(result.failure)
+        assertEquals(listOf(53.5511 to 9.9937), device.locations)
+        assertEquals(0, device.mockLocationAllowed)
+        assertTrue(system.received.none { it is Command.SetLocation })
+    }
+
+    @Test
+    fun aPhysicalDeviceGetsTheLocationFromTheSystemRunnerAndItEndsWithTheTest() = runTest {
+        val device = FakeDevice(supportsWaitFor = true, locationConsole = false)
+        val system = FakeClient { Response.Ok }
+        val runner = runner(Platform.Android, agent(Response.Ok), suggestIds = false, device = device, system = system)
+
+        val result = runner.run(test(locationTest), "tests/location.yaml")
+
+        assertNull(result.failure)
+        assertEquals(1, device.mockLocationAllowed)
+        assertEquals(
+            listOf(Command.Hello, Command.SetLocation(53.5511, 9.9937), Command.ClearLocation),
+            system.received.filter { it == Command.Hello || it is Command.SetLocation || it == Command.ClearLocation },
+        )
+    }
+
+    @Test
+    fun aSimulatorThatCannotSetTheLocationFailsTheStep() = runTest {
+        val device = FakeDevice(supportsWaitFor = true, locationConsole = false)
+        val system = FakeClient { Response.Ok }
+        val runner = runner(Platform.Ios, agent(Response.Ok), suggestIds = false, device = device, system = system)
+
+        val result = runner.run(test(locationTest), "tests/location.yaml")
+
+        assertTrue(result.failure.orEmpty().contains("emulators only"))
+        assertTrue(system.received.none { it is Command.SetLocation })
     }
 
     @Test
