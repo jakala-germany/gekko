@@ -166,7 +166,7 @@ jobs:
           subject-path: 'release-assets/gekko-*'
 
       - name: 'Extract the release notes'
-        uses: ffurrer2/extract-release-notes@cae32133495112d23e3569ad04fef240ba4e7bc8 # v2.3.0
+        uses: ffurrer2/extract-release-notes@273da39a24fb7db106a35526c8162815faffd31d # v3.1.0
         with:
           release_notes_file: RELEASE_NOTES.md
 
