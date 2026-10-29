@@ -23,7 +23,7 @@
 #   - Pull requests from forks: the token of such a run is read-only whatever `permissions:` says, so the result check
 #     cannot be written there (the "Report the test results" step may fail without failing the job) and only the
 #     healed steps show up as annotations.
-#   - Pin `jakala-germany/setup-gekko-cli-action` to the commit SHA of its tag after you have checked that commit.
+#   - The action is pinned to the commit of its tag; add `.github/dependabot.yml` with `github-actions` so the pin is kept current.
 name: 'Run gekko tests'
 on:
   workflow_call:
@@ -113,9 +113,10 @@ jobs:
         run: ./gradlew "$APP_GRADLE_TASK"
 
       - name: 'Install the gekko CLI and the system runner'
-        # Tag = version. Pin the commit SHA of this tag after you have checked it (gh api repos/jakala-germany/setup-gekko-cli-action/commits/1.0.0 --jq .sha).
+        # Pinned to the commit of the tag 1.0.0 (gh api repos/jakala-germany/setup-gekko-cli-action/commits/1.0.0 --jq .sha); `version` is the gekko release.
+        # Dependabot (github-actions) proposes newer commits.
         # The action puts gekko on the PATH and exports GEKKO_RUNNER_APK; the inputs cli-sha256 and system-runner-sha256 pin the downloads.
-        uses: jakala-germany/setup-gekko-cli-action@1.0.0
+        uses: jakala-germany/setup-gekko-cli-action@c34cca53680da0aed1f4b32c9ccfe8913d371958 # 1.0.0
         with:
           version: '1.0.0'
 

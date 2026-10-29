@@ -36,7 +36,7 @@ Requirements: Android needs `adb` and an emulator or device; iOS needs macOS wit
 In CI the CLI and the runners come from the action [`jakala-germany/setup-gekko-cli-action`](https://github.com/jakala-germany/setup-gekko-cli-action) (not from `install.sh`, not from `gh release download` by hand). It installs them for the job, puts `gekko` on the `PATH`, exports `GEKKO_RUNNER_APK` (and with `ios: true` `GEKKO_IOS_RUNNER_DIR` and `GEKKO_IOS_AGENT`, which win over `gekko.yaml`) and removes everything when the job ends. The tag is the version; pin the commit of that tag in your workflows after you have checked it. The action verifies every download against the sha256 digest GitHub reports for the release asset and fails when it differs; the optional inputs `cli-sha256`, `system-runner-sha256`, `ios-runner-sha256` and `ios-agent-sha256` hard-pin a file (the hashes are in `SHA256SUMS` of the gekko release):
 
 ```yaml
-- uses: jakala-germany/setup-gekko-cli-action@1.0.0   # the tag is the gekko version; pin the commit SHA of this tag after you have checked it: gh api repos/jakala-germany/setup-gekko-cli-action/commits/1.0.0 --jq .sha
+- uses: jakala-germany/setup-gekko-cli-action@c34cca53680da0aed1f4b32c9ccfe8913d371958 # 1.0.0   # pin the commit of the tag, the tag is the gekko version: gh api repos/jakala-germany/setup-gekko-cli-action/commits/1.0.0 --jq .sha
   with:
     version: 1.0.0
     ios: false

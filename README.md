@@ -170,7 +170,7 @@ gekko --version
 - **CI:** [`jakala-germany/setup-gekko-cli-action`](https://github.com/jakala-germany/setup-gekko-cli-action) (its tag is the gekko version) installs the CLI and the runners from the release, puts `gekko` on the `PATH` and removes everything when the job is done:
 
 ```yaml
-- uses: jakala-germany/setup-gekko-cli-action@1.0.0
+- uses: jakala-germany/setup-gekko-cli-action@c34cca53680da0aed1f4b32c9ccfe8913d371958 # 1.0.0
   with:
     version: 1.0.0
     ios: true                                                   # also the iOS runner and agent (macOS runners)
