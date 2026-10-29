@@ -22,7 +22,7 @@ dependencies {
     implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.9.0")
     compileOnly("androidx.compose.ui:ui:1.11.4")
 
-    testImplementation("org.jetbrains.kotlin:kotlin-test-junit:2.4.20")
+    testImplementation("org.jetbrains.kotlin:kotlin-test-junit:2.4.21")
     testImplementation("junit:junit:4.13.2")
     testImplementation("androidx.compose.ui:ui:1.11.4")
 }
