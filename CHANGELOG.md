@@ -2,7 +2,19 @@
 
 ## [Snapshot]
 
-[Snapshot]: https://github.com/jakala-germany/gekko/compare/1.0.0...HEAD
+[Snapshot]: https://github.com/jakala-germany/gekko/compare/1.1.0...HEAD
+
+**New**
+
+- Upcoming additions go here
+
+**Changed**
+
+- Upcoming changes go here
+
+## [1.1.0]
+
+[1.1.0]: https://github.com/jakala-germany/gekko/compare/1.0.0...1.1.0
 
 **New**
 
