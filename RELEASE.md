@@ -43,8 +43,11 @@ created by release managers (repository ruleset), and releases are immutable (Se
     - the GitHub release has all assets, `gh attestation verify gekko-macos-arm64 --repo jakala-germany/gekko` passes;
     - central.sonatype.com → Deployments shows the deployment as published (the artifacts appear on
       search.maven.org after about half an hour);
-    - the install script works with the new version: `curl -fsSL https://raw.githubusercontent.com/jakala-germany/gekko/X.Y.Z/scripts/install.sh | bash -s -- X.Y.Z && gekko --version`;
-    - `jakala-germany/setup-gekko-cli-action` has a tag for the version (see its README).
+    - the install script works with the new version: `curl -fsSL https://raw.githubusercontent.com/jakala-germany/gekko/X.Y.Z/scripts/install.sh | bash -s -- X.Y.Z && gekko --version`.
+
+7. Release the setup action with the same version, after the GitHub release is published: follow the `RELEASE.md` of
+   `jakala-germany/setup-gekko-cli-action`. Then replace the pinned commit and the version in `README.md`,
+   `skills/gekko-setup/` and its workflow templates (`gh api repos/jakala-germany/setup-gekko-cli-action/commits/X.Y.Z --jq .sha`).
 
 ## When something fails
 
