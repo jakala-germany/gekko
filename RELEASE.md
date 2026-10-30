@@ -22,10 +22,11 @@ created by release managers (repository ruleset), and releases are immutable (Se
 2. Update `CHANGELOG.md`:
     1. Change `Snapshot` to the version that is released, e.g. `[1.2.0]`.
     2. Point its link at the release: `[1.2.0]: https://github.com/jakala-germany/gekko/compare/1.1.0...1.2.0`.
-    3. Add a new `Snapshot` section on the top, with the link `[Snapshot]: https://github.com/jakala-germany/gekko/compare/1.2.0...HEAD`.
+    3. Add a new `Snapshot` section on the top, with the link `[Snapshot]: https://github.com/jakala-germany/gekko/compare/1.2.0...HEAD`
+       and the placeholders `**New**` / `- Upcoming additions go here` and `**Changed**` / `- Upcoming changes go here`.
        The workflow takes the release notes from the section below `Snapshot`.
 
-3. Commit and push to `main`: `git commit -am "Prepare release X.Y.Z" && git push`.
+3. Commit and push to `main`: `git commit -am "Release X.Y.Z" && git push`.
 
 4. Wait for CI on that commit, then tag exactly that commit and push only the tag:
    `git tag -am "Release X.Y.Z" X.Y.Z && git push origin X.Y.Z`
