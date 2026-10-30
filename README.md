@@ -160,7 +160,7 @@ env: [TEST_USER, TEST_PASSWORD]   # the only variables tests may read with ${env
 ## Installing
 
 ```
-curl -fsSL https://raw.githubusercontent.com/jakala-germany/gekko/1.0.0/scripts/install.sh | bash -s -- 1.0.0
+curl -fsSL https://raw.githubusercontent.com/jakala-germany/gekko/1.1.0/scripts/install.sh | bash -s -- 1.1.0
 gekko --version
 ```
 
@@ -170,9 +170,9 @@ gekko --version
 - **CI:** [`jakala-germany/setup-gekko-cli-action`](https://github.com/jakala-germany/setup-gekko-cli-action) (its tag is the gekko version) installs the CLI and the runners from the release, puts `gekko` on the `PATH` and removes everything when the job is done:
 
 ```yaml
-- uses: jakala-germany/setup-gekko-cli-action@c34cca53680da0aed1f4b32c9ccfe8913d371958 # 1.0.0
+- uses: jakala-germany/setup-gekko-cli-action@d31cf2318a7d39bc2c38c484c7353ca30bb5739f # 1.1.0
   with:
-    version: 1.0.0
+    version: 1.1.0
     ios: true                                                   # also the iOS runner and agent (macOS runners)
 - run: gekko run --tags smoke
 ```
@@ -187,10 +187,10 @@ Every download is verified against the sha256 digest GitHub reports for the rele
 
 - **Android.** Apply the Gradle plugin to the app module (Maven Central; `mavenCentral()` must be in `pluginManagement` and `dependencyResolutionManagement` repositories). It adds the agent to the variants you list; the agent starts itself and needs no app code:
   ```kotlin
-  plugins { id("io.github.jakala-germany.gekko") version "1.0.0" }
+  plugins { id("io.github.jakala-germany.gekko") version "1.1.0" }
   gekko { variants.set(listOf("debug")) }   // build types or full variant names such as stagingDebug; default: debug
   ```
-  Without the plugin, depend on the agent directly: `debugImplementation("io.github.jakala-germany:gekko-agent-android:1.0.0")`. The other artifacts are `gekko-protocol`, `gekko-transport-jvm` and `gekko-gradle-plugin` (group `io.github.jakala-germany`). Kotlin and Swift sources keep the package `com.jakala.gekko`.
+  Without the plugin, depend on the agent directly: `debugImplementation("io.github.jakala-germany:gekko-agent-android:1.1.0")`. The other artifacts are `gekko-protocol`, `gekko-transport-jvm` and `gekko-gradle-plugin` (group `io.github.jakala-germany`). Kotlin and Swift sources keep the package `com.jakala.gekko`.
 - **iOS.** Nothing in the app: the CLI injects `GekkoAgent.framework` into the **simulator** app at launch (a Debug simulator build, also one that CI archived and zipped; `gekko install` unpacks the zip and installs the `.app` with the configured bundle id). Ask for the agent with `ios.agentFramework: installed` (or `GEKKO_IOS_AGENT`). The agent stays dormant unless the CLI starts the app (it needs `GEKKO_PORT` and `GEKKO_TOKEN`), so an app started from Xcode or the home screen has no agent. Add `.accessibilityIdentifier(...)` with the same strings as the Android test tags.
 - **Versions.** The CLI refuses an agent or system runner with another protocol number and says what to update (the Gradle plugin and a rebuild, or the CLI). Keep the plugin version and the CLI version in step.
 - **Skills.** `gekko-setup` wires an Android app, an iOS app or a test repo (including CI workflows); `gekko-author` is the daily loop for writing and repairing tests with Claude.

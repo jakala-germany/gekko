@@ -113,12 +113,12 @@ jobs:
         run: ./gradlew "$APP_GRADLE_TASK"
 
       - name: 'Install the gekko CLI and the system runner'
-        # Pinned to the commit of the tag 1.0.0 (gh api repos/jakala-germany/setup-gekko-cli-action/commits/1.0.0 --jq .sha); `version` is the gekko release.
+        # Pinned to the commit of the tag 1.1.0 (gh api repos/jakala-germany/setup-gekko-cli-action/commits/1.1.0 --jq .sha); `version` is the gekko release.
         # Dependabot (github-actions) proposes newer commits.
         # The action puts gekko on the PATH and exports GEKKO_RUNNER_APK; the inputs cli-sha256 and system-runner-sha256 pin the downloads.
-        uses: jakala-germany/setup-gekko-cli-action@c34cca53680da0aed1f4b32c9ccfe8913d371958 # 1.0.0
+        uses: jakala-germany/setup-gekko-cli-action@d31cf2318a7d39bc2c38c484c7353ca30bb5739f # 1.1.0
         with:
-          version: '1.0.0'
+          version: '1.1.0'
 
       - name: 'Check the tests'
         # Reads every test and flow without a device: a broken file or a missing value fails here in seconds (exit code

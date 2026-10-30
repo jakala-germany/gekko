@@ -21,10 +21,10 @@ Everything here is additive and reversible; show the user the diff when done. Ne
 
 ## Install gekko
 
-Locally (macOS arm64 or Linux x64), with the install script of the release (pin the version in the URL and in the argument, `latest` is the default; from a checkout run `scripts/install.sh 1.0.0`):
+Locally (macOS arm64 or Linux x64), with the install script of the release (pin the version in the URL and in the argument, `latest` is the default; from a checkout run `scripts/install.sh 1.1.0`):
 
 ```
-curl -fsSL https://raw.githubusercontent.com/jakala-germany/gekko/1.0.0/scripts/install.sh | bash -s -- 1.0.0
+curl -fsSL https://raw.githubusercontent.com/jakala-germany/gekko/1.1.0/scripts/install.sh | bash -s -- 1.1.0
 gekko --version
 gekko devices                              # attached adb devices and booted simulators
 ```
@@ -36,9 +36,9 @@ Requirements: Android needs `adb` and an emulator or device; iOS needs macOS wit
 In CI the CLI and the runners come from the action [`jakala-germany/setup-gekko-cli-action`](https://github.com/jakala-germany/setup-gekko-cli-action) (not from `install.sh`, not from `gh release download` by hand). It installs them for the job, puts `gekko` on the `PATH`, exports `GEKKO_RUNNER_APK` (and with `ios: true` `GEKKO_IOS_RUNNER_DIR` and `GEKKO_IOS_AGENT`, which win over `gekko.yaml`) and removes everything when the job ends. The tag is the version; pin the commit of that tag in your workflows after you have checked it. The action verifies every download against the sha256 digest GitHub reports for the release asset and fails when it differs; the optional inputs `cli-sha256`, `system-runner-sha256`, `ios-runner-sha256` and `ios-agent-sha256` hard-pin a file (the hashes are in `SHA256SUMS` of the gekko release):
 
 ```yaml
-- uses: jakala-germany/setup-gekko-cli-action@c34cca53680da0aed1f4b32c9ccfe8913d371958 # 1.0.0   # pin the commit of the tag, the tag is the gekko version: gh api repos/jakala-germany/setup-gekko-cli-action/commits/1.0.0 --jq .sha
+- uses: jakala-germany/setup-gekko-cli-action@d31cf2318a7d39bc2c38c484c7353ca30bb5739f # 1.1.0   # pin the commit of the tag, the tag is the gekko version: gh api repos/jakala-germany/setup-gekko-cli-action/commits/1.1.0 --jq .sha
   with:
-    version: 1.0.0
+    version: 1.1.0
     ios: false
 ```
 
@@ -50,7 +50,7 @@ The in-process agent ships as `io.github.jakala-germany:gekko-agent-android` (Ma
 2. Add the plugin to the app module (the version is the gekko release, the same as the CLI):
    ```kotlin
    plugins {
-       id("io.github.jakala-germany.gekko") version "1.0.0"
+       id("io.github.jakala-germany.gekko") version "1.1.0"
    }
 
    gekko { variants.set(listOf("debug")) }   // build types or variant names that get the agent; default: debug
