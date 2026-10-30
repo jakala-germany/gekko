@@ -76,7 +76,7 @@ Details: `skills/gekko-author/references/format.md`.
 
 ```
 gekko --version
-gekko devices                                      # adb serials and booted simulators
+gekko devices                                      # adb serials, booted simulators and iPhones on a USB cable
 gekko check                                        # read all tests and flows without a device
 gekko install build.zip -s <serial|UDID>          # install an .apk, an .app or a zip with an .app (CI build products)
 gekko uninstall -s <serial|UDID>                   # remove the app, the system runner and the port forwards
@@ -87,14 +87,14 @@ gekko run --tags smoke --exclude-tags slow         # --exclude-tags is applied a
 gekko run tests/search.yaml --platform ios -s <UDID> --junit out.xml
 gekko run --shard 2/4 --junit shard-2.xml          # every 4th selected test, starting with the second
 gekko run --devices emulator-5554,emulator-5556 --tags smoke       # spread tests over devices
-gekko run --devices all --every-device             # every attached device and booted simulator runs every test
+gekko run --devices all --every-device             # every attached device, booted simulator and iPhone runs every test
 gekko run --app build.zip ...                       # install the build first, then run (or --install to use ios.app / android.apk)
 gekko run --uninstall ...                          # clean the device up when the run is done
 gekko run --record failures ...                    # none, failures or all: video.mp4 next to screenshot.png and tree.txt
 gekko run --heal api --junit junit.xml --junit-healed junit-healed.xml ...   # healed steps as failures in a second JUnit file
 ```
 
-`-s` takes an adb serial or a simulator UDID (the UDID of a booted simulator selects iOS by itself); `--platform android|ios` and `--project DIR` (the directory with `gekko.yaml`) work on every device command. `gekko run` validates all tests and flows like `gekko check` before it starts, writes failure artifacts to `--output` (default `gekko-results/<test>/`: `screenshot.png`, `tree.txt`, `failure.json` with `kind` `test` or `infrastructure`, optional `video.mp4`) and exits with:
+`-s` takes an adb serial or a simulator or iPhone UDID (the UDID of a booted simulator or a connected iPhone selects iOS by itself); `--platform android|ios` and `--project DIR` (the directory with `gekko.yaml`) work on every device command. `gekko run` validates all tests and flows like `gekko check` before it starts, writes failure artifacts to `--output` (default `gekko-results/<test>/`: `screenshot.png`, `tree.txt`, `failure.json` with `kind` `test` or `infrastructure`, optional `video.mp4`) and exits with:
 
 | Exit code | Meaning |
 |---|---|
@@ -104,7 +104,7 @@ gekko run --heal api --junit junit.xml --junit-healed junit-healed.xml ...   # h
 | 3 | Device, agent or system runner problem, or the app crashed. |
 
 - **Fresh start.** Every test starts from cleared app data and quits the app when it is done.
-- **Parallel.** Every device gets its own connection (Android: adb forwards the private socket to a free host port; iOS simulators: a stable port per UDID), so Android and iOS, or several devices, run at the same time. `--devices` takes serials and UDIDs, or `all` for every attached device and booted simulator, and hands the tests to the first free device of each platform. Without `--every-device` the devices of one platform share the tests (each test runs once per platform), so with Android and iOS devices together every test runs on both platforms. With `--every-device` every device runs every test instead, and the run passes only when every test passes on every device. Artifacts go to `<output>/<device id>/<test>/`.
+- **Parallel.** Every device gets its own connection (Android: adb forwards the private socket to a free host port; iOS simulators: a stable port per UDID; iPhones: a usbmuxd forward to a free local port), so Android and iOS, or several devices, run at the same time. `--devices` takes serials and UDIDs, or `all` for every attached device, booted simulator and iPhone, and hands the tests to the first free device of each platform. Without `--every-device` the devices of one platform share the tests (each test runs once per platform), so with Android and iOS devices together every test runs on both platforms. With `--every-device` every device runs every test instead, and the run passes only when every test passes on every device. Artifacts go to `<output>/<device id>/<test>/`.
 
   ![gekko deals test files from a work queue to a Pixel phone, an Android emulator and an iOS simulator at the same time.](docs/img/parallel-runs.png)
 
@@ -145,6 +145,8 @@ ios:
   app: builds/App.zip             # an .app or a zip with an .app
   runnerDir: installed            # or a path; GEKKO_IOS_RUNNER_DIR wins. Left out, the installed runner is found anyway
   agentFramework: installed       # inject the installed agent into the simulator app; or a path; GEKKO_IOS_AGENT wins
+  deviceApp: builds/Device.ipa    # iPhones: a signed iphoneos build with the GekkoAgent package (.app, .ipa or a zip)
+  deviceRunnerDir: installed      # iPhones: the runner built with build-ios-runner.sh --device; GEKKO_IOS_DEVICE_RUNNER_DIR wins
 device:                   # applied to the device before the app starts, restored after the test
   language: de-DE         # app language (Android per-app locale, iOS launch arguments)
   timeFormat: 24h         # 12h or 24h; a time picker takes 20 only in 24h mode
@@ -192,20 +194,32 @@ Every download is verified against the sha256 digest GitHub reports for the rele
   ```
   Without the plugin, depend on the agent directly: `debugImplementation("io.github.jakala-germany:gekko-agent-android:1.0.0")`. The other artifacts are `gekko-protocol`, `gekko-transport-jvm` and `gekko-gradle-plugin` (group `io.github.jakala-germany`). Kotlin and Swift sources keep the package `com.jakala.gekko`.
 - **iOS.** Nothing in the app: the CLI injects `GekkoAgent.framework` into the **simulator** app at launch (a Debug simulator build, also one that CI archived and zipped; `gekko install` unpacks the zip and installs the `.app` with the configured bundle id). Ask for the agent with `ios.agentFramework: installed` (or `GEKKO_IOS_AGENT`). The agent stays dormant unless the CLI starts the app (it needs `GEKKO_PORT` and `GEKKO_TOKEN`), so an app started from Xcode or the home screen has no agent. Add `.accessibilityIdentifier(...)` with the same strings as the Android test tags.
+- **iPhone.** A device build is signed, so the agent cannot be injected: see [iPhones](#iphones-physical-devices).
 - **Versions.** The CLI refuses an agent or system runner with another protocol number and says what to update (the Gradle plugin and a rebuild, or the CLI). Keep the plugin version and the CLI version in step.
 - **Skills.** `gekko-setup` wires an Android app, an iOS app or a test repo (including CI workflows); `gekko-author` is the daily loop for writing and repairing tests with Claude.
+
+### iPhones (physical devices)
+
+An iPhone on a USB cable works with `-s <UDID>`, `--devices` and `gekko devices` (`ios <UDID> (physical)`) like a simulator, with these differences:
+
+- **Needs.** Xcode 27 (gekko runs `xcrun devicectl`), iOS 17 or newer, a USB cable, Developer Mode on, *Settings › Developer › Enable UI Automation* on, the phone unlocked (set Auto-Lock to *Never* for the run) and an Apple developer team that can sign for it (Xcode signed in to that team: the runner and the app are built with automatic signing).
+- **The app.** A device build is signed, so gekko cannot inject the agent as it does on simulators. Add the `GekkoAgent` product of this Swift package to the **debug** configuration of the app (never to a build for users) and build it for the device (`Debug-iphoneos`). Name the build in `ios.deviceApp` (an `.app`, an `.ipa` or a zip with an `.app`) or pass it with `--app`. The agent stays dormant until gekko starts the app.
+- **The system runner.** It is signed for your team and therefore not part of the release: build it once with `scripts/build-ios-runner.sh --device --team TEAMID --install` (needs `xcodegen`; the bundle prefix defaults to `gekko.<teamid>` so it never claims App IDs of another team). `ios.deviceRunnerDir` or `GEKKO_IOS_DEVICE_RUNNER_DIR` name another place.
+- **Fresh start.** Nothing can clear the data of one app on a phone from outside, so every test uninstalls and reinstalls the build (`ios.deviceApp` or `--app` is needed). That also resets the permissions; the keychain survives an uninstall.
+- **What does not work.** `--record`, `setPermissions` and `ios.permissions` fail with a message (answer the permission prompt with `tap: { text: Allow, system: true }`), and the Android-only actions stay Android only.
+- **Try it.** `scripts/e2e-ios-device.sh -s <UDID> --team <TEAMID>` builds the sample app and the runner, runs the sample tests and leaves everything in `build/e2e-device/`. A run with `GEKKO_DEBUG=1` logs every `devicectl` call.
 
 ## Security
 
 - **The agent belongs in the variants you list, never in a build for users.** It can tap anything and read the whole UI; a store build that contains it is a remote control for the app. Listing a non-debuggable variant ships the agent in that build, and that is the developer's decision.
-- **Command servers are not reachable by other apps.** On Android the agent and the runner listen on private abstract Unix sockets (`gekko-<appId>`, `gekko-system-runner`) reached through `adb forward`: only adb (shell), root and the app itself may connect, and the agent adds no INTERNET permission. iOS simulators use loopback with a port per simulator; every request needs the per-user token in `~/.gekko/token` (readable by that user only) and a loopback `Host` header without an `Origin`, so other users and web pages are turned away.
+- **Command servers are not reachable by other apps.** On Android the agent and the runner listen on private abstract Unix sockets (`gekko-<appId>`, `gekko-system-runner`) reached through `adb forward`: only adb (shell), root and the app itself may connect, and the agent adds no INTERNET permission. iOS simulators use loopback with a port per simulator; on an iPhone the agent and the runner listen on the phone's own loopback and the CLI reaches them through usbmuxd (the USB connection of Xcode), so no network port is open. On both, every request needs the per-user token in `~/.gekko/token` (readable by that user only) and a loopback `Host` header without an `Origin`, so other users and web pages are turned away.
 - **Test credentials** belong in the environment (`env:` in `gekko.yaml`), never in YAML. Add `.env` and `gekko-results/` to `.gitignore` (the test-repo template of `gekko-setup` does). Values are masked in text output; screenshots and videos are not masked.
 
 ## Requirements
 
 - **Host:** macOS arm64 or Linux x64 (iOS needs macOS). The CLI is a native binary and needs no JVM; it starts `adb`, `xcrun`, `unzip` and `perl` (a time limit for every process it starts), which macOS and most Linux distributions have.
 - **Android:** `adb` on the `PATH`; the agent needs minSdk 26 (this may be lowered later). Tested with AGP 9.x, Gradle 9.x and Kotlin 2.4.
-- **iOS:** simulators only, iOS 15 or newer; Xcode with a simulator (gekko runs `xcrun simctl` and `xcodebuild test-without-building`). Building the runners from source additionally needs `xcodegen`; users take them from the release.
+- **iOS:** simulators with iOS 15 or newer; Xcode with a simulator (gekko runs `xcrun simctl` and `xcodebuild test-without-building`). iPhones: Xcode 27 (`xcrun devicectl`), iOS 17 or newer, USB, see [iPhones](#iphones-physical-devices). Building the runners from source additionally needs `xcodegen`; users take the simulator runner from the release.
 - **Compatibility from 1.0 (semver):** the YAML format, `gekko.yaml`, CLI commands, flags and exit codes, the documented environment variables (not the diagnostic and internal ones, see "Limits"), the Gradle plugin DSL and the Maven coordinates. The protocol between CLI and agents is internal and versioned by its own number.
 
 ## Repository layout
@@ -222,7 +236,7 @@ Every download is verified against the sha256 digest GitHub reports for the rele
 | `cli/` | The `gekko` CLI |
 | `sample-android/`, `sample-ios/`, `examples/` | Sample apps and tests; CI runs them end to end |
 | `skills/` | Claude skills `gekko-setup` and `gekko-author`, with the test-repo and workflow templates |
-| `scripts/` | `install.sh` (the installer), `build-ios-runner.sh`, `build-sample-ios.sh`, `e2e-android.sh`, `e2e-ios.sh`, `check-hygiene.sh` |
+| `scripts/` | `install.sh` (the installer), `build-ios-runner.sh`, `build-sample-ios.sh`, `build-sample-ios-device.sh`, `e2e-android.sh`, `e2e-ios.sh`, `e2e-ios-device.sh`, `check-hygiene.sh` |
 
 ## Build
 
@@ -234,6 +248,7 @@ Every download is verified against the sha256 digest GitHub reports for the rele
 ./scripts/build-sample-ios.sh        # sample-ios/build/Sample.app
 ./scripts/build-ios-runner.sh        # dist/gekko-ios-runner and dist/gekko-ios-agent (needs `brew install xcodegen`)
 ./scripts/e2e-android.sh             # e2e-ios.sh: the sample tests on a running emulator or a booted simulator
+./scripts/e2e-ios-device.sh -s <UDID> --team <TEAMID>   # the sample tests on an iPhone on a USB cable
 ./scripts/check-hygiene.sh           # no secrets or internal names in the tracked files
 ```
 
@@ -257,11 +272,11 @@ A release is a tag `X.Y.Z` on `main`. `.github/workflows/release.yml` runs the c
 
 ## Limits
 
-- iOS works on **simulators only** in 1.0.
+- iOS works on simulators and on iPhones on a USB cable ([iPhones](#iphones-physical-devices)); an iPhone that is only on Wi-Fi cannot be reached.
 - The agent needs ids. Missing ids can be worked around with `--heal`, but the durable fix is a tag or identifier in the app.
 - On iOS a tap through accessibility can be a no-op for SwiftUI tap gestures; retries (`attempts` with `until`) and `--heal` use a real touch through the system runner.
-- Some actions are Android only: `back`, `pressKey`, `setAirplaneMode`, `launchPackage`, `stopPackage`; limit such steps with `platform: android`. `setLocation` works on emulators (console), physical devices (the system runner feeds Android's mock location providers; no setting needed) and iOS simulators.
-- Environment variables: `GEKKO_RUNNER_APK`, `GEKKO_IOS_RUNNER_DIR`, `GEKKO_IOS_AGENT` (win over `gekko.yaml`), `GEKKO_HOME` (where the installed runners are, `$GEKKO_HOME/runners`; default `~/.gekko`), `GEKKO_LLM_BASE_URL`, `GEKKO_LLM_MODEL`, `GEKKO_LLM_API_KEY`, `GEKKO_LLM_CA_CERT`, `GEKKO_HEAL_MODEL`, `GEKKO_HEAL_AGENT`, `GEKKO_OPENCODE_COMMAND`. For the install script (besides `GEKKO_HOME`): `GEKKO_BIN_DIR` (default `~/.local/bin`), `GEKKO_VERIFY_ATTESTATION` and `GEKKO_RELEASE_BASE_URL` (the CLI does not read them). `GEKKO_DEBUG` (logs the driver per command and the steps skipped on this platform), `GEKKO_MOCK_LOCATION=1` (`setLocation` uses the system runner on an emulator too) and `GEKKO_HEAL_DEBUG` (a directory that receives the heal prompts) are for diagnosing. `GEKKO_PORT`, `GEKKO_TOKEN`, `GEKKO_TARGET_BUNDLE_ID` (the CLI sets them for the iOS agent and runner) and `GEKKO_TAP_VERIFY` (a switch of the iOS agent) are internal: do not set them yourself. The diagnostic and internal variables are not covered by the compatibility promise.
+- Some actions are Android only: `back`, `pressKey`, `setAirplaneMode`, `launchPackage`, `stopPackage`; limit such steps with `platform: android`. `setLocation` works on emulators (console), physical devices (the system runner feeds Android's mock location providers; no setting needed), iOS simulators and iPhones (`devicectl`; ended when the test ends).
+- Environment variables: `GEKKO_RUNNER_APK`, `GEKKO_IOS_RUNNER_DIR`, `GEKKO_IOS_DEVICE_RUNNER_DIR`, `GEKKO_IOS_AGENT` (win over `gekko.yaml`), `GEKKO_HOME` (where the installed runners are, `$GEKKO_HOME/runners`; default `~/.gekko`), `GEKKO_LLM_BASE_URL`, `GEKKO_LLM_MODEL`, `GEKKO_LLM_API_KEY`, `GEKKO_LLM_CA_CERT`, `GEKKO_HEAL_MODEL`, `GEKKO_HEAL_AGENT`, `GEKKO_OPENCODE_COMMAND`. For the install script (besides `GEKKO_HOME`): `GEKKO_BIN_DIR` (default `~/.local/bin`), `GEKKO_VERIFY_ATTESTATION` and `GEKKO_RELEASE_BASE_URL` (the CLI does not read them). `GEKKO_DEBUG` (logs the driver per command and the steps skipped on this platform), `GEKKO_MOCK_LOCATION=1` (`setLocation` uses the system runner on an emulator too) and `GEKKO_HEAL_DEBUG` (a directory that receives the heal prompts) are for diagnosing. `GEKKO_PORT`, `GEKKO_TOKEN`, `GEKKO_TARGET_BUNDLE_ID` (the CLI sets them for the iOS agent and runner) and `GEKKO_TAP_VERIFY` (a switch of the iOS agent) are internal: do not set them yourself. The diagnostic and internal variables are not covered by the compatibility promise.
 - A page with an endless animation (Lottie, spinner) never gets idle. The Android agent waits at most 500 ms for idle before it looks for the element, so such pages cost no more than that per step. A loading skeleton that is not a progress indicator counts as a settled screen after `settleMs`; raise `settleMs` for slow networks.
 
 ## License

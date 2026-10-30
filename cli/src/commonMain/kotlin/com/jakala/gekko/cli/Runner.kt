@@ -227,7 +227,10 @@ class TestRunner(
     private suspend fun freshStart(settings: DeviceSettings) {
         restoreSettings = device.freshStart(project.config, settings)
         if (!drivers.waitForAgent(AGENT_START_TIMEOUT_MS)) {
-            throw InfrastructureException("In-process agent did not respond; is the gekko agent part of this build?")
+            throw InfrastructureException(
+                "In-process agent did not respond; is the gekko agent part of this build?" +
+                    device.agentHint?.let { " $it" }.orEmpty()
+            )
         }
         drivers.waitForForeground(AGENT_START_TIMEOUT_MS)
     }
@@ -760,6 +763,8 @@ class TestRunner(
         if (env("GEKKO_MOCK_LOCATION") != "1") {
             try {
                 device.setLocation(latitude, longitude)
+                // A physical device keeps a simulated position until it is told otherwise
+                restoreLater { device.clearLocation() }
                 return
             } catch (error: IllegalStateException) {
                 if (platform != Platform.Android) {
@@ -793,7 +798,9 @@ class TestRunner(
             device.launch(project.config, spec.arguments)
         }
         if (!drivers.waitForAgent(AGENT_START_TIMEOUT_MS)) {
-            throw StepFailure("In-process agent did not respond after launching the app")
+            throw StepFailure(
+                "In-process agent did not respond after launching the app" + device.agentHint?.let { ". $it" }.orEmpty()
+            )
         }
         drivers.waitForForeground(AGENT_START_TIMEOUT_MS)
     }

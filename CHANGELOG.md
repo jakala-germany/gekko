@@ -6,12 +6,16 @@
 
 **New**
 
+- iPhones on a USB cable are supported (`-s <UDID>`, `--devices`, `gekko devices` lists them as `ios <UDID> (physical)`): gekko installs, launches, screenshots and sets dark mode and location through `xcrun devicectl` (Xcode 27, iOS 17 or later) and reaches the agent and the XCUITest runner through usbmuxd, so nothing listens on the network. The app links the `GekkoAgent` package in its debug build (a signed build cannot get the agent injected); a fresh start reinstalls `ios.deviceApp` (or `--app`, which also takes an `.ipa`); the runner is built for the team with `scripts/build-ios-runner.sh --device --team TEAMID --install`. `--record` and `setPermissions` are not available on an iPhone. `scripts/e2e-ios-device.sh` tries the sample tests on a phone
+- New settings `ios.deviceApp` and `ios.deviceRunnerDir` (`GEKKO_IOS_DEVICE_RUNNER_DIR`)
 - `setLocation` works on physical Android devices: the system runner feeds Android's mock location providers (`gps`, `network`), gekko switches it on as the mock location app with `appops` and ends the mock location when the test ends
 - `gekko llm-check` asks the model of `--heal` one short question and prints the answer, so `GEKKO_LLM_*` (or the local CLI) can be tried without a device
 - `GEKKO_LLM_CA_CERT` names the PEM file of a private CA for `--heal api`
 
 **Changed**
 
+- `setLocation` ends the simulated position when the test ends on iOS simulators too (it used to stay set)
+- A system runner that does not start now shows the tail of its log in the error
 - `--heal api` works over `https://` in the native binary: the request goes through `curl`, because Ktor CIO has no TLS on Kotlin/Native (the heal failed with "TLS sessions are not supported on Native platform"). `curl` must be on the `PATH`
 
 ## [1.0.0]

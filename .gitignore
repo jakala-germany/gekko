@@ -21,3 +21,4 @@ RELEASE_NOTES.md
 *.p12
 *.mobileprovision
 .hygiene-denylist
+build-device/

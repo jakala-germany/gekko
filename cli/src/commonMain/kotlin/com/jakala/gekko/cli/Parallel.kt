@@ -33,11 +33,11 @@ suspend fun <T> replicate(items: List<T>, workerCount: Int, work: suspend (worke
     }
 }
 
-class DeviceRef(val platform: Platform, val id: String) {
+class DeviceRef(val platform: Platform, val id: String, val physical: Boolean = false) {
     fun create(): Device {
         return when (platform) {
             Platform.Android -> AdbDevice(id)
-            Platform.Ios -> SimctlDevice(id)
+            Platform.Ios -> if (physical) PhysicalIosDevice(id) else SimctlDevice(id)
         }
     }
 }
@@ -46,25 +46,35 @@ object DeviceResolver {
     const val ALL = "all"
 
     /**
-     * Maps adb serials and booted simulator UDIDs to devices; `all` stands for every attached device and booted
-     * simulator, unknown ids are an error listing what is available.
+     * Maps adb serials, booted simulator UDIDs and the UDIDs of iPhones on a USB cable to devices; `all` stands for
+     * every attached device, booted simulator and iPhone, unknown ids are an error listing what is available.
      */
-    fun resolve(ids: List<String>, androidSerials: List<String>, simulatorUdids: List<String>): List<DeviceRef> {
+    fun resolve(
+        ids: List<String>,
+        androidSerials: List<String>,
+        simulatorUdids: List<String>,
+        physicalUdids: List<String> = emptyList(),
+    ): List<DeviceRef> {
         if (ids == listOf(ALL)) {
-            check(androidSerials.isNotEmpty() || simulatorUdids.isNotEmpty()) {
+            check(androidSerials.isNotEmpty() || simulatorUdids.isNotEmpty() || physicalUdids.isNotEmpty()) {
                 "No device connected and no simulator booted"
             }
             return androidSerials.map { DeviceRef(Platform.Android, it) } +
-                simulatorUdids.map { DeviceRef(Platform.Ios, it) }
+                simulatorUdids.map { DeviceRef(Platform.Ios, it) } +
+                physicalUdids.map { DeviceRef(Platform.Ios, it, physical = true) }
         }
         return ids.map { id ->
-            when (id) {
-                in androidSerials -> DeviceRef(Platform.Android, id)
-                in simulatorUdids -> DeviceRef(Platform.Ios, id)
+            // An iPhone is found by its UDID with or without the dash, in any case
+            val iphone = physicalUdids.firstOrNull { Usbmux.normalize(it) == Usbmux.normalize(id) }
+            when {
+                id in androidSerials -> DeviceRef(Platform.Android, id)
+                id in simulatorUdids -> DeviceRef(Platform.Ios, id)
+                iphone != null -> DeviceRef(Platform.Ios, iphone, physical = true)
                 else ->
                     error(
                         "Unknown device '$id'. Android: ${androidSerials.joinToString().ifEmpty { "none" }}; " +
-                            "iOS simulators: ${simulatorUdids.joinToString().ifEmpty { "none" }}"
+                            "iOS simulators: ${simulatorUdids.joinToString().ifEmpty { "none" }}; " +
+                            "iPhones: ${physicalUdids.joinToString().ifEmpty { "none" }}"
                     )
             }
         }

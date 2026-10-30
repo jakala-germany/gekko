@@ -36,6 +36,7 @@ kotlin {
             implementation("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.11.0")
             implementation("io.ktor:ktor-client-core:3.6.0")
             implementation("io.ktor:ktor-client-cio:3.6.0")
+            implementation("io.ktor:ktor-network:3.6.0")
             implementation("com.github.ajalt.clikt:clikt:5.1.0")
             implementation("com.charleskorn.kaml:kaml:0.104.0")
         }

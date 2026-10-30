@@ -3,13 +3,18 @@ options:
   bundleIdPrefix: com.jakala.gekko
   deploymentTarget:
     iOS: "15.0"
+settings:
+  base:
+    # A runner built for a device is signed for a team and needs App IDs that team can register: --bundle-prefix of
+    # scripts/build-ios-runner.sh. The release (simulator) runner keeps this one.
+    GEKKO_BUNDLE_PREFIX: com.jakala.gekko
 targets:
   GekkoRunnerHost:
     type: application
     platform: iOS
     sources: [Host]
     settings:
-      PRODUCT_BUNDLE_IDENTIFIER: com.jakala.gekko.runnerhost
+      PRODUCT_BUNDLE_IDENTIFIER: $(GEKKO_BUNDLE_PREFIX).runnerhost
       GENERATE_INFOPLIST_FILE: YES
       INFOPLIST_KEY_UILaunchScreen_Generation: YES
   GekkoRunnerUITests:
@@ -19,7 +24,7 @@ targets:
     dependencies:
       - target: GekkoRunnerHost
     settings:
-      PRODUCT_BUNDLE_IDENTIFIER: com.jakala.gekko.runneruitests
+      PRODUCT_BUNDLE_IDENTIFIER: $(GEKKO_BUNDLE_PREFIX).runneruitests
       GENERATE_INFOPLIST_FILE: YES
       TEST_TARGET_NAME: GekkoRunnerHost
       GEKKO_VERSION: unknown

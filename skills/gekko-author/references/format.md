@@ -96,7 +96,7 @@ Call it from a test or another flow:
 | `back` | `{ back: true }` | System back button. Android only. |
 | `pressKey` | `{ pressKey: enter }` | `back`, `home`, `enter`, `tab` or an Android key code number. Android only. |
 | `hideKeyboard` | `{ hideKeyboard: true }` | Closes the keyboard when it is open; do it before a scroll or swipe over the lower part of the screen. |
-| `openLink` | `{ openLink: "example://item/42" }` | Opens a URL or deep link (Android intent, `simctl openurl` on a simulator). |
+| `openLink` | `{ openLink: "example://item/42" }` | Opens a URL or deep link (Android intent, `simctl openurl` on a simulator, `devicectl` on an iPhone). |
 | `launchApp` | `{ launchApp: {} }`<br>`{ launchApp: { clearState: true } }`<br>`{ launchApp: { arguments: { feature: "on" } } }` | Starts the app (again). `clearState: true` wipes its data first. `arguments` become Android intent extras (strings) and iOS launch arguments (`-feature on`); keys are letters, digits, `_` or `.`, starting with a letter. |
 | `stopApp` | `{ stopApp: true }` | Quits the app, keeping its data. |
 | `clearState` | `{ clearState: true }` | Wipes the app data and quits the app; follow it with `launchApp`. |
@@ -106,8 +106,8 @@ Call it from a test or another flow:
 | `setDarkMode` | `{ setDarkMode: true }` | Dark or light mode; restored when the test ends. |
 | `setOrientation` | `{ setOrientation: landscape }` | `portrait` or `landscape`; goes through the system runner and is put back to portrait when the test ends. |
 | `setAirplaneMode` | `{ setAirplaneMode: true }` | Android only; restored when the test ends. |
-| `setLocation` | `{ setLocation: { latitude: 52.52, longitude: 13.40 } }` | Android emulators, physical Android devices and iOS simulators. A physical Android device (or an emulator with `GEKKO_MOCK_LOCATION=1`) gets the location from the system runner through Android's mock location providers; gekko switches the runner on as the mock location app (`appops`), so nothing has to be set by hand, and ends the mock location when the test ends. |
-| `setPermissions` | `{ setPermissions: { location: allow, notifications: deny } }` | Values are `allow` or `deny`. Names: `location`, `camera`, `microphone`, `notifications`, `contacts`, `calendar`, `photos`; on iOS simulators only `location`, `microphone`, `contacts`, `calendar`, `photos`. On Android a full permission name (`android.permission.CAMERA`) also works. Revoking a permission can restart the app process. |
+| `setLocation` | `{ setLocation: { latitude: 52.52, longitude: 13.40 } }` | Android emulators, physical Android devices, iOS simulators and iPhones (`devicectl`; the simulated position ends with the test). A physical Android device (or an emulator with `GEKKO_MOCK_LOCATION=1`) gets the location from the system runner through Android's mock location providers; gekko switches the runner on as the mock location app (`appops`), so nothing has to be set by hand, and ends the mock location when the test ends. |
+| `setPermissions` | `{ setPermissions: { location: allow, notifications: deny } }` | Values are `allow` or `deny`. Names: `location`, `camera`, `microphone`, `notifications`, `contacts`, `calendar`, `photos`; on iOS simulators only `location`, `microphone`, `contacts`, `calendar`, `photos`; not on an iPhone, where a permission prompt is answered with `tap: { text: Allow, system: true }` and every fresh start resets them. On Android a full permission name (`android.permission.CAMERA`) also works. Revoking a permission can restart the app process. |
 | `repeat` | `{ repeat: { times: 3, steps: [ { say: Next page, do: { swipe: { direction: left } } } ] } }`<br>`{ repeat: { while: { visible: { id: Banner.Close } }, max: 5, steps: [...] } }` | Runs the nested steps in a row. Exactly one of `times` and `while`; `while` repeats as long as the condition holds and fails when it still holds after `max` rounds (default 10). |
 | `use` | `{ use: account-login-sign-in, with: { user: qa1 } }` | Runs `flows/<name>.yaml`; `with:` values are strings. |
 
@@ -208,16 +208,16 @@ Put it in `gekko.yaml` for all tests or at the top of a test to override it. It 
 
 ## What works where
 
-| | Android | iOS simulator |
+| | Android | iOS (simulator and iPhone) |
 |---|---|---|
 | All selector keys, `tap`, `doubleTap`, `longPress`, `type`, `eraseText`, `scroll`, `scrollUntilVisible`, `swipe`, assertions, `waitForAnimationToEnd`, `wait`, `takeScreenshot`, `copyText`, `hideKeyboard`, `openLink`, `launchApp`, `stopApp`, `clearState`, `setDarkMode`, `setOrientation`, `repeat`, `use`, `system: true` on `tap`, `doubleTap` and `longPress` | yes | yes |
 | `tap` with `point` | yes | no |
 | `back`, `pressKey`, `launchPackage`, `stopPackage`, `setAirplaneMode` | yes | no: the step fails ("is not supported") |
-| `setLocation` | yes (emulators through the console, physical devices through the system runner) | simulators only |
-| `setPermissions` | all names, or a full permission name | `location`, `microphone`, `contacts`, `calendar`, `photos` |
+| `setLocation` | yes (emulators through the console, physical devices through the system runner) | simulators and iPhones |
+| `setPermissions` | all names, or a full permission name | simulators: `location`, `microphone`, `contacts`, `calendar`, `photos`; iPhones: no (the step fails) |
 | `checked` | switches, checkboxes, radio buttons | switches and toggle buttons (iOS 17 and later for toggle buttons) |
 
-iOS runs on simulators only in 1.0. Steps that only one platform can do go behind `platform: android` or `platform: ios` so the same file runs on both. Platform-only values for an id belong to the same rule: `id: { android: a }` alone needs `platform: android`.
+iOS runs on simulators and iPhones; an iPhone has no `--record` and no `setPermissions`. Steps that only one platform can do go behind `platform: android` or `platform: ios` so the same file runs on both. Platform-only values for an id belong to the same rule: `id: { android: a }` alone needs `platform: android`.
 
 ## Healing and the format
 

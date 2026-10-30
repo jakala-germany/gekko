@@ -660,6 +660,17 @@ data class IosConfig(
      * Directory containing the built system runner (`gekko-ios-runner`): GekkoRunner.xctestrun + Debug-iphonesimulator.
      */
     val runnerDir: String? = null,
+    /**
+     * The app under test for a physical iPhone or iPad: a build for iphoneos signed for the device (`.app`, `.ipa` or a
+     * `.zip` with an `.app`) that links the GekkoAgent package. A device gets a fresh state by reinstalling it, so
+     * gekko needs it for every test (or `--app`).
+     */
+    val deviceApp: String? = null,
+    /**
+     * Directory with the system runner built for devices (`scripts/build-ios-runner.sh --device`), or `installed` for
+     * the one in `$GEKKO_HOME/runners/gekko-ios-device-runner`.
+     */
+    val deviceRunnerDir: String? = null,
 )
 
 @Serializable
@@ -709,6 +720,8 @@ fun GekkoConfig.withPathsRelativeTo(root: String): GekkoConfig {
         ios =
             ios.copy(
                 app = ios.app?.relativeTo(root),
+                deviceApp = ios.deviceApp?.relativeTo(root),
+                deviceRunnerDir = ios.deviceRunnerDir?.relativeTo(root),
                 runnerDir = ios.runnerDir?.relativeTo(root),
                 agentFramework = ios.agentFramework?.relativeTo(root),
             ),

@@ -151,6 +151,20 @@ class RunnerTest {
     }
 
     @Test
+    fun aLocationFromTheConsoleIsClearedWhenTheTestEnds() {
+        runTest {
+            val device = FakeDevice(supportsWaitFor = false)
+            val runner = runner(Platform.Ios, agent(Response.Ok), suggestIds = false, device = device)
+
+            val result = runner.run(test(locationTest), "tests/location.yaml")
+
+            assertNull(result.failure)
+            assertEquals(listOf(53.5511 to 9.9937), device.locations)
+            assertEquals(1, device.locationsCleared)
+        }
+    }
+
+    @Test
     fun aSimulatorThatCannotSetTheLocationFailsTheStep() = runTest {
         val device = FakeDevice(supportsWaitFor = true, locationConsole = false)
         val system = FakeClient { Response.Ok }

@@ -106,33 +106,11 @@ class SimctlDevice(private val requestedUdid: String?) : Device {
     override fun install(config: GekkoConfig, path: String?) {
         val source = path ?: config.ios.app ?: error("No app to install; pass a path or set ios.app in gekko.yaml")
         check(fileExists(source)) { "App not found: $source" }
-        val app = if (source.endsWith(".zip")) appInArchive(source, config) else source
+        val app =
+            if (source.endsWith(".zip")) AppleBuilds.appInArchive(source, "/tmp/gekko-app-$udid", bundleId(config))
+            else source
         val result = simctl("install", udid, app)
         check(result.exitCode == 0) { "Installing $app failed: ${result.text}" }
-    }
-
-    /** Unzips an archive of build products and returns the `.app` with the bundle id of the app under test. */
-    private fun appInArchive(zip: String, config: GekkoConfig): String {
-        val target = "/tmp/gekko-app-$udid"
-        runProcess(listOf("rm", "-rf", "/tmp/gekko-app-$udid"))
-        val unzipped = runProcess(listOf("unzip", "-q", "-o", zip, "-d", target))
-        check(unzipped.exitCode == 0) { "Unzipping $zip failed: ${unzipped.text}" }
-        val candidates =
-            runProcess(listOf("find", target, "-name", "*.app", "-type", "d", "-not", "-path", "*.app/*"))
-                .text
-                .lines()
-                .filter { it.isNotBlank() }
-        check(candidates.isNotEmpty()) { "No .app found in $zip" }
-        val wanted = bundleId(config)
-        return candidates.firstOrNull { bundleIdOf(it) == wanted }
-            ?: error(
-                "No app with bundle id $wanted in $zip (found: ${candidates.joinToString { bundleIdOf(it).orEmpty() }})"
-            )
-    }
-
-    private fun bundleIdOf(app: String): String? {
-        val result = runProcess(listOf("/usr/libexec/PlistBuddy", "-c", "Print :CFBundleIdentifier", "$app/Info.plist"))
-        return if (result.exitCode == 0) result.text else null
     }
 
     override fun launch(config: GekkoConfig, arguments: Map<String, String>) {
@@ -174,29 +152,17 @@ class SimctlDevice(private val requestedUdid: String?) : Device {
         get() = 120_000
 
     override fun startSystemRunner(config: GekkoConfig, log: (String) -> Unit) {
-        runProcess(listOf("pkill", "-f", "xcodebuild test-without-building.*id=$udid"))
         val dir =
             env("GEKKO_IOS_RUNNER_DIR")
                 ?: config.ios.runnerDir?.takeUnless { it == InstalledRunners.INSTALLED }
                 ?: InstalledRunners.iosRunnerDir()
                 ?: error("System runner not found; run scripts/install.sh or set ios.runnerDir in gekko.yaml")
-        val bundle = bundleId(config)
         log("Starting iOS system runner")
-        runProcess(
-            listOf(
-                "sh",
-                "-c",
-                "nohup xcodebuild test-without-building " +
-                    "-xctestrun ${shellQuote("$dir/GekkoRunner.xctestrun")} -destination ${shellQuote("id=$udid")} " +
-                    ">/tmp/gekko-ios-runner-$udid.log 2>&1 &",
-            ),
-            environment =
-                mapOf(
-                    "TEST_RUNNER_GEKKO_TARGET_BUNDLE_ID" to bundle,
-                    "TEST_RUNNER_GEKKO_PORT" to "${systemPort()}",
-                    "TEST_RUNNER_GEKKO_TOKEN" to UserToken.value,
-                ),
-        )
+        AppleBuilds.startRunner(dir, udid, bundleId(config), systemPort())
+    }
+
+    override fun runnerDiagnostics(): String? {
+        return AppleBuilds.tail(AppleBuilds.runnerLog(udid))
     }
 
     private var launchArguments: List<String> = emptyList()
@@ -227,17 +193,8 @@ class SimctlDevice(private val requestedUdid: String?) : Device {
         }
     }
 
-    /**
-     * iOS has no per-app language switch from outside; the app gets it as launch arguments (user defaults argument
-     * domain).
-     */
     override fun applySettings(config: GekkoConfig, settings: DeviceSettings): () -> Unit {
-        val arguments = mutableListOf<String>()
-        settings.language?.let { tag ->
-            arguments += listOf("-AppleLanguages", "($tag)", "-AppleLocale", tag.replace('-', '_'))
-        }
-        settings.timeFormat?.let { arguments += listOf("-AppleICUForce24HourTime", if (it == "24h") "YES" else "NO") }
-        launchArguments = arguments
+        launchArguments = AppleBuilds.settingsArguments(settings)
         return { launchArguments = emptyList() }
     }
 
@@ -246,8 +203,8 @@ class SimctlDevice(private val requestedUdid: String?) : Device {
     }
 
     companion object {
-        const val RUNNER_HOST_BUNDLE = "com.jakala.gekko.runnerhost"
-        const val RUNNER_TESTS_BUNDLE = "com.jakala.gekko.runneruitests.xctrunner"
+        const val RUNNER_HOST_BUNDLE = AppleBuilds.RUNNER_HOST_BUNDLE
+        const val RUNNER_TESTS_BUNDLE = AppleBuilds.RUNNER_TESTS_BUNDLE
 
         fun bootedUdids(): List<String> {
             val pattern = Regex("\\(([0-9A-Fa-f-]{36})\\) \\(Booted\\)")

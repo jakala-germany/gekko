@@ -27,10 +27,15 @@ internal class FakeDevice(
 ) : Device {
     val locations = mutableListOf<Pair<Double, Double>>()
     var mockLocationAllowed = 0
+    var locationsCleared = 0
 
     override fun setLocation(latitude: Double, longitude: Double) {
         check(locationConsole) { "setLocation works on Android emulators only" }
         locations += latitude to longitude
+    }
+
+    override fun clearLocation() {
+        locationsCleared++
     }
 
     override fun allowMockLocation() {

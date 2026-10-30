@@ -25,6 +25,14 @@ object InstalledRunners {
         return existing("gekko-ios-runner")
     }
 
+    /**
+     * The system runner built for physical devices; unlike the simulator one it is signed for a team, so it is built
+     * locally.
+     */
+    fun iosDeviceRunnerDir(): String? {
+        return existing("gekko-ios-device-runner")
+    }
+
     fun iosAgentFramework(): String? {
         return existing("gekko-ios-agent/GekkoAgent.framework")
     }

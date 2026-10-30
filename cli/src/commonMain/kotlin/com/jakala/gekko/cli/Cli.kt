@@ -75,26 +75,34 @@ private class GekkoCommand : CliktCommand(name = "gekko") {
 }
 
 private abstract class DeviceCommand(name: String) : CliktCommand(name = name) {
-    val serial by option("--serial", "-s", help = "adb serial or simulator UDID of the device")
+    val serial by option("--serial", "-s", help = "adb serial, or UDID of a simulator or an iPhone on a USB cable")
     val root by option("--project", help = "Directory containing gekko.yaml").default(".")
     private val requestedPlatform by
-        option("--platform", help = "android or ios (simulator); inferred from -s when that is a simulator UDID")
+        option("--platform", help = "android or ios; inferred from -s when that is a simulator or iPhone UDID")
 
-    /** `--platform`, else ios when `-s` names a booted simulator, else android. */
-    protected val platformName: String
-        get() {
-            requestedPlatform?.let {
-                return it
-            }
-            val wanted = serial
-            return if (wanted != null && wanted in SimctlDevice.bootedUdids()) "ios" else "android"
-        }
+    /**
+     * `--platform`, else ios when `-s` names a booted simulator or an iPhone on a USB cable, else android. Looked up
+     * once: finding an iPhone asks `devicectl`.
+     */
+    protected val platformName: String by lazy {
+        val wanted = serial
+        val ios = wanted != null && (wanted in SimctlDevice.bootedUdids() || IosDevices.isPhysical(wanted))
+        requestedPlatform ?: if (ios) "ios" else "android"
+    }
 
     protected fun device(): Device {
         return when (platformName) {
             "android" -> AdbDevice(androidSerial())
-            "ios" -> SimctlDevice(serial)
+            "ios" -> iosDevice()
             else -> fail("--platform must be android or ios")
+        }
+    }
+
+    private fun iosDevice(): Device {
+        try {
+            return IosDevices.forSerial(serial)
+        } catch (error: IllegalStateException) {
+            failWith(error)
         }
     }
 
@@ -185,12 +193,13 @@ private abstract class SelectorCommand(name: String) : DeviceCommand(name) {
 
 private class DevicesCommand : CliktCommand(name = "devices") {
     override fun help(context: Context): String {
-        return "List connected Android devices"
+        return "List connected Android devices, booted iOS simulators and iPhones on a USB cable"
     }
 
     override fun run() {
         AdbDevice.listSerials().forEach { echo("android $it") }
         SimctlDevice.bootedUdids().forEach { echo("ios $it") }
+        PhysicalIosDevice.attachedUdids().forEach { echo("ios $it (physical)") }
     }
 }
 
@@ -415,7 +424,7 @@ private class RunCommand : DeviceCommand("run") {
                 "--app",
                 help =
                     "Install this build before the tests (implies --install); repeat it for several platforms: " +
-                        ".apk goes to Android devices, .app or .zip to iOS simulators",
+                        ".apk goes to Android devices, .app or .zip to iOS simulators, .ipa (or .app) to iPhones",
             )
             .multiple()
     val devices by
@@ -491,18 +500,26 @@ private class RunCommand : DeviceCommand("run") {
         }
     }
 
-    /** The build of [apps] that fits [platform]: `.apk` for Android, `.app` or `.zip` for an iOS simulator. */
-    private fun appFor(platform: Platform): String? {
-        val wanted = if (platform == Platform.Android) listOf(".apk") else listOf(".app", ".zip", ".app/")
-        return apps.firstOrNull { path -> wanted.any { path.endsWith(it) } }
+    /**
+     * The build of [apps] that fits the device: `.apk` for Android, `.app` or `.zip` for an iOS simulator, and for an
+     * iPhone also `.ipa`, which is preferred there.
+     */
+    private fun appFor(platform: Platform, physical: Boolean): String? {
+        val wanted =
+            when {
+                platform == Platform.Android -> listOf(".apk")
+                physical -> listOf(".ipa", ".app", ".zip", ".app/")
+                else -> listOf(".app", ".zip", ".app/")
+            }
+        return wanted.firstNotNullOfOrNull { suffix -> apps.firstOrNull { it.endsWith(suffix) } }
     }
 
     private fun installIfAsked(device: Device, project: Project, platform: Platform, strict: Boolean) {
         if (!install && apps.isEmpty()) return
-        val mine = appFor(platform)
+        val mine = appFor(platform, device is PhysicalIosDevice)
         if (apps.isNotEmpty() && mine == null) {
             // With several platforms a build for only one of them is fine; the others keep what is installed
-            if (strict) fail("--app: no build for ${platform.key} (.apk for Android, .app or .zip for iOS)")
+            if (strict) fail("--app: no build for ${platform.key} (.apk for Android, .app, .zip or .ipa for iOS)")
             return
         }
         try {
@@ -556,9 +573,18 @@ private class RunCommand : DeviceCommand("run") {
         if (serial != null) fail("Use either --devices or --serial")
         val project = Project.load(root)
         val tests = selectTests(project, wanted) ?: return
+        val simulators = SimctlDevice.bootedUdids()
+        // devicectl is only asked when an id could be an iPhone (or for `all`): it takes a second
+        val physical =
+            if (
+                ids == listOf(DeviceResolver.ALL) ||
+                    ids.any { PhysicalIosDevice.looksLikeUdid(it) && it !in simulators }
+            )
+                PhysicalIosDevice.attachedUdids()
+            else emptyList()
         val resolved =
             try {
-                DeviceResolver.resolve(ids, AdbDevice.listSerials(), SimctlDevice.bootedUdids())
+                DeviceResolver.resolve(ids, AdbDevice.listSerials(), simulators, physical)
             } catch (error: IllegalStateException) {
                 failWith(error)
             }

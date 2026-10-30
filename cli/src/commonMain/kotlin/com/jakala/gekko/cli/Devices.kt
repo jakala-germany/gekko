@@ -181,6 +181,9 @@ interface Device {
         error("setLocation is not supported on this device")
     }
 
+    /** Ends a location set by [setLocation], so a physical device does not keep a fake position after the test. */
+    fun clearLocation() {}
+
     /**
      * Switches the system runner on as the mock location app, so that it can answer for the location of a device that
      * has no emulator console; the runner has to be installed.
@@ -212,6 +215,17 @@ interface Device {
         val restore = applySettings(config, settings)
         launch(config)
         return restore
+    }
+
+    /**
+     * What to check when the in-app agent does not answer after the app was started; null when there is nothing to add.
+     */
+    val agentHint: String?
+        get() = null
+
+    /** Why the system runner may not have started (e.g. the tail of its log); null when this device cannot tell. */
+    fun runnerDiagnostics(): String? {
+        return null
     }
 
     /** How long a freshly started system runner may take to answer. */
@@ -720,7 +734,8 @@ class Drivers(
             }
             delay(POLL_MS)
         }
-        throw InfrastructureException("System runner did not start")
+        val reason = device.runnerDiagnostics()?.let { ":\n$it" }.orEmpty()
+        throw InfrastructureException("System runner did not start$reason")
     }
 
     fun close() {
