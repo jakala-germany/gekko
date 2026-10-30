@@ -36,7 +36,7 @@ suspend fun <T> replicate(items: List<T>, workerCount: Int, work: suspend (worke
 class DeviceRef(val platform: Platform, val id: String) {
     fun create(): Device {
         return when (platform) {
-            Platform.Android -> AdbDevice(id)
+            Platform.Android -> AdbDevice(id).also { it.requireSupportedApi() }
             Platform.Ios -> SimctlDevice(id)
         }
     }

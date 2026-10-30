@@ -84,8 +84,10 @@ jobs:
         run: (cd gradle-plugin && ../gradlew test)
         shell: bash
 
-      - name: 'Build the Android modules and the sample app'
-        run: ./gradlew :agent-android:assembleRelease :system-runner-android:assembleDebug :sample-android:assembleDebug
+      - name: 'Build and lint the Android modules, build the sample app'
+        run: >-
+          ./gradlew :agent-android:assembleRelease :system-runner-android:assembleDebug :sample-android:assembleDebug
+          :agent-android:lintRelease :system-runner-android:lintDebug
         shell: bash
 
       - name: 'Upload test reports'

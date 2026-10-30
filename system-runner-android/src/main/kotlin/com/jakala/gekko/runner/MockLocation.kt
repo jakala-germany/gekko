@@ -42,7 +42,8 @@ internal class MockLocation(context: Context) {
         PROVIDERS.forEach(::disable)
     }
 
-    @Suppress("DEPRECATION")
+    // The deprecated overload takes the Criteria constants; lint only knows the ProviderProperties ones of API 31
+    @Suppress("DEPRECATION", "WrongConstant")
     private fun enable(provider: String) {
         // A provider of an earlier run that was not cleaned up would make addTestProvider fail
         disable(provider)

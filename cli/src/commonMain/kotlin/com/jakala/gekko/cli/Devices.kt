@@ -248,6 +248,11 @@ class AdbDevice(val serial: String?) : Device {
         return shell("pm", "list", "packages", appId).text.lines().any { it.trim() == "package:$appId" }
     }
 
+    /** Stops before any step on a device that is too old, where the commands below would misbehave silently. */
+    fun requireSupportedApi() {
+        unsupportedApi(serial, shell("getprop", "ro.build.version.sdk").text)?.let { throw InfrastructureException(it) }
+    }
+
     private val hostPorts = mutableMapOf<String, Int>()
 
     override val supportsWaitFor: Boolean
@@ -385,7 +390,7 @@ class AdbDevice(val serial: String?) : Device {
         // `cmd uimode night` answers "Night mode: yes|no|auto"
         val previous = shell("cmd", "uimode", "night").text.substringAfterLast(':').trim().ifEmpty { "auto" }
         val result = shell("cmd", "uimode", "night", if (enabled) "yes" else "no")
-        check(result.exitCode == 0) { "Switching dark mode failed: ${result.text}" }
+        checkCmd(result, "Switching dark mode failed", minApi = 29)
         return { shell("cmd", "uimode", "night", previous) }
     }
 
@@ -397,7 +402,7 @@ class AdbDevice(val serial: String?) : Device {
 
     private fun switchAirplaneMode(enabled: Boolean) {
         val result = shell("cmd", "connectivity", "airplane-mode", if (enabled) "enable" else "disable")
-        check(result.exitCode == 0) { "Switching airplane mode failed: ${result.text}" }
+        checkCmd(result, "Switching airplane mode failed", minApi = 30)
     }
 
     override fun setLocation(latitude: Double, longitude: Double) {
@@ -527,7 +532,11 @@ class AdbDevice(val serial: String?) : Device {
                     ?.groupValues
                     ?.get(1)
                     .orEmpty()
-            shell("cmd", "locale", "set-app-locales", appId, "--locales", tag)
+            checkCmd(
+                shell("cmd", "locale", "set-app-locales", appId, "--locales", tag),
+                "Setting the app language failed",
+                minApi = 33,
+            )
             restores += { shell("cmd", "locale", "set-app-locales", appId, "--locales", previous) }
         }
         return { restores.forEach { it() } }
@@ -538,6 +547,30 @@ class AdbDevice(val serial: String?) : Device {
     }
 
     companion object {
+        /** Below this API level `adb shell` returns no exit codes and has no `cmd`, which the CLI relies on. */
+        const val MIN_API = 24
+
+        /**
+         * The error for a device whose `ro.build.version.sdk` is [sdkProperty], or null when it is fine or unreadable.
+         */
+        fun unsupportedApi(serial: String?, sdkProperty: String): String? {
+            val api = sdkProperty.trim().toIntOrNull()
+            if (api == null || api >= MIN_API) {
+                return null
+            }
+            return "${serial ?: "The device"} runs Android API $api; gekko needs an emulator or device with API " +
+                "$MIN_API (Android 7.0) or newer"
+        }
+
+        /** `cmd` answers a service or command that the device does not have with exit code 0, only the text tells. */
+        fun checkCmd(result: ProcessResult, failure: String, minApi: Int) {
+            val text = result.text
+            check(!text.contains("No shell command implementation") && !text.contains("Can't find service")) {
+                "$failure: this needs Android API $minApi or newer on the device"
+            }
+            check(result.exitCode == 0) { "$failure: $text" }
+        }
+
         fun listSerials(): List<String> {
             return runProcess(listOf("adb", "devices"))
                 .text

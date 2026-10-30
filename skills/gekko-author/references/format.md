@@ -103,9 +103,9 @@ Call it from a test or another flow:
 | `launchPackage`<br>`stopPackage` | `{ launchPackage: com.example.other }`<br>`{ stopPackage: com.android.chrome }` | Start or force-stop another app by package name. Android only; while the other app is in front, later steps go through the system runner. |
 | `takeScreenshot` | `{ takeScreenshot: search-empty }` | Saves `search-empty.png` into the result folder of the test (characters outside `A-Za-z0-9_.-` become `_`). |
 | `copyText` | `{ copyText: { from: { id: Cart.Total }, match: "(\\d+)", as: total } }` | Keeps the text of an element in `${var.total}` for the rest of the test, flows included. With `match` the variable holds the first group of the regular expression, or the whole match when it has no group. `as` is letters, digits and `_`. |
-| `setDarkMode` | `{ setDarkMode: true }` | Dark or light mode; restored when the test ends. |
+| `setDarkMode` | `{ setDarkMode: true }` | Dark or light mode; restored when the test ends. Android needs API 29 or newer. |
 | `setOrientation` | `{ setOrientation: landscape }` | `portrait` or `landscape`; goes through the system runner and is put back to portrait when the test ends. |
-| `setAirplaneMode` | `{ setAirplaneMode: true }` | Android only; restored when the test ends. |
+| `setAirplaneMode` | `{ setAirplaneMode: true }` | Android only, API 30 or newer; restored when the test ends. |
 | `setLocation` | `{ setLocation: { latitude: 52.52, longitude: 13.40 } }` | Android emulators, physical Android devices and iOS simulators. A physical Android device (or an emulator with `GEKKO_MOCK_LOCATION=1`) gets the location from the system runner through Android's mock location providers; gekko switches the runner on as the mock location app (`appops`), so nothing has to be set by hand, and ends the mock location when the test ends. |
 | `setPermissions` | `{ setPermissions: { location: allow, notifications: deny } }` | Values are `allow` or `deny`. Names: `location`, `camera`, `microphone`, `notifications`, `contacts`, `calendar`, `photos`; on iOS simulators only `location`, `microphone`, `contacts`, `calendar`, `photos`. On Android a full permission name (`android.permission.CAMERA`) also works. Revoking a permission can restart the app process. |
 | `repeat` | `{ repeat: { times: 3, steps: [ { say: Next page, do: { swipe: { direction: left } } } ] } }`<br>`{ repeat: { while: { visible: { id: Banner.Close } }, max: 5, steps: [...] } }` | Runs the nested steps in a row. Exactly one of `times` and `while`; `while` repeats as long as the condition holds and fails when it still holds after `max` rounds (default 10). |
@@ -204,7 +204,7 @@ device:
   timeFormat: 24h      # 12h or 24h
 ```
 
-Put it in `gekko.yaml` for all tests or at the top of a test to override it. It is applied after the app data was cleared and before the app starts, and restored when the test is done. Android uses the per-app locale and the system time format, an iOS simulator gets launch arguments (`-AppleLanguages`, `-AppleLocale`, `-AppleICUForce24HourTime`). Tests that find elements by id do not depend on the language; text assertions do.
+Put it in `gekko.yaml` for all tests or at the top of a test to override it. It is applied after the app data was cleared and before the app starts, and restored when the test is done. Android uses the per-app locale (`language` needs API 33 or newer) and the system time format, an iOS simulator gets launch arguments (`-AppleLanguages`, `-AppleLocale`, `-AppleICUForce24HourTime`). Tests that find elements by id do not depend on the language; text assertions do.
 
 ## What works where
 

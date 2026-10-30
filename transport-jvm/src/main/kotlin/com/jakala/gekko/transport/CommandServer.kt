@@ -234,7 +234,8 @@ class CommandServer(
                 line.write(next)
                 continue
             }
-            val text = line.toString(Charsets.ISO_8859_1).trimEnd('\r')
+            // String(bytes, charset) instead of ByteArrayOutputStream.toString(Charset), which Android has from API 33
+            val text = String(line.toByteArray(), Charsets.ISO_8859_1).trimEnd('\r')
             line.reset()
             if (text.isNotEmpty()) {
                 lines += text
@@ -286,7 +287,7 @@ class CommandServer(
             }
             bytes.write(chunk, 0, count)
         }
-        return bytes.toString(Charsets.UTF_8)
+        return String(bytes.toByteArray(), Charsets.UTF_8)
     }
 
     private fun writeError(output: OutputStream, rejection: HttpRejection) {
