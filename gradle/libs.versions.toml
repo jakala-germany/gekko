@@ -17,7 +17,7 @@ activity-compose = "1.12.0"
 junit = "4.13.2"
 androidx-test-runner = "1.7.0"
 androidx-test-ext-junit = "1.3.0"
-uiautomator = "2.3.0"
+uiautomator = "2.4.0"
 
 [libraries]
 kotlin-gradle-plugin = { module = "org.jetbrains.kotlin:kotlin-gradle-plugin", version.ref = "kotlin" }
