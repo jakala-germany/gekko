@@ -6,18 +6,21 @@ updates:
       interval: 'weekly'
     cooldown:
       default-days: 10
+  # All three Gradle builds (root, gradle-plugin, build-logic) read gradle/libs.versions.toml, so scanning '/' covers them
   - package-ecosystem: 'gradle'
     directory: '/'
     schedule:
       interval: 'weekly'
-  - package-ecosystem: 'gradle'
-    directory: '/gradle-plugin'
-    schedule:
-      interval: 'weekly'
-  - package-ecosystem: 'gradle'
-    directory: '/build-logic'
-    schedule:
-      interval: 'weekly'
+    groups:
+      # The Kotlin compiler, its Gradle plugins and kotlin-test move together; kotlinx libraries are not part of it
+      kotlin:
+        patterns:
+          - 'org.jetbrains.kotlin:*'
+          - 'org.jetbrains.kotlin.*'
+      # The Android Gradle plugin (applied by the modules, compiled against by gradle-plugin) is one version
+      android-gradle-plugin:
+        patterns:
+          - 'com.android.*'
   - package-ecosystem: 'swift'
     directory: '/'
     schedule:
