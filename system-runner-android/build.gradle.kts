@@ -23,8 +23,8 @@ android {
 
 dependencies {
     implementation(project(":transport-jvm"))
-    implementation("androidx.test:runner:1.7.0")
-    implementation("androidx.test.ext:junit:1.3.0")
-    implementation("androidx.test.uiautomator:uiautomator:2.3.0")
-    implementation("junit:junit:4.13.2")
+    implementation(libs.androidx.test.runner)
+    implementation(libs.androidx.test.ext.junit)
+    implementation(libs.androidx.test.uiautomator)
+    implementation(libs.junit)
 }

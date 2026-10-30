@@ -2,13 +2,13 @@ import com.ncorti.ktfmt.gradle.tasks.KtfmtCheckTask
 import com.ncorti.ktfmt.gradle.tasks.KtfmtFormatTask
 
 plugins {
-    kotlin("jvm") version "2.4.21" apply false
-    kotlin("multiplatform") version "2.4.21" apply false
-    kotlin("plugin.serialization") version "2.4.21" apply false
-    kotlin("plugin.compose") version "2.4.21" apply false
-    id("com.android.library") version "9.5.0" apply false
-    id("com.android.application") version "9.5.0" apply false
-    id("com.vanniktech.maven.publish") version "0.36.0" apply false
+    alias(libs.plugins.kotlin.jvm) apply false
+    alias(libs.plugins.kotlin.multiplatform) apply false
+    alias(libs.plugins.kotlin.serialization) apply false
+    alias(libs.plugins.kotlin.compose) apply false
+    alias(libs.plugins.android.library) apply false
+    alias(libs.plugins.android.application) apply false
+    alias(libs.plugins.vanniktech.maven.publish) apply false
     id("gekko-format")
 }
 
