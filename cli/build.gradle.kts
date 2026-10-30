@@ -32,17 +32,17 @@ kotlin {
         all { languageSettings.optIn("kotlinx.cinterop.ExperimentalForeignApi") }
         commonMain.dependencies {
             implementation(project(":protocol"))
-            implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.9.0")
-            implementation("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.11.0")
-            implementation("io.ktor:ktor-client-core:3.6.0")
-            implementation("io.ktor:ktor-client-cio:3.6.0")
-            implementation("com.github.ajalt.clikt:clikt:5.1.0")
-            implementation("com.charleskorn.kaml:kaml:0.104.0")
+            implementation(libs.kotlinx.serialization.json)
+            implementation(libs.kotlinx.coroutines.core)
+            implementation(libs.ktor.client.core)
+            implementation(libs.ktor.client.cio)
+            implementation(libs.clikt)
+            implementation(libs.kaml)
         }
-        nativeMain.dependencies { implementation("com.squareup.okio:okio:3.18.2") }
+        nativeMain.dependencies { implementation(libs.okio) }
         commonTest.dependencies {
             implementation(kotlin("test"))
-            implementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.11.0")
+            implementation(libs.kotlinx.coroutines.test)
         }
     }
 }

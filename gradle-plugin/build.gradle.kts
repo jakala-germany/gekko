@@ -1,7 +1,7 @@
 plugins {
     `kotlin-dsl`
     id("gekko-format")
-    id("com.vanniktech.maven.publish") version "0.36.0"
+    alias(libs.plugins.vanniktech.maven.publish)
 }
 
 group = providers.gradleProperty("GROUP").get()
@@ -9,7 +9,7 @@ group = providers.gradleProperty("GROUP").get()
 version = providers.gradleProperty("VERSION_NAME").get()
 
 dependencies {
-    compileOnly("com.android.tools.build:gradle:9.5.0")
+    compileOnly(libs.android.gradle.plugin)
     testImplementation(kotlin("test"))
 }
 

@@ -10,7 +10,7 @@ kotlin {
     linuxX64()
 
     sourceSets {
-        commonMain.dependencies { implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.9.0") }
+        commonMain.dependencies { implementation(libs.kotlinx.serialization.json) }
         commonTest.dependencies { implementation(kotlin("test")) }
     }
 }
