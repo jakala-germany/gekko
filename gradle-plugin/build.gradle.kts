@@ -9,7 +9,7 @@ group = providers.gradleProperty("GROUP").get()
 version = providers.gradleProperty("VERSION_NAME").get()
 
 dependencies {
-    compileOnly("com.android.tools.build:gradle:9.4.0")
+    compileOnly("com.android.tools.build:gradle:9.5.0")
     testImplementation(kotlin("test"))
 }
 
