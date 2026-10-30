@@ -13,7 +13,7 @@ android {
 
     defaultConfig {
         applicationId = "com.jakala.gekko.sample"
-        minSdk = 26
+        minSdk = 23
         targetSdk = 37
         versionCode = 1
         versionName = "1.0"

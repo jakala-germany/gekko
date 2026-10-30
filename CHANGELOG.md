@@ -10,8 +10,14 @@
 - `gekko llm-check` asks the model of `--heal` one short question and prints the answer, so `GEKKO_LLM_*` (or the local CLI) can be tried without a device
 - `GEKKO_LLM_CA_CERT` names the PEM file of a private CA for `--heal api`
 
+**Fixed**
+
+- The Android agent and the system runner answered no request on a device below API 33: the server read requests with `ByteArrayOutputStream.toString(Charset)`, which Android only has from API 33, and the error was swallowed, so every connection closed without a reply ("In-process agent did not respond")
+- `setDarkMode`, `setAirplaneMode` and `device.language` fail with the API they need (29, 30, 33) on an older Android device instead of doing nothing
+
 **Changed**
 
+- The Android agent has minSdk 21 (was 26), so an app with a lower minSdk no longer needs `tools:overrideLibrary="com.jakala.gekko.agent"`; remove it if an earlier build asked for it. The system runner needs API 24 (was 26), and `gekko` stops with a clear error on an emulator or device older than that
 - `--heal api` works over `https://` in the native binary: the request goes through `curl`, because Ktor CIO has no TLS on Kotlin/Native (the heal failed with "TLS sessions are not supported on Native platform"). `curl` must be on the `PATH`
 
 ## [1.0.0]

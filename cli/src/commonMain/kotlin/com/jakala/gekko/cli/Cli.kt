@@ -92,7 +92,7 @@ private abstract class DeviceCommand(name: String) : CliktCommand(name = name) {
 
     protected fun device(): Device {
         return when (platformName) {
-            "android" -> AdbDevice(androidSerial())
+            "android" -> AdbDevice(androidSerial()).also { it.requireSupportedApi() }
             "ios" -> SimctlDevice(serial)
             else -> fail("--platform must be android or ios")
         }

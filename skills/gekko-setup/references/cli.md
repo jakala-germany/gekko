@@ -8,7 +8,7 @@ The commands, flags, exit codes, environment variables and `gekko.yaml` keys on 
 - The CLI finds the installed Android system runner and iOS runner **without any setting**. The iOS agent is injected into the simulator app only when asked for: `ios.agentFramework: installed` (or `GEKKO_IOS_AGENT`). `android.runnerApk` and `ios.runnerDir` accept `installed` as well (the same as leaving them out).
 - CI: the action `jakala-germany/setup-gekko-cli-action` (tag = gekko version, e.g. `@1.0.0`).
 - Host: macOS arm64 or Linux x64. Android needs `adb`. iOS needs macOS with Xcode and simulators only (iOS 15 and later). The CLI starts `adb`, `xcrun simctl`, `xcodebuild`, `unzip` and `perl` (every process gets a time limit of 300 seconds). Xcode and `xcodegen` are only needed to *build* the runners from source; users get them from the release.
-- App side: Android agent `minSdk` 26 (may be lowered later); gekko is tested with AGP 9.x, Gradle 9.x and Kotlin 2.4.
+- App side: Android agent `minSdk` 21; the emulator or device that runs the tests needs API 24 or newer; gekko is tested with AGP 9.x, Gradle 9.x and Kotlin 2.4.
 
 ## Global options
 

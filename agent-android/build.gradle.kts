@@ -7,7 +7,7 @@ android {
     namespace = "com.jakala.gekko.agent"
     compileSdk = 37
 
-    defaultConfig { minSdk = 26 }
+    defaultConfig { minSdk = 21 }
 
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
