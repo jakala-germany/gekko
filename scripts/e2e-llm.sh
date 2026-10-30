@@ -37,12 +37,14 @@ openssl req -x509 -newkey rsa:2048 -nodes -days 1 -config "$work/openssl.cnf" \
 
 python3 scripts/fake-llm-server.py "$work/cert.pem" "$work/key.pem" test-key > "$work/server.out" &
 server=$!
-for _ in $(seq 1 50); do
-  grep -q '^port=' "$work/server.out" 2>/dev/null && break
-  sleep 0.1
+# A slow runner needs a while to start python3; wait by the clock, and stop at once when the server is gone
+deadline=$((SECONDS + 15))
+until grep -q '^port=' "$work/server.out" 2>/dev/null; do
+  kill -0 "$server" 2>/dev/null || { echo "the fake endpoint exited: $(cat "$work/server.out")" >&2; exit 1; }
+  [ "$SECONDS" -lt "$deadline" ] || { echo "the fake endpoint did not start within 15 seconds" >&2; exit 1; }
+  sleep 0.2
 done
 port="$(sed -n 's/^port=//p' "$work/server.out")"
-[ -n "$port" ] || { echo "the fake endpoint did not start" >&2; exit 1; }
 
 export GEKKO_LLM_BASE_URL="https://localhost:$port/v1"
 export GEKKO_LLM_MODEL=stub
