@@ -21,6 +21,7 @@
 - `Device.freshStart` takes `keepState` and `Device.endTest(config, keepSession)` is new (for groups; the defaults keep the old behavior). A test result can be `skipped`; the JUnit file has a `skipped` count
 - The element lookup and waiting code of the Android agent (`com.jakala.gekko.device`: `ElementLookup`, `Waiting`, `Scrolling`, `NodeFacts`) moved from `gekko-transport-jvm` to `gekko-protocol`, which the web agent in the CLI shares; the package stays, so nothing changes for users of `gekko-transport-jvm`
 - The UI node has an optional `clip` (where its ancestors cut it off) and the protocol a `wheel` command; only the web agent uses them, so the protocol number stays 1
+- The CLI reference marks the diagnostic and internal environment variables as not covered by the compatibility promise and lists `GEKKO_MOCK_LOCATION`, `GEKKO_TARGET_BUNDLE_ID` and `GEKKO_TAP_VERIFY`
 
 ## [1.1.0]
 

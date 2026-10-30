@@ -1,13 +1,14 @@
 # gekko CLI
 
-The commands, flags, exit codes, environment variables and `gekko.yaml` keys on this page are part of the 1.0 compatibility promise. The wire protocol between the CLI and the agents is not: it is internal and versioned by a protocol number (see "Versions").
+The YAML format, `gekko.yaml`, the commands, flags and exit codes on this page, the documented environment variables, the Gradle plugin DSL and the Maven coordinates are part of the 1.0 compatibility promise (semver). Not covered are the diagnostic and internal environment variables (marked in "Environment variables") and the wire protocol between the CLI and the agents: it is internal and versioned by a protocol number (see "Versions").
 
 ## Install and requirements
 
-- Testers: `curl -fsSL https://raw.githubusercontent.com/jakala-germany/gekko/1.1.0/scripts/install.sh | bash -s -- 1.1.0` (macOS arm64 or Linux x64; or run `scripts/install.sh [VERSION]` from a checkout; the default version is `latest`). It installs the CLI to `$GEKKO_BIN_DIR` (default `~/.local/bin`) and the Android system runner and, on macOS, the iOS runner and the iOS agent to `$GEKKO_HOME/runners` (default `~/.gekko/runners`): `gekko-system-runner.apk`, `gekko-ios-runner/`, `gekko-ios-agent/GekkoAgent.framework`. Every download is checked against the `SHA256SUMS` of the release; `GEKKO_VERIFY_ATTESTATION=1` (needs `gh`) also verifies the build provenance; `install.sh --uninstall` removes the CLI and the runners (`~/.gekko/token` stays).
+- Testers: `curl -fsSL https://raw.githubusercontent.com/jakala-germany/gekko/1.1.0/scripts/install.sh | bash -s -- 1.1.0` (macOS arm64 or Linux x64; or run `scripts/install.sh [VERSION]` from a checkout; the default version is `latest`). It installs the CLI to `$GEKKO_BIN_DIR` (default `~/.local/bin`) and the Android system runner and, on macOS, the iOS runner and the iOS agent to `$GEKKO_HOME/runners` (default `~/.gekko/runners`): `gekko-system-runner.apk`, `gekko-ios-runner/`, `gekko-ios-agent/GekkoAgent.framework`. Every download is checked against the `SHA256SUMS` of the release; `GEKKO_VERIFY_ATTESTATION=1` (needs `gh`) also verifies the build provenance; `install.sh --uninstall` removes the CLI, the runners and the web files (`~/.gekko/token` stays); `install.sh --web[=chromium,firefox,webkit]` also installs Playwright and the browsers for web tests (needs Node.js 18 or newer).
 - The CLI finds the installed Android system runner and iOS runner **without any setting**. The iOS agent is injected into the simulator app only when asked for: `ios.agentFramework: installed` (or `GEKKO_IOS_AGENT`). `android.runnerApk` and `ios.runnerDir` accept `installed` as well (the same as leaving them out).
-- CI: the action `jakala-germany/setup-gekko-cli-action` (tag = gekko version, e.g. `@1.1.0`).
-- Host: macOS arm64 or Linux x64. Android needs `adb`. iOS needs macOS with Xcode and simulators only (iOS 15 and later). The CLI starts `adb`, `xcrun simctl`, `xcodebuild`, `unzip` and `perl` (every process gets a time limit of 300 seconds). Xcode and `xcodegen` are only needed to *build* the runners from source; users get them from the release.
+- Release assets on [GitHub](https://github.com/jakala-germany/gekko/releases): `gekko-macos-arm64`, `gekko-linux-x64`, `gekko-system-runner.apk`, `gekko-ios-runner.zip`, `gekko-ios-agent.zip` and `SHA256SUMS`. Verify a download with `gh attestation verify <file> --repo jakala-germany/gekko`.
+- CI: the action `jakala-germany/setup-gekko-cli-action` (tag = gekko version, e.g. `@1.1.0`). Every download is verified against the sha256 digest GitHub reports for the release asset; the step fails when it differs or when the release reports none. The inputs `cli-sha256`, `system-runner-sha256`, `ios-runner-sha256` and `ios-agent-sha256` hard-pin a file (the hashes are in `SHA256SUMS`); `token` and `repository` are further inputs (see the action's README). Pin the action to the commit of its tag.
+- Host: macOS arm64 or Linux x64. The CLI is a native binary and needs no JVM. Android needs `adb`. iOS needs macOS with Xcode and simulators only (iOS 15 and later). The web needs Node.js 18 or newer; `gekko install --platform web` downloads Playwright and the browsers. The CLI starts `adb`, `xcrun simctl`, `xcodebuild`, `unzip` and `perl` (every process gets a time limit of 300 seconds). Xcode and `xcodegen` are only needed to *build* the runners from source; users get them from the release.
 - App side: Android agent `minSdk` 21; the emulator or device that runs the tests needs API 24 or newer; gekko is tested with AGP 9.x, Gradle 9.x and Kotlin 2.4.
 
 ## Global options
@@ -84,7 +85,8 @@ Passing tests print `PASS name (ms)`; a failed one prints `FAIL name: reason`, a
 
 - `failure.json`: `test`, `path`, `step`, `error`, `kind` (`test` when a step failed, `infrastructure` when the device, the agent or the system runner failed)
 - `screenshot.png` and `tree.txt` (what the agent saw)
-- `video.mp4` with `--record`
+- `video.mp4` with `--record` (`video.webm` in a browser)
+- `console.txt` on the web: the console output and page errors of the failed test (secrets masked)
 - the files of `takeScreenshot` steps (also for passing tests)
 
 With `--heal` and at least one healed step, `<output>/gekko-heal-report.md` lists them (Markdown-escaped: model output and app texts cannot become links, mentions or HTML) and the console shows a warning block. In CI upload `gekko-results` as an artifact when the job fails.
@@ -129,7 +131,7 @@ ios:
   runnerDir: installed                # or a path; wins: GEKKO_IOS_RUNNER_DIR. Left out: the installed runner
 device:                               # for all tests; a test's own device: overrides it
   language: en-US                     # BCP 47 app language
-  timeFormat: 24h                     # 12h or 24h
+  timeFormat: 24h                     # 12h or 24h; a time picker takes 20 only in 24h mode
 defaultTimeoutMs: 10000               # waiting for a screen that is still loading
 settleMs: 2500                        # quiet time after which a screen counts as done (0 = always wait the full timeout)
 optionalTimeoutMs: 500                # how long optional steps, `if` and `repeat while` look for an element
@@ -177,10 +179,17 @@ Values of `env:` names come from the process environment first, then from a `.en
 | `GEKKO_OPENCODE_COMMAND` | Launcher used instead of `opencode`, e.g. a script that sets an isolated config in CI |
 | `GEKKO_WEB_SESSION` | Web: `fresh` or `shared`, wins over `web.session` |
 | `GEKKO_PLAYWRIGHT_DIR`, `GEKKO_NODE`, `GEKKO_WEB_HEADED` | Web: the folder with Playwright (wins over `web.playwright`), the `node` binary, and `1` to show the browser window when a session starts |
-| `GEKKO_HEAL_DEBUG` | Directory where heal prompts are written (values masked) |
-| `GEKKO_DEBUG` | Log which driver answers each command and which steps are skipped on this platform |
-| `GEKKO_BRIDGE_TOKEN`, `GEKKO_BRIDGE_LOG` | Set by the CLI when it starts the web bridge. Do not set them by hand |
-| `GEKKO_PORT`, `GEKKO_TOKEN` | Set by the CLI when it starts the iOS app and runner (a loopback port per simulator and the per-user token); the iOS agent only starts when both are set. Do not set them by hand |
+
+Diagnostic and internal variables are not covered by the compatibility promise:
+
+| Variable | Kind | Effect |
+|---|---|---|
+| `GEKKO_DEBUG` | diagnostic | Log which driver answers each command and which steps are skipped on this platform |
+| `GEKKO_HEAL_DEBUG` | diagnostic | Directory where heal prompts are written (values masked) |
+| `GEKKO_MOCK_LOCATION=1` | diagnostic | `setLocation` uses the system runner on an emulator too |
+| `GEKKO_PORT`, `GEKKO_TOKEN`, `GEKKO_TARGET_BUNDLE_ID` | internal | Set by the CLI when it starts the iOS app and runner (a loopback port per simulator, the per-user token and the bundle id of the app under test); the iOS agent only starts when `GEKKO_PORT` and `GEKKO_TOKEN` are set. Do not set them by hand |
+| `GEKKO_BRIDGE_TOKEN`, `GEKKO_BRIDGE_LOG` | internal | Set by the CLI when it starts the web bridge. Do not set them by hand |
+| `GEKKO_TAP_VERIFY` | internal | A switch of the iOS agent. Do not set it by hand |
 
 The setup action sets the runner variables for the job, so a test repository needs no copy of the runners in CI. With the install script nothing has to be set for the runners; only the iOS agent has to be asked for, with `ios.agentFramework: installed` in `gekko.yaml` or `export GEKKO_IOS_AGENT="$HOME/.gekko/runners/gekko-ios-agent/GekkoAgent.framework"`.
 
@@ -194,18 +203,46 @@ The variables of the install script itself (not read by the CLI): `GEKKO_BIN_DIR
 |---|---|
 | `--heal claude` | The local `claude` CLI (the tester's own subscription), small model by default (`GEKKO_HEAL_MODEL` to change it). Started with no tools, no MCP servers, no project settings and no session files, in a private temporary directory. |
 | `--heal opencode` | The local `opencode` CLI with the model configured there, run with an agent that gekko defines for the call (`gekko-heal`): every permission is denied, so it can answer but cannot read files, run commands or fetch pages; project configuration is switched off. `GEKKO_HEAL_AGENT` names another agent instead. |
-| `--heal api` | An OpenAI-compatible `/chat/completions` endpoint (`GEKKO_LLM_BASE_URL`, `GEKKO_LLM_MODEL`, `GEKKO_LLM_API_KEY`). This is the source for CI. The request goes through `curl` (the native binary has no TLS of its own); a private CA is named in `GEKKO_LLM_CA_CERT`. Try the settings first with `gekko llm-check`. |
+| `--heal api` | An OpenAI-compatible endpoint (`GEKKO_LLM_BASE_URL`, `GEKKO_LLM_MODEL`, `GEKKO_LLM_API_KEY`); gekko posts to `<base>/chat/completions`. This is the source for CI. The request goes through `curl` (the native binary has no TLS of its own), so the system's certificates apply; a private CA is named in `GEKKO_LLM_CA_CERT`. It is tested against a fake HTTPS endpoint, not against specific providers: try yours with `gekko llm-check` before you rely on it. |
 
-If the named source is not usable (no such CLI on `PATH`, `GEKKO_LLM_*` not set) the run stops with a message (exit 2) before any test.
+If the named source is not usable (no such CLI on `PATH`, `GEKKO_LLM_*` not set) the run stops with a message (exit 2) before any test. When the model is unreachable the step fails as it would without `--heal`.
 
 - Only a **missing element** is healed, never a wrong state or a timeout. A healed step passes with a warning, an entry in `gekko-heal-report.md`, and, with `--junit-healed`, a failed testcase in that second file. At most 15 heals per test.
-- The model only chooses an existing element for `tap`, `type` and `scroll`: the kind of the step never changes and typed text always comes from the test. A `tap` with `system: true` that finds no element is skipped with a warning and an entry in the heal report (no model call): a permission dialog that did not appear is not an error under `--heal`. An `assertVisible` is healed only when its id is nowhere in the tree and its texts and states hold on the screen (checked in code), and the model confirms from the screen that the state is shown; otherwise it fails. The `until` of a step is checked the same way. `assertNotVisible`, `doubleTap`, `longPress`, `eraseText`, `scrollUntilVisible` and `swipe` are never healed.
+- The model only chooses an existing element for `tap`, `type` and `scroll`: the kind of the step never changes and typed text always comes from the test. A `tap` with `system: true` that finds no element is skipped with a warning and an entry in the heal report (no model call): a permission dialog that did not appear is not an error under `--heal`. An `assertVisible` is healed only when its id is nowhere in the tree and its texts and states hold on the screen (checked in code), and the model confirms from the screen that the state is shown; otherwise it fails. Both `do` and `until` are healed: a healed action is followed by its `until` check, and a missing id there is checked like an assertion and reported as its own entry. `assertNotVisible`, `doubleTap`, `longPress`, `eraseText`, `scrollUntilVisible` and `swipe` are never healed.
 - The prompt holds the step's `say`, the failed action and the screen listing (at most 12,000 characters, secrets masked). Model output and app texts are treated as untrusted data: the prompts tell the model never to follow instructions found on screen, and reports escape what they quote. Remember that this text leaves the machine for whatever model you named.
-- Without `--heal`, a missing element fails and the message lists the closest ids and texts on screen.
+- Without `--heal`, a missing element fails and the message lists the closest ids and texts on screen (`closest on screen: id=Search.Field ...`), so nothing is ever guessed.
+
+### Healed steps in CI
+
+A healed step passes, so `--junit` stays all green and has no trace of the heal. `--junit-healed FILE` writes a second JUnit file with one *failed* testcase per healed step:
+
+| Field | Value |
+|---|---|
+| Testcase name | `<test> › <say>` |
+| Failure message | `<missing id> missing; used <what was used>` |
+| Failure text | The model's reason |
+| `classname` | The device, when several devices are used |
+
+The file is empty (`tests="0"`) when nothing was healed or `--heal` is not used. Publish both with two JUnit report steps: `junit.xml` as the result check and `junit-healed.xml` as a separate check that only annotates and never fails the job, so every healed id shows up in the pull request. The same data is in `gekko-heal-report.md` for the job summary.
 
 ## In CI
 
-- Pull requests of an app repository run the `smoke`-tagged tests; pull requests of a test repository run the whole suite, sharded with `--shard i/n`.
-- CI runs with `--heal api` when the endpoint is configured (`GEKKO_LLM_BASE_URL`, `GEKKO_LLM_MODEL` and, if it needs one, `GEKKO_LLM_API_KEY`). The main JUnit file stays green for healed steps, `--junit-healed` is published as a second check that annotates and never fails the job. No model decides pass or fail; the model only chooses an element.
-- A failed run uploads `gekko-results` (`screenshot.png`, `tree.txt`, `failure.json`, optional `video.mp4`) as an artifact.
-- Workflows need `contents: read`, plus `checks: write` to publish the JUnit report. There are no automatic repair pull requests and no personal access token.
+The workflow templates are in `assets/workflows/` of the `gekko-setup` skill (see "Workflows" in its `SKILL.md`). They run on GitHub-hosted `ubuntu-latest` runners with an Android emulator (API 34, KVM switched on by a udev rule); the comment at the top of `run-tests.yml` and `app-ui-tests-smoke.yml` says where to change the runner. Never run pull requests from forks on a self-hosted runner that holds secrets.
+
+- Pull requests of an app repository run the `smoke`-tagged tests (`app-ui-tests-smoke.yml`); pull requests of a test repository run the whole suite, sharded with `--shard i/n` (`pr.yml` and `nightly.yml` call the reusable `run-tests.yml`, two shards by default).
+- `run-tests.yml` and `app-ui-tests-smoke.yml` run `gekko check` before they start the emulator, so a broken test or a missing `env:` value fails in seconds.
+- Web tests need no emulator: a job on any runner with Node.js installs the browsers (`--with-deps` adds the system libraries on Linux) and runs the same suite. The browsers cost a download per job (cache `~/.cache/ms-playwright` and `~/.gekko/web` to save it). The web end-to-end job of [gekko's own `ci.yml`](https://github.com/jakala-germany/gekko/blob/main/.github/workflows/ci.yml) is a working example.
+
+  ```yaml
+  - uses: actions/setup-node@<commit> # v7.1.0
+    with: { node-version: '22' }
+  - uses: jakala-germany/setup-gekko-cli-action@<commit>
+    with: { version: <version> }
+  - run: |
+      gekko install --platform web -s firefox --with-deps
+      gekko run --platform web -s firefox --junit junit.xml     # or --devices chromium,firefox,webkit
+  ```
+- CI runs with `--heal api` when the endpoint is configured (`GEKKO_LLM_BASE_URL` and `GEKKO_LLM_MODEL` as repository variables and, if it needs one, `GEKKO_LLM_API_KEY` as a secret, given to the gekko step only); without it the tests run without healing. The main JUnit file stays green for healed steps, `--junit-healed` is published as a second check that annotates and never fails the job. No model decides pass or fail; the model only chooses an element.
+- Other secrets: the test accounts that `env:` in `gekko.yaml` names, and optionally `APP_REPOSITORY_TOKEN` / `TESTS_REPOSITORY_TOKEN`, a read-only token to check out a private repository.
+- A failed run uploads `gekko-results` (`screenshot.png`, `tree.txt`, `failure.json`, optional `video.mp4` or `video.webm`, `console.txt` on the web) as an artifact for 14 days (they can show the UI of the app); `gekko-heal-report.md` goes to the job summary.
+- Workflows need `contents: read`, plus `checks: write` to publish the JUnit report (the token of a pull request from a fork is read-only: there the result check cannot be written, the job result still follows the tests). There are no automatic repair pull requests and no personal access token.

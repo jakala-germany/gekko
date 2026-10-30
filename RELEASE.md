@@ -3,6 +3,10 @@
 A release is a tag `X.Y.Z` on `main`. The version comes from the tag: no file has to be edited to change it, and the
 `VERSION_NAME` in `gradle.properties` and `gradle-plugin/gradle.properties` stays `-SNAPSHOT`.
 
+`.github/workflows/release.yml` runs the checks and builds, waits for the approval of the `release` environment, attests
+the build provenance, creates the GitHub draft release (binaries, runners and `SHA256SUMS`), publishes to Maven Central
+and then publishes the release.
+
 ## One-time setup
 
 The `release` environment of the repository (Settings → Environments) holds everything a release needs:
@@ -48,6 +52,7 @@ created by release managers (repository ruleset), and releases are immutable (Se
 7. Release the setup action with the same version, after the GitHub release is published: follow the `RELEASE.md` of
    `jakala-germany/setup-gekko-cli-action`. Then replace the pinned commit and the version in `README.md`,
    `skills/gekko-setup/` and its workflow templates (`gh api repos/jakala-germany/setup-gekko-cli-action/commits/X.Y.Z --jq .sha`).
+   Remove the "(not released yet)" notes from the `README.md` quick start and from "A test" once the version they name is out.
 
 ## When something fails
 
