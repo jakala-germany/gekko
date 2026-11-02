@@ -13,7 +13,7 @@
 
 gekko runs **UI tests written once in YAML on Android, iOS and the web** (Chromium, Firefox and WebKit). It is built to replace slow, hand-written UI-test suites.
 
-https://github.com/user-attachments/assets/95c2ec31-7283-452a-bca5-328fc3194612
+https://github.com/user-attachments/assets/221b71c0-87d5-4141-b0df-c3e5ea8f4fcd
 
 ## What it does
 
