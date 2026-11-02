@@ -32,14 +32,14 @@ From zero to a first passing test on an Android app. You need `adb` and a runnin
 1. **Install the CLI** (macOS arm64 or Linux x64) and put `~/.local/bin` on your `PATH`:
 
    ```bash
-   curl -fsSL https://raw.githubusercontent.com/jakala-germany/gekko/1.1.0/scripts/install.sh | bash -s -- 1.1.0
+   curl -fsSL https://raw.githubusercontent.com/jakala-germany/gekko/1.2.0/scripts/install.sh | bash -s -- 1.2.0
    gekko --version
    ```
 
 2. **Add the agent to the debug build.** In the app module (`mavenCentral()` must be in the `pluginManagement` and `dependencyResolutionManagement` repositories of `settings.gradle.kts`):
 
    ```kotlin
-   plugins { id("io.github.jakala-germany.gekko") version "1.1.0" }
+   plugins { id("io.github.jakala-germany.gekko") version "1.2.0" }
    gekko { variants.set(listOf("debug")) }
    ```
 
@@ -93,7 +93,7 @@ The `gekko-setup` skill does steps 2, 4 and 5 for you and checks the result (see
 
 Details: [iOS app in the `gekko-setup` skill](skills/gekko-setup/SKILL.md#ios-app).
 
-**Web app?** Nothing goes into the app, so steps 2 and 4 are not needed. Needs gekko 1.2.0 (not released yet). Instead:
+**Web app?** Nothing goes into the app, so steps 2 and 4 are not needed. Needs gekko 1.2.0. Instead:
 
 1. Install Playwright and a browser once (needs Node.js 18 or newer): `gekko install -s firefox`.
 2. In `gekko.yaml` set `app.web` (the URL of the app).
@@ -133,7 +133,7 @@ steps:
 - `say` is the intent in the tester's words; `do` is exactly one action.
 - `until` is the state the step must reach, `attempts` repeats `do` and `until`.
 - `platform:` limits a step to a platform (`android`, `ios`, `web` or a list); ids can be shared or `{ android: a, ios: b, web: c }`.
-- A folder with a `group.yaml` is a group: its `setup:` flows (a login) run once and its tests share that session. Needs gekko 1.2.0 (not released yet).
+- A folder with a `group.yaml` is a group: its `setup:` flows (a login) run once and its tests share that session. Needs gekko 1.2.0.
 
 Every action, selector, variable and the rules of the format: [Test and flow format](skills/gekko-author/references/format.md).
 
@@ -182,9 +182,9 @@ Step by step with the checks: [`gekko-setup`](skills/gekko-setup/SKILL.md).
 [`jakala-germany/setup-gekko-cli-action`](https://github.com/jakala-germany/setup-gekko-cli-action) (its tag is the gekko version) installs the CLI and the runners from the release, puts `gekko` on the `PATH` and removes everything when the job is done. Pin it to the commit of its tag:
 
 ```yaml
-- uses: jakala-germany/setup-gekko-cli-action@d31cf2318a7d39bc2c38c484c7353ca30bb5739f # 1.1.0
+- uses: jakala-germany/setup-gekko-cli-action@1803ebcf786cef8b3405ac4d03c7085e004327f5 # 1.2.0
   with:
-    version: 1.1.0
+    version: 1.2.0
     ios: true                                                   # also the iOS runner and agent (macOS runners)
                                                                 # web needs only Node.js, see the CLI reference
 - run: gekko run --tags smoke
