@@ -6,7 +6,7 @@ The YAML format, `gekko.yaml`, the commands, flags and exit codes on this page, 
 
 - Testers: `curl -fsSL https://raw.githubusercontent.com/jakala-germany/gekko/1.1.0/scripts/install.sh | bash -s -- 1.1.0` (macOS arm64 or Linux x64; or run `scripts/install.sh [VERSION]` from a checkout; the default version is `latest`). It installs the CLI to `$GEKKO_BIN_DIR` (default `~/.local/bin`) and the Android system runner and, on macOS, the iOS runner and the iOS agent to `$GEKKO_HOME/runners` (default `~/.gekko/runners`): `gekko-system-runner.apk`, `gekko-ios-runner/`, `gekko-ios-agent/GekkoAgent.framework`. Every download is checked against the `SHA256SUMS` of the release; `GEKKO_VERIFY_ATTESTATION=1` (needs `gh`) also verifies the build provenance; `install.sh --uninstall` removes the CLI, the runners and the web files (`~/.gekko/token` stays); `install.sh --web[=chromium,firefox,webkit]` also installs Playwright and the browsers for web tests (needs Node.js 18 or newer).
 - The CLI finds the installed Android system runner and iOS runner **without any setting**. The iOS agent is injected into the simulator app only when asked for: `ios.agentFramework: installed` (or `GEKKO_IOS_AGENT`). `android.runnerApk` and `ios.runnerDir` accept `installed` as well (the same as leaving them out).
-- Release assets on [GitHub](https://github.com/jakala-germany/gekko/releases): `gekko-macos-arm64`, `gekko-linux-x64`, `gekko-system-runner.apk`, `gekko-ios-runner.zip`, `gekko-ios-agent.zip` and `SHA256SUMS`. Verify a download with `gh attestation verify <file> --repo jakala-germany/gekko`.
+- Release assets on [GitHub](https://github.com/jakala-germany/gekko/releases): `gekko-macos-arm64`, `gekko-linux-x64`, `gekko-system-runner.apk`, `gekko-ios-runner.zip`, `gekko-ios-agent.zip` and `SHA256SUMS`. The web bridge and the page script are part of the CLI binary, so there is no separate web asset (Playwright and the browsers are downloaded by `gekko install --platform web`). Verify a download with `gh attestation verify <file> --repo jakala-germany/gekko`.
 - CI: the action `jakala-germany/setup-gekko-cli-action` (tag = gekko version, e.g. `@1.1.0`). Every download is verified against the sha256 digest GitHub reports for the release asset; the step fails when it differs or when the release reports none. The inputs `cli-sha256`, `system-runner-sha256`, `ios-runner-sha256` and `ios-agent-sha256` hard-pin a file (the hashes are in `SHA256SUMS`); `token` and `repository` are further inputs (see the action's README). Pin the action to the commit of its tag.
 - Host: macOS arm64 or Linux x64. The CLI is a native binary and needs no JVM. Android needs `adb`. iOS needs macOS with Xcode and simulators only (iOS 15 and later). The web needs Node.js 18 or newer; `gekko install --platform web` downloads Playwright and the browsers. The CLI starts `adb`, `xcrun simctl`, `xcodebuild`, `unzip` and `perl` (every process gets a time limit of 300 seconds). Xcode and `xcodegen` are only needed to *build* the runners from source; users get them from the release.
 - App side: Android agent `minSdk` 21; the emulator or device that runs the tests needs API 24 or newer; gekko is tested with AGP 9.x, Gradle 9.x and Kotlin 2.4.
@@ -21,7 +21,7 @@ On every command that talks to a device (`tree`, `tap`, `type`, `scroll`, `asser
 | `--platform android\|ios\|web` | Default android; ios when `-s` is a booted simulator, web when `-s` is a browser (`chromium`, `firefox`, `webkit`, with `-2`, `-3` for more of one; without `-s` the browser is `web.browser`). |
 | `--project DIR` | Directory with `gekko.yaml` (default `.`). Every command except `devices`, `screenshot` and `--version` needs `gekko.yaml` and stops with exit code 2 without it. |
 
-Without `-s`, Android uses the one attached device and iOS the one booted simulator; with several, the CLI stops and asks for `-s` (it does not guess).
+Without `-s`, Android uses the one attached device, iOS the one booted simulator and the web the browser of `web.browser`; with several devices, the CLI stops and asks for `-s` (it does not guess).
 
 ## Commands
 
@@ -31,7 +31,7 @@ Without `-s`, Android uses the one attached device and iOS the one booted simula
 | `gekko tree [--json]` | The current UI as the active driver sees it: role, `id=`, `text=`, `desc=`, `actions=`, `disabled` |
 | `gekko tap SELECTOR` | Tap an element; when the in-app agent's accessibility tap is not handled, the tap is repeated as a real touch through the system runner |
 | `gekko type SELECTOR "text"` | Type into an element (replaces its text) |
-| `gekko scroll SELECTOR [--direction D] [--distance DP]` | Scroll the container of an element; `--direction` is where the wanted content is: `down` (default), `up`, `start`, `end`, `left`, `right`; `--distance` in dp, points on iOS (default 400) |
+| `gekko scroll SELECTOR [--direction D] [--distance DP]` | Scroll the container of an element; `--direction` is where the wanted content is: `down` (default), `up`, `start`, `end`, `left`, `right`; `--distance` in dp, points on iOS, CSS pixels on the web (default 400) |
 | `gekko assert SELECTOR [--gone]` | Wait until the element is visible (or, with `--gone`, not visible); exit 1 when it is not within `--timeout` |
 | `gekko screenshot FILE` | Save a screenshot as PNG |
 | `gekko install [APP]` | Install the app under test and keep its data: an `.apk`, an `.app`, or a `.zip` that contains an `.app` (CI build products); without `APP` the `android.apk` / `ios.app` of `gekko.yaml`. `--platform web -s <browser>`: installs Playwright (into `~/.gekko/web`) and that browser, needs Node.js 18+, works without `gekko.yaml`; `--with-deps` adds the system libraries (Linux, uses sudo) |
@@ -44,7 +44,7 @@ Without `-s`, Android uses the one attached device and iOS the one booted simula
 
 `SELECTOR` for `tap`, `type`, `scroll` and `assert` is one or more of `--id`, `--text`, `--text-contains`, `--text-matches` (regular expression for the whole text), `--action` (`click`, `setText`, `scroll`), `--within ID`, plus `--index N`, `--timeout MS` (default 5000) and `--system` (use the system runner: permission dialogs, the browser). At least one of `--id`, `--text`, `--text-contains`, `--text-matches`, `--action` is required.
 
-The driver is chosen per call: the in-app agent while the app has the focus, the system runner (UiAutomator / XCUITest) for everything else. On Android the agent and the runner listen on private sockets (`gekko-<appId>`, `gekko-system-runner`) that only adb can reach.
+The driver is chosen per call: the in-app agent while the app has the focus, the system runner (UiAutomator / XCUITest) for everything else. On Android the agent and the runner listen on private sockets (`gekko-<appId>`, `gekko-system-runner`) that only adb can reach. On the web there is one driver: the web bridge (Node and Playwright) that the CLI starts on `127.0.0.1` with the per-user token; native browser dialogs are answered with `system: true` through the same bridge.
 
 ### `gekko run`
 
@@ -68,14 +68,14 @@ gekko run [PATH...] [--tags a,b] [--exclude-tags a,b] [--shard i/n]
 | `--junit-healed FILE` | A second JUnit file with one *failed* testcase per healed step (empty, `tests="0"`, without `--heal` or when nothing was healed). |
 | `--output DIR` | Where failure artifacts go (default `gekko-results`; with `--devices`: one subfolder per device). |
 | `--heal claude\|opencode\|api` | Fill in for missing ids with a model, see "Heal". |
-| `--devices a,b,c` or `all` | Spread the tests over adb serials, simulator UDIDs and browsers (`chromium,firefox,webkit`), or every attached device, booted simulator and running web session. Every platform, and every browser engine, has its own queue (every engine runs the whole selection) and the first free device takes the next test, so Android and iOS run at the same time and the order is not predictable. Not combinable with `-s`. |
+| `--devices a,b,c` or `all` | Spread the tests over adb serials, simulator UDIDs and browsers (`chromium,firefox,webkit`), or every attached device, booted simulator and running web session. Every platform, and every browser engine, has its own queue (every engine runs the whole selection) and the first free device takes the next test, so Android, iOS and the web run at the same time and the order is not predictable. Not combinable with `-s`. |
 | `--every-device` | With `--devices`: every device runs every test; the run passes only when every test passes on every device. Prints `[device] x/y passed` per device. |
-| `--install` / `--app FILE` | Install the app before the tests: `android.apk` / `ios.app` of `gekko.yaml`, or `FILE` (implies `--install`). Repeat `--app` for several platforms: an `.apk` goes to Android devices, an `.app` or `.zip` to iOS simulators; with `--devices` a platform without a build keeps what is installed. |
+| `--install` / `--app FILE` | Install the app before the tests: `android.apk` / `ios.app` of `gekko.yaml`, or `FILE` (implies `--install`). Repeat `--app` for several platforms: an `.apk` goes to Android devices, an `.app` or `.zip` to iOS simulators; with `--devices` a platform without a build keeps what is installed. A web app is not installed from a build: it is opened from `app.web`. |
 | `--uninstall` | Remove the app, the runner and the port forwards when the run is done. |
-| `--record none\|failures\|all` | Keep a video of the screen: of failed tests only, or of every test (default none). Saved as `video.mp4` next to `screenshot.png` and `tree.txt`. Android records at most 180 seconds per test. |
+| `--record none\|failures\|all` | Keep a video of the screen: of failed tests only, or of every test (default none). Saved as `video.mp4` (`video.webm` in a browser) next to `screenshot.png` and `tree.txt`. Android records at most 180 seconds per test. |
 | `-s`, `--platform`, `--project` | As above. |
 
-- Every test starts from cleared app data, applies `device:` settings, launches the app, and quits it when done.
+- Every test starts from cleared app data (on the web: a new browser context, unless `web.session: shared` or a group says otherwise), applies `device:` settings, launches the app, and quits it when done.
 - `gekko run` validates all tests and flows like `gekko check` before it starts anything; a problem is exit code 2.
 - With no matching test the run stops with "No tests found" (exit 2).
 
@@ -98,7 +98,7 @@ With `--heal` and at least one healed step, `<output>/gekko-heal-report.md` list
 | 0 | All tests passed (also an empty shard, and healed steps, which pass with a warning). |
 | 1 | A test failed (a step failed, an assertion did not hold); also a failed `gekko assert` or a rejected `tap`/`type`/`scroll`. |
 | 2 | Usage, YAML or configuration problem: a wrong flag, a broken test or flow (found when it loads), a missing `gekko.yaml`, an undeclared or unset `env:` variable, no tests found, a CLI/agent version mismatch found by a single-device command. |
-| 3 | Device, agent or runner problem, or the app crashed: no device, `adb` or `simctl` failing, "Agent did not respond", a runner that does not start. `gekko run` ends with 3 when any test ended this way, even if another failed normally. |
+| 3 | Device, agent or runner problem, or the app crashed: no device, `adb` or `simctl` failing, "Agent did not respond", a runner that does not start, the web bridge or Playwright failing to start. `gekko run` ends with 3 when any test ended this way, even if another failed normally. |
 
 ## Versions
 
@@ -119,6 +119,7 @@ app:
   android: com.example.app            # applicationId of the debug build
   androidActivity: com.example.app.MainActivity   # launcher activity, when several exist
   ios: com.example.app                # bundle id
+  web: https://staging.example.com/   # URL, or an HTML file or folder of the project
 android:
   permissions: []                     # full names, granted after every data clear
   runnerApk: installed                # or a path; wins: GEKKO_RUNNER_APK. Left out: the installed runner
@@ -129,6 +130,9 @@ ios:
   agentFramework: installed           # inject the installed agent; or a path; wins: GEKKO_IOS_AGENT
   app: builds/App.zip                 # an .app or a zip with one; for install / run --install
   runnerDir: installed                # or a path; wins: GEKKO_IOS_RUNNER_DIR. Left out: the installed runner
+web:                                  # all keys optional, see the table
+  browser: chromium                   # chromium, firefox or webkit
+  viewport: 1280x800
 device:                               # for all tests; a test's own device: overrides it
   language: en-US                     # BCP 47 app language
   timeFormat: 24h                     # 12h or 24h; a time picker takes 20 only in 24h mode
@@ -191,7 +195,7 @@ Diagnostic and internal variables are not covered by the compatibility promise:
 | `GEKKO_BRIDGE_TOKEN`, `GEKKO_BRIDGE_LOG` | internal | Set by the CLI when it starts the web bridge. Do not set them by hand |
 | `GEKKO_TAP_VERIFY` | internal | A switch of the iOS agent. Do not set it by hand |
 
-The setup action sets the runner variables for the job, so a test repository needs no copy of the runners in CI. With the install script nothing has to be set for the runners; only the iOS agent has to be asked for, with `ios.agentFramework: installed` in `gekko.yaml` or `export GEKKO_IOS_AGENT="$HOME/.gekko/runners/gekko-ios-agent/GekkoAgent.framework"`.
+The setup action sets the runner variables for the job, so a test repository needs no copy of the runners in CI. With the install script nothing has to be set for the runners; only the iOS agent has to be asked for, with `ios.agentFramework: installed` in `gekko.yaml` or `export GEKKO_IOS_AGENT="$HOME/.gekko/runners/gekko-ios-agent/GekkoAgent.framework"`. The web needs no runner at all, only Node.js and Playwright (`gekko install --platform web`).
 
 The variables of the install script itself (not read by the CLI): `GEKKO_BIN_DIR` (default `~/.local/bin`), `GEKKO_HOME`, `GEKKO_VERIFY_ATTESTATION=1`, `GEKKO_RELEASE_BASE_URL` (replaces the release URL, for tests).
 
@@ -227,7 +231,7 @@ The file is empty (`tests="0"`) when nothing was healed or `--heal` is not used.
 
 ## In CI
 
-The workflow templates are in `assets/workflows/` of the `gekko-setup` skill (see "Workflows" in its `SKILL.md`). They run on GitHub-hosted `ubuntu-latest` runners with an Android emulator (API 34, KVM switched on by a udev rule); the comment at the top of `run-tests.yml` and `app-ui-tests-smoke.yml` says where to change the runner. Never run pull requests from forks on a self-hosted runner that holds secrets.
+The workflow templates are in `assets/workflows/` of the `gekko-setup` skill (see "Workflows" in its `SKILL.md`). They run on GitHub-hosted `ubuntu-latest` runners with an Android emulator (API 34, KVM switched on by a udev rule), and are Android-only; a web job needs no emulator (see below). The comment at the top of `run-tests.yml` and `app-ui-tests-smoke.yml` says where to change the runner. Never run pull requests from forks on a self-hosted runner that holds secrets.
 
 - Pull requests of an app repository run the `smoke`-tagged tests (`app-ui-tests-smoke.yml`); pull requests of a test repository run the whole suite, sharded with `--shard i/n` (`pr.yml` and `nightly.yml` call the reusable `run-tests.yml`, two shards by default).
 - `run-tests.yml` and `app-ui-tests-smoke.yml` run `gekko check` before they start the emulator, so a broken test or a missing `env:` value fails in seconds.

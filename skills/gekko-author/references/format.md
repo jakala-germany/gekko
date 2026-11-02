@@ -102,7 +102,7 @@ teardown: [account-cleanup]      # optional flows, run once after the last test
 | Action | Form | Notes |
 |---|---|---|
 | `tap` | `{ tap: { id: Search.Field } }`<br>`{ tap: { text: "Buy", index: 1 } }`<br>`{ tap: { id: Alert.Allow, system: true } }`<br>`{ tap: { point: "50%,95%" } }` | Taps the element. If the agent's accessibility tap does nothing, gekko repeats it as a real touch through the system runner. `system: true` always uses the system runner: permission dialogs, the browser, anything outside the app. `point` taps a spot of the screen as `x%,y%`; Android only, last resort for an element without id and text. |
-| `doubleTap` | `{ doubleTap: { id: Photo } }` | Two quick touches (a real touch on both platforms). Takes `system: true` like `tap`. |
+| `doubleTap` | `{ doubleTap: { id: Photo } }` | Two quick touches (a real touch on Android and iOS, a double click on the web). Takes `system: true` like `tap`. |
 | `longPress` | `{ longPress: { id: Row, holdMs: 1000 } }` | Holds the element pressed (default 700 ms), e.g. for a context menu. Takes `system: true`. |
 | `type` | `{ type: { id: Search.Field, value: "tent" } }` | Sets the text of a field (replaces what is there). Any selector key (not `system` or `point`) plus `value`. The text of a password field can be typed but never read back. |
 | `eraseText` | `{ eraseText: { id: Search.Field } }` | Clears a text field. |
@@ -115,8 +115,8 @@ teardown: [account-cleanup]      # optional flows, run once after the last test
 | `back` | `{ back: true }` | System back button (Android) or history back (web). Not on iOS. |
 | `pressKey` | `{ pressKey: enter }` | Android: `back`, `home`, `enter`, `tab` or a key code number. Web: `enter`, `tab`, `escape`, `space`, `backspace`, `delete`, `home`, `end`, `pageup`, `pagedown`, `up`, `down`, `left`, `right` or any Playwright key name (`a`, `Shift+A`); it goes to the focused element. Not on iOS. |
 | `hideKeyboard` | `{ hideKeyboard: true }` | Closes the keyboard when it is open; do it before a scroll or swipe over the lower part of the screen. |
-| `openLink` | `{ openLink: "example://item/42" }` | Opens a URL or deep link (Android intent, `simctl openurl` on a simulator). |
-| `launchApp` | `{ launchApp: {} }`<br>`{ launchApp: { clearState: true } }`<br>`{ launchApp: { arguments: { feature: "on" } } }` | Starts the app (again). `clearState: true` wipes its data first. `arguments` become Android intent extras (strings) and iOS launch arguments (`-feature on`); keys are letters, digits, `_` or `.`, starting with a letter. |
+| `openLink` | `{ openLink: "example://item/42" }` | Opens a URL or deep link (Android intent, `simctl openurl` on a simulator, a navigation of the page on the web: an address starting with `/`, `.`, `?` or `#` is relative to the current page). |
+| `launchApp` | `{ launchApp: {} }`<br>`{ launchApp: { clearState: true } }`<br>`{ launchApp: { arguments: { feature: "on" } } }` | Starts the app (again). `clearState: true` wipes its data first. `arguments` become Android intent extras (strings), iOS launch arguments (`-feature on`) and query parameters on the web; keys are letters, digits, `_` or `.`, starting with a letter. |
 | `stopApp` | `{ stopApp: true }` | Quits the app, keeping its data. |
 | `clearState` | `{ clearState: true }` | Wipes the app data and quits the app; follow it with `launchApp`. |
 | `launchPackage`<br>`stopPackage` | `{ launchPackage: com.example.other }`<br>`{ stopPackage: com.android.chrome }` | Start or force-stop another app by package name. Android only; while the other app is in front, later steps go through the system runner. |
@@ -170,7 +170,7 @@ Three actions, three jobs:
 | `start` / `end` | Content at the start / end of the reading direction: left / right in a left-to-right layout, the other way round in a right-to-left one. gekko reads the layout direction from the device. |
 | `left` / `right` | Content to the physical left / right. |
 
-`distance` is in dp (points on iOS), default 400; use 1000 to 2000 for long lists, and check with `gekko tree` what is on screen instead of tuning blindly.
+`distance` is in dp (points on iOS, CSS pixels on the web), default 400; use 1000 to 2000 for long lists, and check with `gekko tree` what is on screen instead of tuning blindly.
 
 `swipe` is the other way round: the **finger** moves in the given direction (`up`, `down`, `left`, `right`), so `swipe: up` shows content below. It comes in three forms: only `direction` (swipes the screen), `from: <selector>` plus `direction` (starts in the center of the element and goes on to the screen edge), or `start` and `end` as `x%,y%` points. `durationMs` (default 200) makes it slower; a slider that confirms a purchase needs about 400.
 

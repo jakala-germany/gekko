@@ -63,6 +63,20 @@
 <path class="warn" d="M684,656 L664,680 L692,698 L666,724" style="stroke-width:5" />
 <path class="ink" d="M644,747 L732,747 Q741,745 741,756 L743,772 Q742,783 730,784 L646,784 Q632,783 633,774 L635,758 Q635,747 647,747 Z" style="stroke-width:3"/>
 <g transform="translate(678 694) rotate(-16)"><path class="paper" d="M-36,-19 L35,-21 Q57,-20 55,-0 L57,-0 Q55,21 35,20 L-36,20 Q-55,19 -56,-1 L-55,-1 Q-56,-19 -35,-21 Z"/><path class="ink" d="M-19,-17 L18,-16 Q25,-16 25,-11 L25,11 Q25,17 19,17 L-19,16 Q-24,16 -24,11 L-26,-10 Q-26,-16 -18,-17 Z" style="stroke:#2F6FE4;stroke-width:3.5"/><path class="sys" d="M-13,-5 L13,-5 M-13,5 L13,5" style="stroke-width:3" /><circle cx="-45" cy="-8" r="2.2" fill="#111"/><circle cx="-45" cy="8" r="2.2" fill="#111"/><circle cx="-35" cy="-8" r="2.2" fill="#111"/><circle cx="-35" cy="8" r="2.2" fill="#111"/><circle cx="35" cy="-8" r="2.2" fill="#111"/><circle cx="35" cy="8" r="2.2" fill="#111"/><circle cx="45" cy="-8" r="2.2" fill="#111"/><circle cx="45" cy="8" r="2.2" fill="#111"/></g>
+<path class="paper" d="M300,598 Q419,597 540,596 Q548,599 549,610 Q547,715 547,822 Q546,834 537,834 Q421,836 301,833 Q289,836 289,826 Q289,716 290,610 Q291,600 299,597 Z"/>
+<path class="ink" d="M290,640 Q418,640 548,640" style="stroke-width:2.5"/>
+<circle class="ink" cx="312" cy="619" r="5.5"/>
+<circle class="ink" cx="332" cy="619" r="5.5"/>
+<circle class="ink" cx="352" cy="619" r="5.5"/>
+<path class="ink" d="M388,608 Q451,607 515,607 Q527,606 529,618 Q527,618 529,619 Q528,632 515,631 Q451,632 387,632 Q376,631 375,620 Q375,619 377,619 Q375,606 389,608 Z" style="stroke-width:2.5"/>
+<path class="sys" d="M316,684 L326,694 L342,672" style="stroke-width:5"/>
+<path class="ink" d="M358,683 Q432,685 505,684" style="stroke-width:3"/>
+<path class="ink" d="M316,716 Q397,717 480,717" style="stroke-width:3"/>
+<path class="ink" d="M335,748 Q413,749 488,748 Q502,751 503,763 Q500,778 500,793 Q502,804 491,803 Q410,806 333,803 Q320,804 321,792 Q324,777 322,763 Q323,749 335,751 Z" style="stroke-width:3"/>
+<g transform="translate(446 764)"><path class="paper" d="M0,0 L1,38 L10,30 L17,46 L26,42 L19,27 L32,27 Z" style="stroke-width:3"/></g>
+<path class="flow" d="M436,756 L426,746" style="stroke-width:4"/>
+<path class="flow" d="M448,750 L447,736" style="stroke-width:4"/>
+<path class="flow" d="M461,754 L471,745" style="stroke-width:4"/>
 <path class="paper" d="M1229,582 L1569,585 Q1584,582 1584,601 L1584,819 Q1586,833 1569,834 L1231,836 Q1213,832 1217,818 L1214,599 Q1214,586 1230,583 Z"/><path class="ink" d="M1215,620 L1585,620" style="stroke-width:2.5" /><circle class="ink" cx="1239" cy="602" r="5.5"/><circle class="ink" cx="1261" cy="602" r="5.5"/><circle class="ink" cx="1283" cy="602" r="5.5"/><path class="paper" d="M1369,635 L1431,635 Q1457,635 1455,660 L1455,797 Q1456,822 1430,822 L1371,823 Q1344,823 1345,796 L1343,660 Q1345,634 1369,635 Z"/><path class="ink" d="M1371,640 L1429,642 Q1450,641 1449,661 L1449,794 Q1449,815 1429,815 L1371,815 Q1352,816 1352,794 L1350,661 Q1351,641 1372,641 Z" style="stroke-width:2.5"/><path class="solid" d="M1381,650 L1419,649 Q1426,650 1426,657 L1426,657 Q1426,664 1419,665 L1381,664 Q1374,664 1374,657 L1373,657 Q1374,650 1382,650 Z"/><path class="paper" d="M1193,835 L1606,833 Q1616,834 1614,842 L1616,842 Q1614,851 1606,850 L1193,850 Q1186,849 1185,841 L1186,841 Q1185,835 1194,833 Z"/>
 <path class="sys" d="M1384,721 L1395,733 L1416,708" style="stroke-width:5" />
 <path class="ink" d="M1374,761 L1427,761 Q1436,761 1433,770 L1434,784 Q1435,793 1425,793 L1376,795 Q1364,794 1367,783 L1363,769 Q1366,759 1374,760 Z" style="stroke-width:3"/>
@@ -92,5 +106,6 @@
 <text class="t mid" x="968" y="140" >this is gekko</text>
 <text class="t t-s mid" x="688" y="895" >Android</text>
 <text class="t t-s mid" x="1400" y="895" >iOS</text>
+<text class="t t-s mid" x="419" y="895" >Web</text>
 </g>
 </svg>

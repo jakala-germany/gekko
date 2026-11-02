@@ -16,5 +16,5 @@ labels: bug
 
 - gekko version (`gekko --version`):
 - Host OS and CPU:
-- Platform: Android (emulator / phone, API level) or iOS simulator (iOS and Xcode version)
+- Platform: Android (emulator / phone, API level), iOS simulator (iOS and Xcode version) or web (browser, Node.js and Playwright version)
 - App under test: debug build with the gekko agent? (plugin version)

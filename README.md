@@ -8,7 +8,7 @@
 **G**enerate and **E**xecute with **K**otlin to **K**eep-green through **O**bservation
 
 <p align="center">
-  <img src="docs/hero.png" alt="gekko, the mascot, taps an Android phone and an iOS simulator, reads a three-line YAML test and gets healing help from an LLM: UI tests, written once" width="100%">
+  <img src="docs/hero.png" alt="gekko, the mascot, taps an Android phone, an iOS simulator and a browser, reads a three-line YAML test and gets healing help from an LLM: UI tests, written once" width="100%">
 </p>
 
 gekko runs **UI tests written once in YAML on Android, iOS and the web** (Chromium, Firefox and WebKit). It is built to replace slow, hand-written UI-test suites.
@@ -17,7 +17,7 @@ https://github.com/user-attachments/assets/95c2ec31-7283-452a-bca5-328fc3194612
 
 ## What it does
 
-- **Fast.** An in-app agent reads the UI tree directly and taps through accessibility actions: steps take 10 ms to about 1 s.
+- **Fast.** On Android and iOS an in-app agent reads the UI tree directly and taps through accessibility actions; on the web a script injected into the page does the same: steps take 10 ms to about 1 s.
 - **Write once.** One test file, shared ids, optional `platform:` on steps (one name or a list), `do` or `until` where the platforms differ.
 - **Reusable flows.** Login or onboarding is defined once and reused with `use:`. A folder with a `group.yaml` makes its tests share one login: the setup flows run once, the tests follow in one session, and a failed setup skips them.
 - **LLM only where it helps.** A tester describes a scenario; Claude (their own subscription) writes and repairs the steps. CI replays the compiled steps, and no model decides whether a test passes.
@@ -165,15 +165,15 @@ Sources, rules and the CI setup: [Heal in the CLI reference](skills/gekko-setup/
 
 ## Setting up an app
 
-| Android | iOS |
-|---|---|
-| ![The Android agent springs out of the app like a jack-in-the-box when the app launches: no app code needed.](docs/img/setup-android-agent.png) | ![On iOS the agent is injected into the simulator app at launch, before main(), and the app stays untouched.](docs/img/setup-ios-agent.png) |
+| Android | iOS | Web |
+|---|---|---|
+| ![The Android agent springs out of the app like a jack-in-the-box when the app launches: no app code needed.](docs/img/setup-android-agent.png) | ![On iOS the agent is injected into the simulator app at launch, before main(), and the app stays untouched.](docs/img/setup-ios-agent.png) | ![On the web gekko slips a read-only script into the browser page; the app stays untouched.](docs/img/setup-web-agent.png) |
 
 - **Android.** The Gradle plugin from the quick start adds the agent to the variants you list. It starts itself and needs no app code.
 - **iOS.** Nothing in the app: the CLI injects `GekkoAgent.framework` into the **simulator** app at launch. The settings are in the iOS note of the quick start.
 - **Web.** Nothing in the app either: gekko opens `app.web` in a browser it controls through Playwright and injects a script that only reads the page. Elements are named by `data-testid` (or `flt-semantics-identifier` for Flutter web), text and accessible labels. The settings are in the web note of the quick start and the `web:` keys of the [CLI reference](skills/gekko-setup/references/cli.md#gekkoyaml).
 - **Versions.** Keep the plugin version and the CLI version in step; the CLI refuses an agent or runner with another protocol number and says what to update.
-- **Skills.** `gekko-setup` wires an Android app, an iOS app or a test repo (including CI workflows); `gekko-author` is the daily loop for writing and repairing tests with Claude.
+- **Skills.** `gekko-setup` wires an Android app, an iOS app, a web app or a test repo (including CI workflows); `gekko-author` is the daily loop for writing and repairing tests with Claude.
 
 Step by step with the checks: [`gekko-setup`](skills/gekko-setup/SKILL.md).
 
@@ -186,6 +186,7 @@ Step by step with the checks: [`gekko-setup`](skills/gekko-setup/SKILL.md).
   with:
     version: 1.1.0
     ios: true                                                   # also the iOS runner and agent (macOS runners)
+                                                                # web needs only Node.js, see the CLI reference
 - run: gekko run --tags smoke
 ```
 

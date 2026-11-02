@@ -46,36 +46,49 @@
 
 <!-- Line art: everything hand-drawn goes here. The filter makes strokes wobble; keep text OUT of this group. -->
 <g id="art" filter="url(#wobble)">
-  <path class="paper" d="M1048,50 C1242,53 1448,50 1642,51 Q1687,50 1691,100 C1687,242 1688,408 1687,554 Q1692,596 1646,604 C1448,601 1242,601 1045,596 Q1000,596 998,550 C996,408 1000,242 1000,101 Q1000,51 1048,51 Z" />
-<path class="paper" d="M1127,278 L1129,318 L1161,317 L1159,280 Z"/>
-<path class="paper" d="M1045,280 L1046,218 C1045,176 1090,160 1145,162 C1200,160 1241,176 1240,218 C1243,245 1239,260 1241,280 C1175,284 1105,277 1045,280 Z"/>
-<path class="solid" d="M1042,226 L1091,224 L1091,240 L1043,242 Z"/>
-<path class="ink" d="M1241,230 L1267,226 L1266,178"/>
-<path class="paper" d="M1266,178 L1307,190 L1265,204 Z"/>
-<path class="ink" d="M1015,320 C1105,316 1195,323 1285,319"/>
-<path class="paper" d="M1127,523 L1129,563 L1161,562 L1159,525 Z"/>
-<path class="paper" d="M1045,525 L1046,463 C1045,421 1090,405 1145,407 C1200,405 1241,421 1240,463 C1243,490 1239,505 1241,525 C1175,529 1105,522 1045,525 Z"/>
-<path class="solid" d="M1042,471 L1091,469 L1091,485 L1043,487 Z"/>
-<path class="ink" d="M1241,475 L1267,471 L1266,423"/>
-<path class="paper" d="M1266,423 L1307,435 L1265,449 Z"/>
-<path class="ink" d="M1015,565 C1105,561 1195,568 1285,564"/>
-<use href="#gekko-reach" transform="translate(330 590) scale(1.6)"/>
-<g transform="rotate(-7 690 385)"><path class="paper" d="M630,349 C678,345 714,349 750,347 L752,423 C702,426 666,421 630,423 Z"/><rect class="dot-o" x="720" y="354" width="20" height="20" rx="2" stroke-width="1"/></g>
-<path class="flow" d="M770,360 C850,290 940,245 1022,234" marker-end="url(#ah-o)"/>
-<path class="flow" d="M772,420 C860,430 950,462 1022,478" marker-end="url(#ah-o)"/>
-<g transform="rotate(-22 920 276)"><path class="paper" d="M888,257 C914,253 933,257 952,255 L954,297 C926,300 907,295 888,297 Z"/><path class="ink" d="M890,258 L920,280 L952,257"/></g>
-<g transform="rotate(12 930 452)"><path class="paper" d="M898,433 C924,429 943,433 962,431 L964,473 C936,476 917,471 898,473 Z"/><path class="ink" d="M900,434 L930,456 L962,433"/></g>
-
+<path class="paper" d="M1044,14 Q1347,13 1645,15 Q1690,13 1689,57 Q1688,188 1692,317 Q1691,359 1646,358 Q1346,359 1043,363 Q999,363 1001,318 Q1001,185 1001,57 Q999,12 1041,13 Z"/>
+<path class="paper" d="M1120.6,155.0 L1122.1,183.8 L1145.1,183.0 L1143.7,156.4 Z" style="stroke-width:3.5"/>
+<path class="paper" d="M1061.6,156.4 L1062.3,111.8 C1061.6,81.5 1094.0,70.0 1133.6,71.4 C1173.2,70.0 1202.7,81.5 1202.0,111.8 C1204.2,131.2 1201.3,142.0 1202.7,156.4 C1155.2,159.3 1104.8,154.2 1061.6,156.4 Z" style="stroke-width:3.5"/>
+<path class="solid" d="M1059.4,117.5 L1094.7,116.1 L1094.7,127.6 L1060.2,129.0 Z"/>
+<path class="ink" d="M1202.7,120.4 L1221.4,117.5 L1220.7,83.0" style="stroke-width:3.5"/>
+<path class="paper" d="M1220.7,83.0 L1250.2,91.6 L1220.0,101.7 Z" style="stroke-width:3.5"/>
+<path class="ink" d="M1040.0,185.2 C1104.8,182.3 1169.6,187.4 1234.4,184.5" style="stroke-width:3.5"/>
+<path class="paper" d="M1120.6,298.0 L1122.1,326.8 L1145.1,326.0 L1143.7,299.4 Z" style="stroke-width:3.5"/>
+<path class="paper" d="M1061.6,299.4 L1062.3,254.8 C1061.6,224.5 1094.0,213.0 1133.6,214.4 C1173.2,213.0 1202.7,224.5 1202.0,254.8 C1204.2,274.2 1201.3,285.0 1202.7,299.4 C1155.2,302.3 1104.8,297.2 1061.6,299.4 Z" style="stroke-width:3.5"/>
+<path class="solid" d="M1059.4,260.5 L1094.7,259.1 L1094.7,270.6 L1060.2,272.0 Z"/>
+<path class="ink" d="M1202.7,263.4 L1221.4,260.5 L1220.7,226.0" style="stroke-width:3.5"/>
+<path class="paper" d="M1220.7,226.0 L1250.2,234.6 L1220.0,244.7 Z" style="stroke-width:3.5"/>
+<path class="ink" d="M1040.0,328.2 C1104.8,325.3 1169.6,330.4 1234.4,327.5" style="stroke-width:3.5"/>
+<path class="paper" d="M1021,382 Q1348,382 1672,386 Q1689,384 1688,405 Q1693,505 1688,612 Q1690,632 1671,631 Q1343,628 1015,630 Q1000,631 1003,611 Q999,507 1003,401 Q999,384 1019,383 Z"/>
+<path class="ink" d="M1000,444 Q1345,443 1690,444"/>
+<circle class="ink" cx="1032" cy="414" r="7"/>
+<circle class="ink" cx="1058" cy="414" r="7"/>
+<circle class="ink" cx="1084" cy="414" r="7"/>
+<path class="ink" d="M1136,398 Q1380,399 1623,399 Q1641,399 1641,413 Q1641,414 1639,415 Q1640,431 1623,431 Q1379,429 1135,429 Q1120,429 1119,415 Q1121,414 1119,415 Q1120,398 1135,398 Z" style="stroke-width:3"/>
+<path class="paper" d="M1120.6,559.0 L1122.1,587.8 L1145.1,587.0 L1143.7,560.4 Z" style="stroke-width:3.5"/>
+<path class="paper" d="M1061.6,560.4 L1062.3,515.8 C1061.6,485.5 1094.0,474.0 1133.6,475.4 C1173.2,474.0 1202.7,485.5 1202.0,515.8 C1204.2,535.2 1201.3,546.0 1202.7,560.4 C1155.2,563.3 1104.8,558.2 1061.6,560.4 Z" style="stroke-width:3.5"/>
+<path class="solid" d="M1059.4,521.5 L1094.7,520.1 L1094.7,531.6 L1060.2,533.0 Z"/>
+<path class="ink" d="M1202.7,524.4 L1221.4,521.5 L1220.7,487.0" style="stroke-width:3.5"/>
+<path class="paper" d="M1220.7,487.0 L1250.2,495.6 L1220.0,505.7 Z" style="stroke-width:3.5"/>
+<path class="ink" d="M1040.0,589.2 C1104.8,586.3 1169.6,591.4 1234.4,588.5" style="stroke-width:3.5"/>
+<use href="#gekko-reach" transform="translate(280 590) scale(1.6)"/>
+<g transform="translate(-48 0)"><g transform="rotate(-7 690 385)"><path class="paper" d="M630,349 C678,345 714,349 750,347 L752,423 C702,426 666,421 630,423 Z"/><rect class="dot-o" x="720" y="354" width="20" height="20" rx="2" stroke-width="1"/></g></g>
+<path class="flow" d="M722,352 C830,290 930,160 1036,122" marker-end="url(#ah-o)"/>
+<path class="flow" d="M726,386 C830,372 930,300 1036,266" marker-end="url(#ah-o)"/>
+<path class="flow" d="M722,420 C830,440 930,500 1036,526" marker-end="url(#ah-o)"/>
+<g transform="translate(884 216) rotate(-24)"><path class="paper" d="M-32,-21 C-6,-25 13,-21 32,-23 L34,19 C6,22 -13,17 -32,19 Z"/><path class="ink" d="M-30,-20 L0,2 L32,-21"/></g>
+<g transform="translate(884 330) rotate(-14)"><path class="paper" d="M-32,-21 C-6,-25 13,-21 32,-23 L34,19 C6,22 -13,17 -32,19 Z"/><path class="ink" d="M-30,-20 L0,2 L32,-21"/></g>
+<g transform="translate(884 470) rotate(14)"><path class="paper" d="M-32,-21 C-6,-25 13,-21 32,-23 L34,19 C6,22 -13,17 -32,19 Z"/><path class="ink" d="M-30,-20 L0,2 L32,-21"/></g>
 </g>
 
 <!-- Handwritten labels: classes t, t-r (red), t-o (orange), t-b (blue), t-s (small), mid (centred). -->
 <g id="labels">
-  <text class="t mid" x="330" y="240" >CLI</text>
-<text class="t t-s mid" x="690" y="396" >{ }</text>
-<text class="t t-o mid" x="780" y="572" >JSON / HTTP</text>
-<text class="t t-b mid" x="1345" y="118" >device</text>
-<text class="t" x="1325" y="260" >In-app agent</text>
-<text class="t" x="1325" y="505" >System runner</text>
-
+  <text class="t mid" x="280" y="236">CLI</text>
+<text class="t t-s mid" x="642" y="396">{ }</text>
+<text class="t t-o mid" x="790" y="604">JSON / HTTP</text>
+<text class="t t-b mid" x="1345" y="70">device</text>
+<text class="t" x="1272" y="142">In-app agent</text>
+<text class="t" x="1272" y="285">System runner</text>
+<text class="t" x="1272" y="546">Web bridge</text>
 </g>
 </svg>

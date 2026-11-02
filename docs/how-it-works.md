@@ -10,15 +10,15 @@ The background to the [README](../README.md): what the name stands for, how the 
 |---|---|
 | **G**enerate | Tests start as plain-language intent (`say:`). An LLM (Claude, on the tester's own subscription) explores the real app, picks ids and generates the compiled steps. |
 | **E**xecute | The CLI executes the compiled steps deterministically on Android, iOS and in the browser. CI needs no model to run them. |
-| **K**otlin | A native Kotlin CLI, a Kotlin agent for Android and a shared Kotlin protocol. |
+| **K**otlin | A native Kotlin CLI, a Kotlin agent for Android, a shared Kotlin protocol and, for the web, a small Node bridge around Playwright. |
 | **K**eep-green | Suites stay passing: `--heal` fills in for ids that are missing during a run and reports exactly what it used, and the `gekko-author` skill repairs tests from the failure artifacts and the heal report. |
-| **O**bservation | The agent lives inside the app and observes the UI tree directly (ids, texts, actions). It knows when the screen is done loading, so there are no fixed sleeps and no screenshot scraping. |
+| **O**bservation | On Android and iOS the agent lives inside the app, on the web a script injected into the page does the same: it observes the UI tree directly (ids, texts, actions). gekko knows when the screen is done loading, so there are no fixed sleeps and no screenshot scraping. |
 
 A gecko is also fast, light and sticks to every surface it climbs on.
 
 ## Design constraints
 
-gekko is a small native binary that executes a YAML sheet against the device. The model is an optional extra for healing, never part of the run.
+gekko is a small native binary that executes a YAML sheet against the device or the browser. The model is an optional extra for healing, never part of the run.
 
 ![gekko hands a YAML sheet to a small native box with a stopwatch, while the LLM stays an optional extra for healing: the design constraints.](img/design-constraints.png)
 
@@ -26,7 +26,7 @@ gekko is a small native binary that executes a YAML sheet against the device. Th
 
 The CLI posts JSON commands to two small servers on the device: the in-app agent and the system runner. On the web it talks to a bridge that drives the browser.
 
-![gekko, as the CLI, posts a JSON envelope to two mailboxes on the device: the in-app agent and the system runner.](img/architecture.png)
+![gekko, as the CLI, posts a JSON envelope to two mailboxes on the device, the in-app agent and the system runner, and to a web bridge that drives the browser.](img/architecture.png)
 
 ```text
  gekko CLI (Kotlin/Native) ──adb forward / localhost──▶ in-app agent      (Android: androidx.startup · iOS: injected dylib)
@@ -67,11 +67,11 @@ Pages that never settle:
 
 - **Connections.** Android: adb forwards the private socket to a free host port. iOS simulators: a stable port per UDID. Web: one bridge per browser session.
 - **Which devices.** `--devices` takes serials, UDIDs and browsers (`chromium,firefox,webkit`), or `all` for every attached device, booted simulator and running web session, and hands the tests to the first free device of each platform.
-- **Default.** The devices of one platform share the tests, so each test runs once per platform. With Android and iOS devices together every test runs on both platforms.
+- **Default.** The devices of one platform share the tests, so each test runs once per platform. With Android, iOS and web devices together every test runs on every platform.
 - **`--every-device`.** Every device runs every test, and the run passes only when every test passes on every device.
 - **Artifacts.** They go to `<output>/<device id>/<test>/`.
 
-![gekko deals test files from a work queue to a Pixel phone, an Android emulator and an iOS simulator at the same time.](img/parallel-runs.png)
+![gekko deals test files from a work queue to a Pixel phone, an Android emulator, an iOS simulator and a browser at the same time.](img/parallel-runs.png)
 
 ### Shards
 
@@ -84,7 +84,7 @@ A folder with a `group.yaml` is a group: its `setup:` flows (a login) run once i
 ## Limits
 
 - iOS works on **simulators only**; real devices are not supported yet.
-- The agent needs ids. Missing ids can be worked around with `--heal`, but the durable fix is a tag or identifier in the app.
+- The agent needs ids. Missing ids can be worked around with `--heal`, but the durable fix is a tag or identifier in the app (a `data-testid` on the web).
 - On iOS a tap through accessibility can be a no-op for SwiftUI tap gestures. Retries (`attempts` with `until`) and `--heal` use a real touch through the system runner.
 - `launchPackage` and `stopPackage` are Android only; `back`, `pressKey` and `setAirplaneMode` work on Android and the web, not on iOS simulators. Limit such steps with `platform: android` or a list such as `platform: [android, web]`.
 - Some Android settings need a newer API level: `setDarkMode` needs API 29, `setAirplaneMode` API 30 and the `device.language` setting API 33. An older device fails the step with a message.

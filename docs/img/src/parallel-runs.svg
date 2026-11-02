@@ -46,7 +46,7 @@
 
 <!-- Line art: everything hand-drawn goes here. The filter makes strokes wobble; keep text OUT of this group. -->
 <g id="art" filter="url(#wobble)">
-  <path class="ink" d="M90,594 C250,590 420,596 640,592"/>
+<path class="ink" d="M90,594 C250,590 420,596 640,592"/>
 <path class="paper" d="M100,570 Q195,568 288,567 Q288,577 292,584 Q194,584 99,582 Q100,576 100,570 Z"/>
 <path class="paper" d="M103,550 Q198,552 292,553 Q294,560 293,567 Q200,566 103,566 Q101,556 103,550 Z"/>
 <path class="paper" d="M107,532 Q201,531 295,533 Q295,541 297,550 Q200,547 108,547 Q108,540 107,532 Z"/>
@@ -57,39 +57,55 @@
 <path class="paper" d="M108,450 C150,444 230,452 284,446 L292,456 C240,460 160,456 112,462 Z" style="display:none"/>
 <path class="ink" d="M130,470 L240,470" style="stroke-width:3;display:none"/>
 <use href="#gekko-reach" transform="translate(480 590) scale(1.6)"/>
-<path class="paper" d="M1036,40 C1092,42 1175,39 1233,41 Q1260,39 1260,65 C1258,90 1261,139 1262,165 Q1261,189 1234,188 C1175,191 1092,189 1035,192 Q1009,192 1011,165 C1011,139 1008,90 1011,65 Q1010,38 1034,39 Z"/>
-<circle class="ink" cx="1026" cy="115" r="4" style="stroke-width:3"/>
-<path class="ink" d="M1053,53 C1109,55 1175,53 1234,55 Q1242,54 1241,63 C1243,94 1241,135 1241,168 Q1242,177 1234,176 C1175,175 1109,175 1051,176 Q1044,176 1045,167 C1044,135 1044,94 1045,61 Q1043,54 1053,53 Z"/>
-<path class="sys" d="M1056,115 C1096,112 1136,118 1176,115" style="stroke-width:5"/>
-<path class="ink" d="M1186,115 L1206,115" style="stroke-width:3;stroke-dasharray:4 9"/>
-<path class="paper" d="M1019,246 C1092,243 1175,247 1252,247 Q1259,243 1258,253 C1258,294 1261,344 1259,387 Q1261,394 1248,394 C1175,393 1092,396 1018,393 Q1012,395 1012,387 C1011,344 1009,294 1008,254 Q1011,245 1019,243 Z"/>
-<path class="ink" d="M1012,279 L1258,278"/>
-<circle class="dot-b" cx="1030" cy="262" r="5"/><circle class="dot-b" cx="1050" cy="262" r="5"/><circle class="dot-b" cx="1070" cy="262" r="5"/>
-<path class="ink" d="M1216,297 L1216,381" style="stroke-width:3"/>
-<circle class="ink" cx="1238" cy="313" r="6" style="stroke-width:3"/><circle class="ink" cx="1238" cy="341" r="6" style="stroke-width:3"/>
-<path class="sys" d="M1046,338 C1086,335 1126,341 1166,338" style="stroke-width:5"/>
-<path class="ink" d="M1176,338 L1196,338" style="stroke-width:3;stroke-dasharray:4 9"/>
-<path class="paper" d="M1050,450 C1092,450 1175,449 1222,448 Q1260,451 1261,492 C1259,500 1259,549 1259,558 Q1258,600 1219,600 C1175,602 1092,602 1051,599 Q1009,602 1009,562 C1009,549 1010,500 1010,492 Q1011,452 1049,449 Z"/>
-<path class="solid" d="M1030,504 C1028,502 1032,503 1029,503 Q1035,503 1037,508 C1035,518 1036,532 1037,541 Q1036,548 1029,547 C1032,546 1028,548 1029,548 Q1024,547 1023,542 C1024,532 1024,518 1025,509 Q1024,502 1031,503 Z"/>
-<path class="ink" d="M1067,466 C1114,466 1176,467 1225,467 Q1241,465 1241,482 C1240,505 1239,544 1239,569 Q1239,583 1223,584 C1176,584 1114,584 1067,583 Q1052,583 1052,568 C1053,544 1052,505 1052,482 Q1053,466 1067,465 Z"/>
-<path class="sys" d="M1072,525 C1112,522 1152,528 1192,525" style="stroke-width:5"/>
-<path class="ink" d="M1202,525 L1222,525" style="stroke-width:3;stroke-dasharray:4 9"/>
-<path class="flow" d="M790,404 C850,330 880,200 986,118" marker-end="url(#ah-o)"/>
-<path class="flow" d="M796,420 C860,412 920,340 986,320" marker-end="url(#ah-o)"/>
-<path class="flow" d="M790,434 C850,470 900,505 986,525" marker-end="url(#ah-o)"/>
-<g transform="translate(880 212) rotate(24)"><path class="paper" d="M-22,-27 Q1,-28 21,-27 Q22,-1 22,27 Q1,28 -19,26 Q-21,0 -22,-27 Z"/><path class="ink" d="M-11,-12 L11,-12 M-11,0 L11,0 M-11,12 L4,12" style="stroke-width:3"/></g>
-<g transform="translate(884 380) rotate(-8)"><path class="paper" d="M-20,-26 Q0,-26 20,-26 Q22,3 21,28 Q1,28 -19,27 Q-22,2 -20,-26 Z"/><path class="ink" d="M-11,-12 L11,-12 M-11,0 L11,0 M-11,12 L4,12" style="stroke-width:3"/></g>
-<g transform="translate(876 496) rotate(-26)"><path class="paper" d="M-18,-26 Q-0,-28 20,-27 Q20,-2 18,25 Q-1,24 -21,24 Q-18,-0 -18,-26 Z"/><path class="ink" d="M-11,-12 L11,-12 M-11,0 L11,0 M-11,12 L4,12" style="stroke-width:3"/></g>
+<path class="paper" d="M1034,21 Q1117,21 1196,21 Q1219,21 1221,46 Q1218,79 1218,116 Q1221,137 1198,141 Q1116,139 1033,137 Q1010,137 1009,114 Q1008,80 1010,46 Q1010,22 1034,22 Z"/>
+<path class="ink" d="M1050,35 Q1124,33 1194,33 Q1205,35 1207,44 Q1206,81 1205,116 Q1205,128 1194,127 Q1121,127 1049,126 Q1041,124 1038,118 Q1040,78 1042,46 Q1038,34 1049,33 Z"/>
+<circle class="ink" cx="1025" cy="80" r="4" style="stroke-width:3"/>
+<path class="sys" d="M1058,80 Q1108,81 1160,80" style="stroke-width:5"/>
+<path class="ink" d="M1170,80 L1188,80" style="stroke-width:3;stroke-dasharray:4 9"/>
+<path class="paper" d="M1017,172 Q1116,171 1211,172 Q1221,171 1220,178 Q1218,229 1220,279 Q1221,288 1211,287 Q1117,290 1020,289 Q1008,288 1010,279 Q1012,229 1009,180 Q1008,173 1018,171 Z"/>
+<path class="ink" d="M1010,201 Q1117,200 1220,201"/>
+<circle class="dot-b" cx="1028" cy="186" r="5"/>
+<circle class="dot-b" cx="1048" cy="186" r="5"/>
+<circle class="dot-b" cx="1068" cy="186" r="5"/>
+<path class="ink" d="M1186,215 Q1188,249 1186,279" style="stroke-width:3"/>
+<circle class="ink" cx="1204" cy="233" r="6" style="stroke-width:3"/>
+<circle class="ink" cx="1204" cy="259" r="6" style="stroke-width:3"/>
+<path class="sys" d="M1038,259 Q1090,260 1140,259" style="stroke-width:5"/>
+<path class="ink" d="M1150,259 L1168,259" style="stroke-width:3;stroke-dasharray:4 9"/>
+<path class="paper" d="M1036,319 Q1115,322 1191,319 Q1219,322 1219,350 Q1221,379 1220,411 Q1220,441 1190,437 Q1117,439 1037,438 Q1009,441 1009,410 Q1010,380 1012,350 Q1009,320 1039,323 Z"/>
+<path class="solid" d="M1028,364 Q1029,366 1029,365 Q1035,365 1037,372 Q1037,385 1036,395 Q1037,402 1028,403 Q1030,404 1030,402 Q1021,402 1023,395 Q1021,383 1021,371 Q1022,364 1029,366 Z"/>
+<path class="ink" d="M1062,335 Q1131,333 1199,336 Q1212,333 1211,346 Q1210,382 1210,414 Q1212,427 1197,425 Q1130,424 1062,427 Q1050,427 1052,414 Q1051,378 1048,348 Q1049,333 1064,335 Z"/>
+<path class="sys" d="M1066,396 Q1113,396 1160,396" style="stroke-width:5"/>
+<path class="ink" d="M1170,396 L1188,396" style="stroke-width:3;stroke-dasharray:4 9"/>
+<path class="paper" d="M1018,470 Q1114,473 1212,472 Q1220,471 1221,479 Q1221,531 1221,581 Q1219,588 1213,588 Q1116,589 1016,590 Q1008,590 1011,580 Q1011,531 1009,480 Q1008,473 1019,473 Z"/>
+<path class="ink" d="M1010,503 Q1116,501 1220,503"/>
+<circle class="ink" cx="1026" cy="487" r="4.5" style="stroke-width:3"/>
+<circle class="ink" cx="1043" cy="487" r="4.5" style="stroke-width:3"/>
+<circle class="ink" cx="1060" cy="487" r="4.5" style="stroke-width:3"/>
+<path class="ink" d="M1089,478 Q1143,478 1199,479 Q1208,478 1207,487 Q1208,488 1208,488 Q1208,496 1199,498 Q1144,496 1090,497 Q1081,497 1080,488 Q1080,487 1079,488 Q1081,478 1090,478 Z" style="stroke-width:3"/>
+<path class="sys" d="M1034,533 Q1087,533 1140,533" style="stroke-width:5"/>
+<path class="ink" d="M1150,533 L1168,533" style="stroke-width:3;stroke-dasharray:4 9"/>
+<path class="ink" d="M1040,549 Q1071,549 1102,548 Q1109,548 1110,557 Q1109,562 1109,569 Q1111,574 1104,576 Q1071,575 1041,576 Q1033,574 1035,569 Q1033,561 1035,556 Q1034,550 1042,549 Z" style="stroke-width:3"/>
+<path class="flow" d="M790,404 C850,330 880,160 988,80" marker-end="url(#ah-o)"/>
+<path class="flow" d="M794,410 C860,380 900,280 988,230" marker-end="url(#ah-o)"/>
+<path class="flow" d="M796,420 C860,418 920,400 988,380" marker-end="url(#ah-o)"/>
+<path class="flow" d="M790,434 C850,470 900,510 988,530" marker-end="url(#ah-o)"/>
+<g transform="translate(889 207) rotate(30)"><path class="paper" d="M-19,-27 Q-1,-26 17,-27 Q22,-27 22,-23 Q21,0 21,24 Q22,27 19,28 Q-1,26 -18,28 Q-22,27 -21,25 Q-20,1 -22,-23 Q-21,-26 -18,-26 Z"/><path class="ink" d="M-11,-12 L11,-12 M-11,0 L11,0 M-11,12 L4,12" style="stroke-width:3"/></g>
+<g transform="translate(901 306) rotate(14)"><path class="paper" d="M-17,-28 Q1,-27 19,-27 Q22,-28 22,-24 Q20,-0 21,23 Q21,26 17,26 Q-1,26 -17,27 Q-20,28 -20,25 Q-21,1 -20,-24 Q-22,-27 -18,-28 Z"/><path class="ink" d="M-11,-12 L11,-12 M-11,0 L11,0 M-11,12 L4,12" style="stroke-width:3"/></g>
+<g transform="translate(892 408) rotate(-6)"><path class="paper" d="M-18,-26 Q-0,-26 19,-27 Q22,-26 22,-25 Q20,1 22,23 Q22,26 18,27 Q-1,26 -18,27 Q-22,27 -20,23 Q-22,-1 -20,-24 Q-21,-28 -17,-26 Z"/><path class="ink" d="M-11,-12 L11,-12 M-11,0 L11,0 M-11,12 L4,12" style="stroke-width:3"/></g>
+<g transform="translate(880 492) rotate(-26)"><path class="paper" d="M-17,-28 Q0,-27 19,-27 Q21,-27 21,-23 Q22,1 20,25 Q21,27 18,27 Q1,26 -19,28 Q-22,26 -21,25 Q-21,-1 -22,-25 Q-22,-26 -17,-28 Z"/><path class="ink" d="M-11,-12 L11,-12 M-11,0 L11,0 M-11,12 L4,12" style="stroke-width:3"/></g>
 </g>
 
 <!-- Handwritten labels: classes t, t-r (red), t-o (orange), t-b (blue), t-s (small), mid (centred). -->
 <g id="labels">
   <text class="t" x="92" y="424">work queue</text>
-<text class="t" x="1300" y="113">Pixel phone</text>
-<text class="t t-b t-s" x="1300" y="157">:52991</text>
-<text class="t" x="1300" y="318">Android emulator</text>
-<text class="t t-b t-s" x="1300" y="362">:53012</text>
-<text class="t" x="1300" y="523">iOS simulator</text>
-<text class="t t-b t-s" x="1300" y="567">:24404</text>
+<text class="t" x="1262" y="78">Pixel phone</text>
+<text class="t t-b t-s" x="1262" y="122">:52991</text>
+<text class="t" x="1262" y="228">Android emulator</text>
+<text class="t t-b t-s" x="1262" y="272">:53012</text>
+<text class="t" x="1262" y="378">iOS simulator</text>
+<text class="t t-b t-s" x="1262" y="422">:24404</text>
+<text class="t" x="1262" y="528">Firefox</text>
+<text class="t t-b t-s" x="1262" y="572">:50871</text>
 </g>
 </svg>

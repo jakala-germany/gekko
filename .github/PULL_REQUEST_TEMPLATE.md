@@ -11,7 +11,7 @@ Describe the changes in this PR.
 
 ## How has this been tested?
 
-Describe tests added or steps to verify (unit tests, emulator or simulator run).
+Describe tests added or steps to verify (unit tests, emulator, simulator or `scripts/e2e-web.sh` run).
 
 ## Checklist
 
