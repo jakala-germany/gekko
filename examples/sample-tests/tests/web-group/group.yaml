@@ -1,0 +1,7 @@
+# The page remembers a name in the browser. The setup stores it once; the tests of the group see it without storing it
+# again, because a group keeps the browser (the state of the start) between its tests. The teardown clears it.
+# `platform: web` keeps the group off Android and iOS, so neither its tests nor its flows repeat it on every step.
+platform: web
+name: Remembered name
+setup: [sample-name-remember]
+teardown: [sample-name-forget]

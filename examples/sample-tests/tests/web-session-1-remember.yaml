@@ -1,0 +1,13 @@
+# Only meaningful in a shared session (GEKKO_WEB_SESSION=shared): the next test sees what this one stores.
+name: Session - the page remembers a name
+tags: [web-only, session-shared]
+steps:
+  - say: Enter a name
+    platform: web
+    do: { type: { id: sample.name, value: Grace } }
+  - say: Let the page remember it
+    platform: web
+    do: { tap: { id: sample.remember } }
+  - say: The page shows the remembered name
+    platform: web
+    do: { assertVisible: { id: sample.remembered, text: "Remembered: Grace" } }

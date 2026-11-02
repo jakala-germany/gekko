@@ -79,6 +79,10 @@ const val SYSTEM_RUNNER_SOCKET = "gekko-system-runner"
 
 /** A screen recording in progress. */
 interface Recording {
+    /** The file extension of the video: `mp4` on the mobile platforms, `webm` in a browser. */
+    val extension: String
+        get() = "mp4"
+
     /**
      * Stops the recording and saves the video to [path]; with a null [path] it is thrown away. True when one was saved.
      */
@@ -94,6 +98,18 @@ interface Device {
 
     /** Host port (on 127.0.0.1) that reaches the in-app agent of this device; never shared between devices. */
     fun agentPort(config: GekkoConfig): Int
+
+    /**
+     * The client for the in-app agent; unless a device has another way, it speaks the gekko protocol to [agentPort].
+     */
+    fun agentClient(config: GekkoConfig): CommandClient {
+        return GekkoClient(agentPort(config), Protocol.ROLE_AGENT, token)
+    }
+
+    /** The client for the system runner; unless a device has another way, it speaks the gekko protocol. */
+    fun systemClient(config: GekkoConfig): CommandClient {
+        return GekkoClient(systemPort(), Protocol.ROLE_RUNNER, token)
+    }
 
     /** Host port (on 127.0.0.1) that reaches the system runner of this device. */
     fun systemPort(): Int
@@ -127,6 +143,11 @@ interface Device {
 
     /** Starts recording the screen; null when this device cannot. */
     fun startRecording(): Recording? {
+        return null
+    }
+
+    /** What the app printed to its console since the last call (web); null when this device has no such log. */
+    fun consoleLog(): String? {
         return null
     }
 
@@ -204,14 +225,27 @@ interface Device {
 
     /**
      * Clears the app data, applies [settings] and launches the app. The settings go in after the data was cleared
-     * because clearing also wipes per-app state such as the app language. Returns the function that restores them.
+     * because clearing also wipes per-app state such as the app language. With [keepState] (a test of a group after the
+     * first) the data stays. Returns the function that restores the settings.
      */
-    fun freshStart(config: GekkoConfig, settings: DeviceSettings = DeviceSettings()): () -> Unit {
+    fun freshStart(
+        config: GekkoConfig,
+        settings: DeviceSettings = DeviceSettings(),
+        keepState: Boolean = false,
+    ): () -> Unit {
         stopOtherApps(config)
-        clearData(config)
+        if (!keepState) clearData(config)
         val restore = applySettings(config, settings)
         launch(config)
         return restore
+    }
+
+    /**
+     * The end of a test: the app is quit. [keepSession] says that another test of the same group follows, so a device
+     * that holds more than the app data (a browser context with its login) keeps it.
+     */
+    fun endTest(config: GekkoConfig, keepSession: Boolean) {
+        terminate(config)
     }
 
     /** How long a freshly started system runner may take to answer. */
@@ -590,8 +624,8 @@ class AdbDevice(val serial: String?) : Device {
 class Drivers(
     private val device: Device,
     private val config: GekkoConfig,
-    private val agent: CommandClient = GekkoClient(device.agentPort(config), Protocol.ROLE_AGENT, device.token),
-    private val system: CommandClient = GekkoClient(device.systemPort(), Protocol.ROLE_RUNNER, device.token),
+    private val agent: CommandClient = device.agentClient(config),
+    private val system: CommandClient = device.systemClient(config),
     private val log: (String) -> Unit = {},
 ) {
     private var systemStarted = false
@@ -666,6 +700,7 @@ class Drivers(
             is Command.WaitFor -> timeoutMs
             is Command.WaitIdle -> timeoutMs
             is Command.Swipe -> durationMs
+            is Command.Wheel,
             is Command.TapAt,
             is Command.SetOrientation,
             is Command.SetLocation,

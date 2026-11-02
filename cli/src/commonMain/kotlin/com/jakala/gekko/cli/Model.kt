@@ -5,6 +5,7 @@ import com.charleskorn.kaml.Yaml
 import com.charleskorn.kaml.YamlConfiguration
 import com.charleskorn.kaml.YamlException
 import com.charleskorn.kaml.YamlInput
+import com.charleskorn.kaml.YamlList
 import com.charleskorn.kaml.YamlMap
 import com.charleskorn.kaml.YamlScalar
 import com.jakala.gekko.protocol.Command
@@ -23,15 +24,25 @@ import kotlinx.serialization.encoding.Encoder
 enum class Platform(val key: String) {
     Android("android"),
     Ios("ios"),
+    Web("web"),
 }
 
-/** An element id that is either shared (`home.tab`) or per platform (`{ android: a, ios: b }`). */
+/** The platform names a test may use, as listed in messages. */
+private val PLATFORM_KEYS = Platform.entries.map { it.key }
+
+/** An element id that is either shared (`home.tab`) or per platform (`{ android: a, ios: b, web: c }`). */
 @Serializable(with = PlatformIdSerializer::class)
-data class PlatformId(val shared: String? = null, val android: String? = null, val ios: String? = null) {
+data class PlatformId(
+    val shared: String? = null,
+    val android: String? = null,
+    val ios: String? = null,
+    val web: String? = null,
+) {
     fun resolve(platform: Platform): String? {
         return when (platform) {
             Platform.Android -> android ?: shared
             Platform.Ios -> ios ?: shared
+            Platform.Web -> web ?: shared
         }
     }
 
@@ -50,24 +61,68 @@ object PlatformIdSerializer : KSerializer<PlatformId> {
         return when (node) {
             is YamlScalar -> PlatformId(shared = node.content)
             is YamlMap -> {
-                val unknown = node.entries.keys.map { it.content }.filter { it != "android" && it != "ios" }
+                val unknown = node.entries.keys.map { it.content }.filter { it !in PLATFORM_KEYS }
                 require(unknown.isEmpty()) {
-                    "unknown key '${unknown.first()}' in an id at ${node.path.toHumanReadableString()}; use android and ios"
+                    "unknown key '${unknown.first()}' in an id at ${node.path.toHumanReadableString()}; use android, ios and web"
                 }
                 require(node.entries.isNotEmpty()) {
-                    "an id needs android or ios at ${node.path.toHumanReadableString()}"
+                    "an id needs android, ios or web at ${node.path.toHumanReadableString()}"
                 }
                 PlatformId(
                     android = (node.get<YamlScalar>("android"))?.content,
                     ios = (node.get<YamlScalar>("ios"))?.content,
+                    web = (node.get<YamlScalar>("web"))?.content,
                 )
             }
-            else -> error("id must be a string or { android, ios } at ${node.path.toHumanReadableString()}")
+            else -> error("id must be a string or { android, ios, web } at ${node.path.toHumanReadableString()}")
         }
     }
 
     override fun serialize(encoder: Encoder, value: PlatformId) {
-        encoder.encodeString(value.shared ?: value.android ?: value.ios.orEmpty())
+        encoder.encodeString(value.shared ?: value.android ?: value.ios ?: value.web.orEmpty())
+    }
+}
+
+/** The platforms a step or an action is limited to: `platform: android` or `platform: [android, web]`. */
+@Serializable(with = PlatformScopeSerializer::class)
+data class PlatformScope(val keys: List<String>) {
+    init {
+        require(keys.isNotEmpty()) { "platform needs at least one of ${PLATFORM_KEYS.joinToString()}" }
+        keys.forEach { key ->
+            require(key in PLATFORM_KEYS) { "platform must be ${PLATFORM_KEYS.joinToString(", ")}, was '$key'" }
+        }
+    }
+
+    fun includes(platform: Platform): Boolean {
+        return platform.key in keys
+    }
+
+    override fun toString(): String {
+        return keys.joinToString(" and ")
+    }
+}
+
+object PlatformScopeSerializer : KSerializer<PlatformScope> {
+    @OptIn(InternalSerializationApi::class)
+    override val descriptor: SerialDescriptor = buildSerialDescriptor("PlatformScope", SerialKind.CONTEXTUAL)
+
+    override fun deserialize(decoder: Decoder): PlatformScope {
+        val node = (decoder as YamlInput).node
+        return when (node) {
+            is YamlScalar -> PlatformScope(listOf(node.content))
+            is YamlList ->
+                PlatformScope(
+                    node.items.map {
+                        (it as? YamlScalar)?.content
+                            ?: error("platform must list names at ${it.path.toHumanReadableString()}")
+                    }
+                )
+            else -> error("platform must be a name or a list of names at ${node.path.toHumanReadableString()}")
+        }
+    }
+
+    override fun serialize(encoder: Encoder, value: PlatformScope) {
+        encoder.encodeString(value.keys.joinToString(","))
     }
 }
 
@@ -439,15 +494,12 @@ data class Action(
     /** Grants or revokes permissions: `{ location: allow, notifications: deny }`. */
     val setPermissions: Map<String, String> = emptyMap(),
     /**
-     * Only on this platform (android or ios). A `do` for another platform skips the step, an `until` for another
-     * platform is dropped, so one step can differ per platform without being written twice.
+     * Only on this platform, or these (android, ios, web). A `do` for another platform skips the step, an `until` for
+     * another platform is dropped, so one step can differ per platform without being written twice.
      */
-    val platform: String? = null,
+    val platform: PlatformScope? = null,
 ) {
     init {
-        require(platform == null || platform in setOf("android", "ios")) {
-            "platform must be android or ios, was '$platform'"
-        }
         require(with.isEmpty() || use != null) { "with: only goes with use:" }
         mapOf(
                 "back" to back,
@@ -525,7 +577,7 @@ data class Action(
     }
 
     fun runsOn(current: Platform): Boolean {
-        return platform == null || platform == current.key
+        return platform == null || platform.includes(current)
     }
 }
 
@@ -536,8 +588,8 @@ data class Step(
     val say: String? = null,
     @SerialName("do") val action: Action,
     val timeout: Long? = null,
-    /** Run this step only on the given platform (android or ios); for UI that differs per platform. */
-    val platform: String? = null,
+    /** Run this step only on the given platform or platforms (android, ios, web); for UI that differs per platform. */
+    val platform: PlatformScope? = null,
     /** State the step must reach, e.g. the next screen; if it is not reached the action is repeated. */
     val until: Action? = null,
     /** Total tries of `do` + `until`; for UI that swallows input while content reloads. */
@@ -548,9 +600,6 @@ data class Step(
     @SerialName("if") val condition: Condition? = null,
 ) {
     init {
-        require(platform == null || platform in setOf("android", "ios")) {
-            "platform must be android or ios, was '$platform'"
-        }
         require(!optional || (action.use == null && action.repeat == null)) {
             "optional works on a single action; put the flow behind an `if` instead"
         }
@@ -563,23 +612,26 @@ data class Step(
         require(!container || timeout == null) {
             "timeout does not work with use or repeat; put it on a step inside the flow"
         }
-        requireIdsOnBothPlatforms(action)
-        until?.let { requireIdsOnBothPlatforms(it) }
+        // Web is only checked for projects that test a web app, see requireIdsFor
+        Platform.entries.filter { it != Platform.Web }.forEach { requireIdsFor(it) }
     }
 
-    /** `{ id: { android: a } }` cannot be resolved on iOS: such a step has to say that it only runs on Android. */
-    private fun requireIdsOnBothPlatforms(part: Action) {
-        for (current in Platform.entries) {
+    /**
+     * `{ id: { android: a } }` cannot be resolved on iOS: such a step has to say that it only runs on Android. Checked
+     * for Android and iOS when a step is read and for web when `app.web` is set.
+     */
+    fun requireIdsFor(current: Platform) {
+        for (part in listOfNotNull(action, until)) {
             if (!runsOn(current) || !part.runsOn(current)) continue
             val gap = part.platformIds().firstOrNull { it.resolve(current) == null } ?: continue
             error(
-                "an id has no value for ${current.key} (${gap.shared ?: gap.android ?: gap.ios}); add ${current.key}: or limit the step with platform:"
+                "an id has no value for ${current.key} (${gap.shared ?: gap.android ?: gap.ios ?: gap.web}); add ${current.key}: or limit the step with platform:"
             )
         }
     }
 
     fun runsOn(current: Platform): Boolean {
-        return platform == null || platform == current.key
+        return platform == null || platform.includes(current)
     }
 }
 
@@ -614,6 +666,29 @@ data class TestFile(
     val steps: List<Step>,
 )
 
+/**
+ * `group.yaml` in a folder of tests: the tests below it form a group that shares one login (or any other start state).
+ * The `setup` flows run once before the first test of the group, in a fresh start; the tests then run one after the
+ * other without clearing the app data (a browser keeps its context), and the `teardown` flows run once after the last
+ * one. When the setup fails the tests of the group are skipped, not run and failed one by one.
+ */
+@Serializable
+data class GroupFile(
+    val name: String? = null,
+    /**
+     * The platforms the group runs on, `web` or `[android, web]`; left out, it runs everywhere. On another platform the
+     * group is not part of the run at all (no setup, no tests), so its tests and flows need no `platform:` of their
+     * own.
+     */
+    val platform: PlatformScope? = null,
+    val setup: List<String>,
+    val teardown: List<String> = emptyList(),
+) {
+    init {
+        require(setup.isNotEmpty()) { "group.yaml needs a setup: a list of flows, for example [account-login-sign-in]" }
+    }
+}
+
 @Serializable
 data class FlowFile(
     val name: String? = null,
@@ -627,6 +702,8 @@ data class AppIds(
     val ios: String? = null,
     /** Fully qualified launcher activity; needed when several launcher activities exist (e.g. LeakCanary). */
     val androidActivity: String? = null,
+    /** The web app under test: an http(s) URL, or an HTML file or directory that gekko serves on 127.0.0.1. */
+    val web: String? = null,
 )
 
 @Serializable
@@ -663,10 +740,50 @@ data class IosConfig(
 )
 
 @Serializable
+data class WebConfig(
+    /** The browser engine for `--platform web` without `-s`: chromium, firefox or webkit. */
+    val browser: String = "chromium",
+    /**
+     * `fresh` (default) starts every test in a new browser context. `shared` keeps one context for all tests of a run
+     * (cookies, storage and a login stay in memory, nothing is written to disk): log in once, tests depend on their
+     * order. `GEKKO_WEB_SESSION` overrides it.
+     */
+    val session: String = WEB_SESSION_FRESH,
+    /** The attributes that name an element, the first one present wins; the HTML `id` is not used. */
+    val idAttributes: List<String> = listOf("data-testid", "flt-semantics-identifier"),
+    /** Size of the browser window in CSS pixels, `1280x800`. */
+    val viewport: String = "1280x800",
+    /** A Playwright device name (`iPhone 15`) to emulate instead of a plain desktop browser. */
+    val device: String? = null,
+    /** False shows the browser window. */
+    val headless: Boolean = true,
+    /** Permissions granted before every fresh start: geolocation, notifications, camera, ... */
+    val permissions: List<String> = emptyList(),
+    /** A directory with Playwright in node_modules; `installed` (default) uses the one gekko installed. */
+    val playwright: String? = null,
+) {
+    init {
+        require(browser in WEB_BROWSERS) { "web.browser must be one of ${WEB_BROWSERS.joinToString()}, was '$browser'" }
+        require(session in WEB_SESSIONS) { "web.session must be one of ${WEB_SESSIONS.joinToString()}, was '$session'" }
+        require(idAttributes.isNotEmpty()) { "web.idAttributes needs at least one attribute" }
+        require(Regex("\\d+x\\d+").matches(viewport)) { "web.viewport must look like 1280x800, was '$viewport'" }
+    }
+}
+
+/** The engines Playwright drives. */
+val WEB_BROWSERS = listOf("chromium", "firefox", "webkit")
+
+const val WEB_SESSION_FRESH = "fresh"
+const val WEB_SESSION_SHARED = "shared"
+
+val WEB_SESSIONS = listOf(WEB_SESSION_FRESH, WEB_SESSION_SHARED)
+
+@Serializable
 data class GekkoConfig(
     val app: AppIds = AppIds(),
     val android: AndroidConfig = AndroidConfig(),
     val ios: IosConfig = IosConfig(),
+    val web: WebConfig = WebConfig(),
     /** Language and time format for every test, e.g. `{ language: de-DE, timeFormat: 24h }`. */
     val device: DeviceSettings = DeviceSettings(),
     val defaultTimeoutMs: Long = 10_000,
@@ -703,8 +820,21 @@ fun absolutePath(path: String, currentDirectory: String): String {
     return if (relative.isEmpty() || relative == ".") currentDirectory else "$currentDirectory/$relative"
 }
 
+/**
+ * `app.web` may name a variable, `https://app-${env.STAGE}.example.com/`, so one project serves every environment; it
+ * follows the rules of `env:` (declared names only, from the process environment or `.env`).
+ */
+fun GekkoConfig.withEnvInWebApp(access: EnvAccess): GekkoConfig {
+    val web = app.web ?: return this
+    if (!web.contains("\${env.")) return this
+    return copy(app = app.copy(web = Yamls.substitute(web, emptyMap(), access)))
+}
+
 fun GekkoConfig.withPathsRelativeTo(root: String): GekkoConfig {
     return copy(
+        // A URL stays as it is, a file or directory is looked up from the project
+        app = app.copy(web = app.web?.let { if (it.contains("://")) it else it.relativeTo(root) }),
+        web = web.copy(playwright = web.playwright?.relativeTo(root)),
         android = android.copy(runnerApk = android.runnerApk?.relativeTo(root), apk = android.apk?.relativeTo(root)),
         ios =
             ios.copy(

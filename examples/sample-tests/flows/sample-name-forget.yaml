@@ -1,0 +1,8 @@
+name: sample-name-forget
+steps:
+  - say: Clear the name
+    do: { eraseText: { id: sample.name } }
+  - say: Let the page remember nothing
+    do: { tap: { id: sample.remember } }
+  - say: The page remembers nobody
+    do: { assertVisible: { id: sample.remembered, text: "Remembered: nobody" } }

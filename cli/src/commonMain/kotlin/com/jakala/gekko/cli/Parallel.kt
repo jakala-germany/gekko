@@ -34,10 +34,17 @@ suspend fun <T> replicate(items: List<T>, workerCount: Int, work: suspend (worke
 }
 
 class DeviceRef(val platform: Platform, val id: String) {
-    fun create(): Device {
+    /** Devices of a group share the tests of the run; every browser engine is a group of its own. */
+    val group: String
+        get() {
+            return if (platform == Platform.Web) WebSessions.engineOf(id) else platform.key
+        }
+
+    fun create(config: GekkoConfig): Device {
         return when (platform) {
             Platform.Android -> AdbDevice(id).also { it.requireSupportedApi() }
             Platform.Ios -> SimctlDevice(id)
+            Platform.Web -> WebDevice(id, config)
         }
     }
 }
@@ -46,25 +53,34 @@ object DeviceResolver {
     const val ALL = "all"
 
     /**
-     * Maps adb serials and booted simulator UDIDs to devices; `all` stands for every attached device and booted
-     * simulator, unknown ids are an error listing what is available.
+     * Maps adb serials, booted simulator UDIDs and browser names (`chromium`, `firefox-2`, ...) to devices; `all`
+     * stands for every attached device, booted simulator and running web session, unknown ids are an error listing what
+     * is available. A browser needs no session to be named: it is started when the run needs it.
      */
-    fun resolve(ids: List<String>, androidSerials: List<String>, simulatorUdids: List<String>): List<DeviceRef> {
+    fun resolve(
+        ids: List<String>,
+        androidSerials: List<String>,
+        simulatorUdids: List<String>,
+        webSessions: List<String> = emptyList(),
+    ): List<DeviceRef> {
         if (ids == listOf(ALL)) {
-            check(androidSerials.isNotEmpty() || simulatorUdids.isNotEmpty()) {
-                "No device connected and no simulator booted"
+            check(androidSerials.isNotEmpty() || simulatorUdids.isNotEmpty() || webSessions.isNotEmpty()) {
+                "No device connected, no simulator booted and no web session running"
             }
             return androidSerials.map { DeviceRef(Platform.Android, it) } +
-                simulatorUdids.map { DeviceRef(Platform.Ios, it) }
+                simulatorUdids.map { DeviceRef(Platform.Ios, it) } +
+                webSessions.map { DeviceRef(Platform.Web, it) }
         }
         return ids.map { id ->
-            when (id) {
-                in androidSerials -> DeviceRef(Platform.Android, id)
-                in simulatorUdids -> DeviceRef(Platform.Ios, id)
+            when {
+                id in androidSerials -> DeviceRef(Platform.Android, id)
+                id in simulatorUdids -> DeviceRef(Platform.Ios, id)
+                WebSessions.isWebId(id) -> DeviceRef(Platform.Web, id)
                 else ->
                     error(
                         "Unknown device '$id'. Android: ${androidSerials.joinToString().ifEmpty { "none" }}; " +
-                            "iOS simulators: ${simulatorUdids.joinToString().ifEmpty { "none" }}"
+                            "iOS simulators: ${simulatorUdids.joinToString().ifEmpty { "none" }}; " +
+                            "web: chromium, firefox or webkit, with -2, -3 for more of one"
                     )
             }
         }

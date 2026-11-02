@@ -1,0 +1,5 @@
+name: sample-setup-fails
+steps:
+  - say: Tap an element that does not exist
+    do: { tap: { id: sample.missing } }
+    timeout: 500

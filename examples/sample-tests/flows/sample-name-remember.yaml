@@ -1,0 +1,8 @@
+name: sample-name-remember
+steps:
+  - say: Enter a name
+    do: { type: { id: sample.name, value: Ada } }
+  - say: Let the page remember it
+    do: { tap: { id: sample.remember } }
+  - say: The page shows the remembered name
+    do: { assertVisible: { id: sample.remembered, text: "Remembered: Ada" } }

@@ -28,6 +28,20 @@ internal class FakeDevice(
     val locations = mutableListOf<Pair<Double, Double>>()
     var mockLocationAllowed = 0
 
+    /** For every start and every end of a test: whether the state was kept / the session is kept for a next test. */
+    val starts = mutableListOf<Boolean>()
+    val ends = mutableListOf<Boolean>()
+
+    override fun freshStart(config: GekkoConfig, settings: DeviceSettings, keepState: Boolean): () -> Unit {
+        starts += keepState
+        return super.freshStart(config, settings, keepState)
+    }
+
+    override fun endTest(config: GekkoConfig, keepSession: Boolean) {
+        ends += keepSession
+        super.endTest(config, keepSession)
+    }
+
     override fun setLocation(latitude: Double, longitude: Double) {
         check(locationConsole) { "setLocation works on Android emulators only" }
         locations += latitude to longitude

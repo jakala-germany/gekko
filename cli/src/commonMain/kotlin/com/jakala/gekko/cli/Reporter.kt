@@ -2,14 +2,15 @@ package com.jakala.gekko.cli
 
 object Reporter {
     fun junit(suite: String, results: List<TestResult>): String {
-        val failures = results.count { it.failure != null && !it.infrastructure }
-        val errors = results.count { it.failure != null && it.infrastructure }
+        val failures = results.count { it.failed && !it.infrastructure }
+        val errors = results.count { it.failed && it.infrastructure }
+        val skipped = results.count { it.skipped }
         val totalSeconds = results.sumOf { it.durationMs } / MILLIS
         val builder = StringBuilder()
         builder.append("""<?xml version="1.0" encoding="UTF-8"?>""").append('\n')
         builder
             .append(
-                """<testsuite name="${escape(suite)}" tests="${results.size}" failures="$failures" errors="$errors" time="$totalSeconds">"""
+                """<testsuite name="${escape(suite)}" tests="${results.size}" failures="$failures" errors="$errors" skipped="$skipped" time="$totalSeconds">"""
             )
             .append('\n')
         results.forEach { result ->
@@ -17,6 +18,11 @@ object Reporter {
             builder.append("""  <testcase name="${escape(result.name)}"$device time="${result.durationMs / MILLIS}"""")
             if (result.failure == null) {
                 builder.append("/>\n")
+            } else if (result.skipped) {
+                builder
+                    .append(">\n")
+                    .append("""    <skipped message="${escape(result.failure)}"/>""")
+                    .append("\n  </testcase>\n")
             } else {
                 builder.append(">\n")
                 val tag = if (result.infrastructure) "error" else "failure"

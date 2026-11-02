@@ -1,0 +1,24 @@
+name: Browser dialog is answered
+tags: [web-only]
+steps:
+  - say: Open the confirmation
+    platform: web
+    do: { tap: { id: sample.confirm } }
+  - say: The browser asks
+    platform: web
+    do: { assertVisible: { text: "Delete the item?" } }
+  - say: Say no
+    platform: web
+    do: { tap: { text: Cancel, system: true } }
+  - say: The page got the answer
+    platform: web
+    do: { assertVisible: { id: sample.confirm.result, text: "Confirm: no" } }
+  - say: Ask again
+    platform: web
+    do: { tap: { id: sample.confirm } }
+  - say: Say yes
+    platform: web
+    do: { tap: { text: OK, system: true } }
+  - say: The page got the other answer
+    platform: web
+    do: { assertVisible: { id: sample.confirm.result, text: "Confirm: yes" } }

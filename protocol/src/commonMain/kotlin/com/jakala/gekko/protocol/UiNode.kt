@@ -1,5 +1,7 @@
 package com.jakala.gekko.protocol
 
+import kotlinx.serialization.EncodeDefault
+import kotlinx.serialization.ExperimentalSerializationApi
 import kotlinx.serialization.Serializable
 
 @Serializable
@@ -16,6 +18,7 @@ data class Bounds(
         get() = (top + bottom) / 2
 }
 
+@OptIn(ExperimentalSerializationApi::class)
 @Serializable
 data class UiNode(
     val id: String? = null,
@@ -34,6 +37,11 @@ data class UiNode(
     val secure: Boolean = false,
     /** A progress indicator or similar: the screen is still working. */
     val busy: Boolean = false,
+    /**
+     * Where the ancestors of the node (a scrolled container, a collapsed section) cut it off; the node cannot be seen
+     * outside of it. Null: nowhere. Only the web agent sets it; the other agents keep this to themselves.
+     */
+    @EncodeDefault(EncodeDefault.Mode.NEVER) val clip: Bounds? = null,
     val children: List<UiNode> = emptyList(),
 ) {
     /** Changes whenever something a person could notice changes (ids, texts, positions, state). */
@@ -48,7 +56,13 @@ data class UiNode(
     }
 }
 
-/** A node counts as visible when its center lies inside the window; lists may report off-screen rows. */
+/**
+ * A node counts as visible when its center lies inside the window and, if it has one, inside its [UiNode.clip]; lists
+ * may report off-screen rows.
+ */
 fun UiNode.isOnScreen(window: Bounds): Boolean {
-    return bounds.centerX in window.left until window.right && bounds.centerY in window.top until window.bottom
+    val inWindow = bounds.centerX in window.left until window.right && bounds.centerY in window.top until window.bottom
+    val inClip =
+        clip == null || (bounds.centerX in clip.left until clip.right && bounds.centerY in clip.top until clip.bottom)
+    return inWindow && inClip
 }

@@ -9,6 +9,7 @@ import com.jakala.gekko.protocol.UiNode
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertIs
+import kotlin.test.assertNull
 
 class WaitingTest {
     private var clock = 0L
@@ -86,6 +87,37 @@ class WaitingTest {
         assertEquals(
             Response.Error("Expected not visible: ${Selector(id = "item")}", ErrorKind.TIMEOUT, null),
             response,
+        )
+    }
+
+    @Test
+    fun aReadingThatIsNotAvailableIsSkipped() {
+        val wait = VisibilityWait(Command.WaitFor(Selector(id = "item"), timeoutMs = 1_000), startedAt = 0)
+
+        assertNull(wait.onReading(null, now = 50))
+        assertNull(wait.onReading(screen(), now = 100))
+        assertEquals(Response.Ok, wait.onReading(screen(item()), now = 150))
+    }
+
+    @Test
+    fun aScreenThatCannotBeReadAtAllEndsWithTheTimeout() {
+        val wait = VisibilityWait(Command.WaitFor(Selector(id = "item"), timeoutMs = 200), startedAt = 0)
+
+        assertNull(wait.onReading(null, now = 100))
+        assertEquals(
+            Response.Error("Expected visible: ${Selector(id = "item")}", ErrorKind.NOT_FOUND, null),
+            wait.onReading(null, now = 201),
+        )
+    }
+
+    @Test
+    fun theCauseOfTheLastReadingIsKeptWhenTheScreenCannotBeReadAnyMore() {
+        val wait = VisibilityWait(Command.WaitFor(Selector(id = "item"), timeoutMs = 200), startedAt = 0)
+
+        assertNull(wait.onReading(screen(item(Bounds(0, 2100, 100, 2200))), now = 100))
+        assertEquals(
+            Response.Error("Expected visible: ${Selector(id = "item")}", ErrorKind.NOT_ON_SCREEN, null),
+            wait.onReading(null, now = 201),
         )
     }
 

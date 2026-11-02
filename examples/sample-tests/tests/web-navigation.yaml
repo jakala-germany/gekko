@@ -1,0 +1,21 @@
+name: Links, back and openLink
+tags: [web-only]
+steps:
+  - say: Open the details page
+    platform: web
+    do: { tap: { id: sample.link } }
+  - say: The details page is shown
+    platform: web
+    do: { assertVisible: { id: sample.details.title, text: Details } }
+  - say: Go back
+    platform: web
+    do: { back: true }
+  - say: The sample page is shown again
+    platform: web
+    do: { assertVisible: { id: sample.name } }
+  - say: Open the details page by its address
+    platform: web
+    do: { openLink: /details.html }
+  - say: The details page is shown again
+    platform: web
+    do: { assertVisible: { id: sample.details.title } }

@@ -1,0 +1,5 @@
+name: Group - the second test still knows it
+tags: [web-only, group]
+steps:
+  - say: The name is still remembered after the test before
+    do: { assertVisible: { id: sample.remembered, text: "Remembered: Ada" } }

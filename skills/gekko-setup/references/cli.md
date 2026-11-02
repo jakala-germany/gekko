@@ -16,8 +16,8 @@ On every command that talks to a device (`tree`, `tap`, `type`, `scroll`, `asser
 
 | Option | Meaning |
 |---|---|
-| `-s`, `--serial` | adb serial or simulator UDID. A booted simulator's UDID selects iOS by itself. |
-| `--platform android\|ios` | Default android, or ios when `-s` is a booted simulator. |
+| `-s`, `--serial` | adb serial, simulator UDID or browser. A booted simulator's UDID selects iOS by itself, a browser name selects the web. |
+| `--platform android\|ios\|web` | Default android; ios when `-s` is a booted simulator, web when `-s` is a browser (`chromium`, `firefox`, `webkit`, with `-2`, `-3` for more of one; without `-s` the browser is `web.browser`). |
 | `--project DIR` | Directory with `gekko.yaml` (default `.`). Every command except `devices`, `screenshot` and `--version` needs `gekko.yaml` and stops with exit code 2 without it. |
 
 Without `-s`, Android uses the one attached device and iOS the one booted simulator; with several, the CLI stops and asks for `-s` (it does not guess).
@@ -26,15 +26,15 @@ Without `-s`, Android uses the one attached device and iOS the one booted simula
 
 | Command | Purpose |
 |---|---|
-| `gekko devices` | Attached adb devices and booted simulators, one per line: `android <serial>`, `ios <UDID>` |
+| `gekko devices` | Attached adb devices, booted simulators and running web sessions, one per line: `android <serial>`, `ios <UDID>`, `web <browser>` |
 | `gekko tree [--json]` | The current UI as the active driver sees it: role, `id=`, `text=`, `desc=`, `actions=`, `disabled` |
 | `gekko tap SELECTOR` | Tap an element; when the in-app agent's accessibility tap is not handled, the tap is repeated as a real touch through the system runner |
 | `gekko type SELECTOR "text"` | Type into an element (replaces its text) |
 | `gekko scroll SELECTOR [--direction D] [--distance DP]` | Scroll the container of an element; `--direction` is where the wanted content is: `down` (default), `up`, `start`, `end`, `left`, `right`; `--distance` in dp, points on iOS (default 400) |
 | `gekko assert SELECTOR [--gone]` | Wait until the element is visible (or, with `--gone`, not visible); exit 1 when it is not within `--timeout` |
 | `gekko screenshot FILE` | Save a screenshot as PNG |
-| `gekko install [APP]` | Install the app under test and keep its data: an `.apk`, an `.app`, or a `.zip` that contains an `.app` (CI build products); without `APP` the `android.apk` / `ios.app` of `gekko.yaml` |
-| `gekko uninstall` | Remove the app, the system runner and the port forwards from the device; fails when something is left |
+| `gekko install [APP]` | Install the app under test and keep its data: an `.apk`, an `.app`, or a `.zip` that contains an `.app` (CI build products); without `APP` the `android.apk` / `ios.app` of `gekko.yaml`. `--platform web -s <browser>`: installs Playwright (into `~/.gekko/web`) and that browser, needs Node.js 18+, works without `gekko.yaml`; `--with-deps` adds the system libraries (Linux, uses sudo) |
+| `gekko uninstall` | Remove the app, the system runner and the port forwards from the device; fails when something is left. Web: stops the browser session |
 | `gekko launch [--fresh]` | Start the app from `gekko.yaml`; `--fresh` clears its data first and grants the configured permissions. Prints `ok` once the agent answers |
 | `gekko run [PATH...] [flags]` | Run YAML tests, see below |
 | `gekko check [FILE...] [--project DIR]` | Read all tests and the flows they use, no device needed: broken YAML, unknown keys, steps with two actions or none, missing flows or parameters, flows that call themselves. Prints `N tests ok` or the problems and exits 2. It reads `${env.NAME}` values, so they must be set |
@@ -54,7 +54,7 @@ gekko run [PATH...] [--tags a,b] [--exclude-tags a,b] [--shard i/n]
           [--devices ids|all] [--every-device]
           [--install] [--app FILE] [--uninstall]
           [--record none|failures|all]
-          [-s SERIAL|UDID] [--platform android|ios] [--project DIR]
+          [-s SERIAL|UDID] [--platform android|ios|web] [--project DIR]
 ```
 
 | Flag | Meaning |
@@ -67,7 +67,7 @@ gekko run [PATH...] [--tags a,b] [--exclude-tags a,b] [--shard i/n]
 | `--junit-healed FILE` | A second JUnit file with one *failed* testcase per healed step (empty, `tests="0"`, without `--heal` or when nothing was healed). |
 | `--output DIR` | Where failure artifacts go (default `gekko-results`; with `--devices`: one subfolder per device). |
 | `--heal claude\|opencode\|api` | Fill in for missing ids with a model, see "Heal". |
-| `--devices a,b,c` or `all` | Spread the tests over adb serials and simulator UDIDs, or every attached device and booted simulator. Every platform has its own queue and the first free device takes the next test, so Android and iOS run at the same time and the order is not predictable. Not combinable with `-s`. |
+| `--devices a,b,c` or `all` | Spread the tests over adb serials, simulator UDIDs and browsers (`chromium,firefox,webkit`), or every attached device, booted simulator and running web session. Every platform, and every browser engine, has its own queue (every engine runs the whole selection) and the first free device takes the next test, so Android and iOS run at the same time and the order is not predictable. Not combinable with `-s`. |
 | `--every-device` | With `--devices`: every device runs every test; the run passes only when every test passes on every device. Prints `[device] x/y passed` per device. |
 | `--install` / `--app FILE` | Install the app before the tests: `android.apk` / `ios.app` of `gekko.yaml`, or `FILE` (implies `--install`). Repeat `--app` for several platforms: an `.apk` goes to Android devices, an `.app` or `.zip` to iOS simulators; with `--devices` a platform without a build keeps what is installed. |
 | `--uninstall` | Remove the app, the runner and the port forwards when the run is done. |
@@ -141,7 +141,15 @@ env: [TEST_USER, TEST_PASSWORD]       # variables tests may read as ${env.NAME}
 
 | Key | Default | Notes |
 |---|---|---|
-| `app.android`, `app.ios` | none | Needed for the platform you use. |
+| `app.android`, `app.ios`, `app.web` | none | Needed for the platform you use. `app.web` is a URL (it may name a declared variable: `https://app-${env.STAGE}.example.com/`), or an HTML file or folder of the project that gekko serves on 127.0.0.1. |
+| `web.browser` | `chromium` | `chromium`, `firefox` or `webkit`, for `--platform web` without `-s`. |
+| `web.session` | `fresh` | `shared` keeps one browser context for all tests of a run (log in once; tests depend on their order; `GEKKO_WEB_SESSION` wins). |
+| `web.idAttributes` | `[data-testid, flt-semantics-identifier]` | The attributes that name an element (the first present wins); the HTML `id` is not used. |
+| `web.viewport` | `1280x800` | Window size in CSS pixels; only what is inside it counts as visible. |
+| `web.device` | none | A Playwright device name to emulate (`iPhone 15`). |
+| `web.headless` | `true` | `false` shows the browser window (or `GEKKO_WEB_HEADED=1`). |
+| `web.permissions` | none | Permissions granted to every fresh browser context (`location`, `camera`, `microphone`, `notifications`, `clipboard`, or a Playwright name). |
+| `web.playwright` | `installed` | A folder with Playwright in `node_modules`, instead of the one `gekko install --platform web` puts into `~/.gekko/web`. `GEKKO_PLAYWRIGHT_DIR` wins. |
 | `app.androidActivity` | none | Without it the app is started through its launcher entry; set it when several launcher activities exist (for example one added by a debug library). |
 | `android.runnerApk`, `ios.runnerDir` | the installed runner | A path, or `installed` for the runner that `scripts/install.sh` put into `$GEKKO_HOME/runners`. Without the key the installed runner is used. The environment variables below win. |
 | `ios.agentFramework` | none (no agent is injected) | A path to `GekkoAgent.framework`, or `installed` for the installed agent. The iOS agent is only injected when this key or `GEKKO_IOS_AGENT` is set. |
@@ -167,8 +175,11 @@ Values of `env:` names come from the process environment first, then from a `.en
 | `GEKKO_HEAL_MODEL` | Model for `--heal claude` (default `haiku`) and `--heal opencode` (`provider/model`, else the model configured in opencode) |
 | `GEKKO_HEAL_AGENT` | opencode agent to use instead of gekko's own deny-all agent `gekko-heal` (the explicit opt-out) |
 | `GEKKO_OPENCODE_COMMAND` | Launcher used instead of `opencode`, e.g. a script that sets an isolated config in CI |
+| `GEKKO_WEB_SESSION` | Web: `fresh` or `shared`, wins over `web.session` |
+| `GEKKO_PLAYWRIGHT_DIR`, `GEKKO_NODE`, `GEKKO_WEB_HEADED` | Web: the folder with Playwright (wins over `web.playwright`), the `node` binary, and `1` to show the browser window when a session starts |
 | `GEKKO_HEAL_DEBUG` | Directory where heal prompts are written (values masked) |
 | `GEKKO_DEBUG` | Log which driver answers each command and which steps are skipped on this platform |
+| `GEKKO_BRIDGE_TOKEN`, `GEKKO_BRIDGE_LOG` | Set by the CLI when it starts the web bridge. Do not set them by hand |
 | `GEKKO_PORT`, `GEKKO_TOKEN` | Set by the CLI when it starts the iOS app and runner (a loopback port per simulator and the per-user token); the iOS agent only starts when both are set. Do not set them by hand |
 
 The setup action sets the runner variables for the job, so a test repository needs no copy of the runners in CI. With the install script nothing has to be set for the runners; only the iOS agent has to be asked for, with `ios.agentFramework: installed` in `gekko.yaml` or `export GEKKO_IOS_AGENT="$HOME/.gekko/runners/gekko-ios-agent/GekkoAgent.framework"`.

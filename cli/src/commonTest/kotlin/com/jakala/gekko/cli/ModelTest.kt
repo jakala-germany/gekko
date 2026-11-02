@@ -151,7 +151,7 @@ class ModelTest {
 
         val test = Yamls.parse(TestFile.serializer(), yaml)
 
-        assertEquals("android", test.steps[0].platform)
+        assertEquals(PlatformScope(listOf("android")), test.steps[0].platform)
         val selector = test.steps[0].action.tap!!.toSelector(Platform.Ios)
         assertEquals("picker_ios", selector.within)
         assertEquals("setText", selector.action)
@@ -377,5 +377,117 @@ class ModelTest {
         val parsed = Yamls.parse(SelectorSpec.serializer(), text)
 
         assertEquals("Wohin möchtest du\\? \"x\"", parsed.textMatches)
+    }
+
+    @Test
+    fun idsCanNameTheWebToo() {
+        val step = Yamls.parse(Step.serializer(), "do: { tap: { id: { android: a.b, ios: a_b, web: a-b } } }")
+
+        assertEquals("a-b", step.action.tap!!.toSelector(Platform.Web).id)
+        assertEquals("a.b", step.action.tap!!.toSelector(Platform.Android).id)
+        assertFailsWith<Exception> { Yamls.parse(Step.serializer(), "do: { tap: { id: { desktop: a } } }") }
+    }
+
+    @Test
+    fun aSharedIdIsAlsoTheIdOnTheWeb() {
+        val step = Yamls.parse(Step.serializer(), "do: { tap: { id: home.tab } }")
+
+        assertEquals("home.tab", step.action.tap!!.toSelector(Platform.Web).id)
+    }
+
+    @Test
+    fun platformTakesOneNameOrAList() {
+        val one = Yamls.parse(Step.serializer(), "platform: web\ndo: { wait: 1 }")
+        val several = Yamls.parse(Step.serializer(), "platform: [android, web]\ndo: { wait: 1 }")
+
+        assertTrue(one.runsOn(Platform.Web) && !one.runsOn(Platform.Android))
+        assertTrue(several.runsOn(Platform.Web) && several.runsOn(Platform.Android) && !several.runsOn(Platform.Ios))
+        assertEquals("android and web", several.platform.toString())
+        assertFailsWith<Exception> { Yamls.parse(Step.serializer(), "platform: [web, windows]\ndo: { wait: 1 }") }
+        assertFailsWith<Exception> { Yamls.parse(Step.serializer(), "platform: []\ndo: { wait: 1 }") }
+    }
+
+    @Test
+    fun actionsCanBeLimitedToSeveralPlatforms() {
+        val step = Yamls.parse(Step.serializer(), "do: { tap: { id: x } }\nuntil: { platform: [ios, web], wait: 1 }")
+
+        assertTrue(step.until?.runsOn(Platform.Web) == true)
+        assertTrue(step.until?.runsOn(Platform.Android) == false)
+    }
+
+    @Test
+    fun idsWithoutAWebValueAreOnlyAnErrorWhenTheWebIsTested() {
+        val step = Yamls.parse(Step.serializer(), "do: { tap: { id: { android: a, ios: b } } }")
+
+        // Reading a step does not know the project; it only insists on Android and iOS
+        assertFailsWith<IllegalStateException> { step.requireIdsFor(Platform.Web) }
+        val limited = Yamls.parse(Step.serializer(), "platform: ios\ndo: { tap: { id: { ios: b } } }")
+        limited.requireIdsFor(Platform.Web)
+    }
+
+    @Test
+    fun parsesTheWebSectionOfGekkoYaml() {
+        val config =
+            Yamls.parse(
+                GekkoConfig.serializer(),
+                """
+                app:
+                  web: ../app/index.html
+                web:
+                  browser: firefox
+                  idAttributes: [data-test]
+                  viewport: 1024x768
+                  headless: false
+                  permissions: [location]
+                """
+                    .trimIndent(),
+            )
+
+        assertEquals("firefox", config.web.browser)
+        assertEquals(listOf("data-test"), config.web.idAttributes)
+        assertEquals(false, config.web.headless)
+        assertEquals(listOf("data-testid", "flt-semantics-identifier"), GekkoConfig().web.idAttributes)
+        assertFailsWith<Exception> { Yamls.parse(GekkoConfig.serializer(), "web: { browser: safari }") }
+        assertFailsWith<Exception> { Yamls.parse(GekkoConfig.serializer(), "web: { viewport: big }") }
+    }
+
+    @Test
+    fun theWebAppIsALocalPathOrAnUrl() {
+        val local = GekkoConfig(app = AppIds(web = "../sample/index.html")).withPathsRelativeTo("/work/tests")
+        val remote = GekkoConfig(app = AppIds(web = "https://example.com/app")).withPathsRelativeTo("/work/tests")
+
+        assertEquals("/work/tests/../sample/index.html", local.app.web)
+        assertEquals("https://example.com/app", remote.app.web)
+    }
+
+    @Test
+    fun aWebSessionIsFreshUnlessItIsShared() {
+        assertEquals("fresh", GekkoConfig().web.session)
+        assertEquals("shared", Yamls.parse(GekkoConfig.serializer(), "web: { session: shared }").web.session)
+        assertFailsWith<Exception> { Yamls.parse(GekkoConfig.serializer(), "web: { session: forever }") }
+    }
+
+    @Test
+    fun theWebAppUrlCanNameADeclaredVariable() {
+        val config = GekkoConfig(app = AppIds(web = "https://app-\${env.TEST_STAGE}.example.com/"))
+        val access = EnvAccess(setOf("TEST_STAGE"), mapOf("TEST_STAGE" to "staging"))
+
+        assertEquals("https://app-staging.example.com/", config.withEnvInWebApp(access).app.web)
+    }
+
+    @Test
+    fun aWebAppUrlWithoutVariablesStaysAsItIs() {
+        val config = GekkoConfig(app = AppIds(web = "https://example.com/app?a=b"))
+
+        assertEquals("https://example.com/app?a=b", config.withEnvInWebApp(EnvAccess.NONE).app.web)
+        assertEquals(null, GekkoConfig().withEnvInWebApp(EnvAccess.NONE).app.web)
+    }
+
+    @Test
+    fun aVariableInTheWebAppUrlMustBeDeclaredAndSet() {
+        val config = GekkoConfig(app = AppIds(web = "https://app-\${env.TEST_STAGE}.example.com/"))
+
+        assertFailsWith<IllegalArgumentException> { config.withEnvInWebApp(EnvAccess.NONE) }
+        assertFailsWith<ConfigurationException> { config.withEnvInWebApp(EnvAccess(setOf("TEST_STAGE"), emptyMap())) }
     }
 }

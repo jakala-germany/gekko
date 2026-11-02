@@ -35,6 +35,14 @@ class PermissionNamesTest {
     }
 
     @Test
+    fun browserPermissionsAreTheNamesOfPlaywright() {
+        assertEquals(listOf("geolocation"), PermissionNames.web("location"))
+        assertEquals(listOf("clipboard-read", "clipboard-write"), PermissionNames.web("clipboard"))
+        assertEquals(listOf("midi"), PermissionNames.web("midi"))
+        assertTrue(assertFailsWith<StepFailure> { PermissionNames.web("teleport") }.message.orEmpty().contains("web"))
+    }
+
+    @Test
     fun valuesAreAllowOrDeny() {
         assertEquals(true, PermissionNames.isGranted("allow"))
         assertEquals(false, PermissionNames.isGranted("DENY"))
