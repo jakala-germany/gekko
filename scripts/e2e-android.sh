@@ -14,6 +14,14 @@ OUT=build/e2e
 rm -rf "$OUT" && mkdir -p "$OUT"
 
 adb wait-for-device
+
+# The device log tells a missing agent ("could not listen") from a slow start or a crash; the CI uploads build/e2e
+save_logcat() {
+  adb logcat -d > "$OUT/logcat.txt" 2>&1 || true
+}
+trap save_logcat EXIT
+adb logcat -c || true
+
 adb install -r sample-android/build/outputs/apk/debug/sample-android-debug.apk
 
 "$GEKKO" --version
