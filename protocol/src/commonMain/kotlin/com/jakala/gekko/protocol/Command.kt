@@ -83,6 +83,12 @@ sealed interface Command {
     @SerialName("swipe")
     data class Swipe(val fromX: Int, val fromY: Int, val toX: Int, val toY: Int, val durationMs: Long = 200) : Command
 
+    /**
+     * A mouse-wheel turn at screen coordinates by [dx], [dy] pixels (positive scrolls right and down); only web serves
+     * it.
+     */
+    @Serializable @SerialName("wheel") data class Wheel(val x: Int, val y: Int, val dx: Int, val dy: Int) : Command
+
     @Serializable @SerialName("waitIdle") data class WaitIdle(val timeoutMs: Long = DEFAULT_TIMEOUT_MS) : Command
 
     /**

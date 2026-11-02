@@ -63,6 +63,40 @@ class ParallelTest {
     }
 
     @Test
+    fun browsersAreNamedByEngineAndNeedNoRunningSession() {
+        val refs = DeviceResolver.resolve(listOf("chromium", "firefox-2", "webkit"), emptyList(), emptyList())
+
+        assertEquals(listOf(Platform.Web, Platform.Web, Platform.Web), refs.map { it.platform })
+        assertEquals(listOf("chromium", "firefox", "webkit"), refs.map { it.group })
+    }
+
+    @Test
+    fun allIncludesTheRunningWebSessions() {
+        val refs = DeviceResolver.resolve(listOf("all"), listOf("emulator-5554"), emptyList(), listOf("chromium"))
+
+        assertEquals(listOf(Platform.Android, Platform.Web), refs.map { it.platform })
+        assertEquals(listOf("android", "chromium"), refs.map { it.group })
+    }
+
+    @Test
+    fun instancesOfOneEngineShareAGroup() {
+        val refs = DeviceResolver.resolve(listOf("chromium", "chromium-2", "firefox"), emptyList(), emptyList())
+
+        assertEquals(mapOf("chromium" to 2, "firefox" to 1), refs.groupBy { it.group }.mapValues { it.value.size })
+    }
+
+    @Test
+    fun webPortsAreStablePerSessionAndInTheirRange() {
+        val first = WebSessions.port("chromium")
+
+        assertEquals(first, WebSessions.port("chromium"))
+        assertTrue(first in 30_000 until 32_000)
+        assertTrue(WebSessions.isWebId("webkit-3"))
+        assertTrue(!WebSessions.isWebId("emulator-5554"))
+        assertTrue(!WebSessions.isWebId("chrome"))
+    }
+
+    @Test
     fun allWithoutDevicesIsAnError() {
         assertFailsWith<IllegalStateException> { DeviceResolver.resolve(listOf("all"), emptyList(), emptyList()) }
     }

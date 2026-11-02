@@ -270,4 +270,39 @@ class VisibilityWaiterTest {
         assertTrue(Selector(textMatches = "Fahrten\\..*Tab 3 von 5").matches(tab))
         assertFalse(Selector(text = "Tab 4 von 5").matches(tab))
     }
+
+    @Test
+    fun aNodeCutOffByItsAncestorsIsNotOnScreen() {
+        val window = Bounds(0, 0, 100, 100)
+        val row = UiNode(id = "row", bounds = Bounds(10, 50, 90, 70))
+
+        assertTrue(row.isOnScreen(window))
+        assertTrue(row.copy(clip = Bounds(0, 0, 100, 60)).isOnScreen(window).not())
+        assertTrue(row.copy(clip = Bounds(0, 0, 100, 100)).isOnScreen(window))
+    }
+
+    @Test
+    fun theClipOnlyTravelsWhenThereIsOne() {
+        val json = Json { encodeDefaults = true }
+
+        val plain = json.encodeToString(UiNode.serializer(), UiNode(bounds = Bounds(0, 0, 1, 1)))
+        val clipped =
+            json.encodeToString(UiNode.serializer(), UiNode(bounds = Bounds(0, 0, 1, 1), clip = Bounds(0, 0, 1, 1)))
+
+        assertTrue("clip" !in plain)
+        assertTrue("clip" in clipped)
+        assertEquals(
+            Bounds(0, 0, 1, 1),
+            Json.decodeFromString(UiNode.serializer(), clipped).clip,
+        )
+    }
+
+    @Test
+    fun theWheelCommandRoundTrips() {
+        val json = Json { classDiscriminator = "type" }
+        val text = json.encodeToString(Command.serializer(), Command.Wheel(10, 20, 0, 400))
+
+        assertEquals(Command.Wheel(10, 20, 0, 400), json.decodeFromString(Command.serializer(), text))
+        assertTrue("\"type\":\"wheel\"" in text)
+    }
 }

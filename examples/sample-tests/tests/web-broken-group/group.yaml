@@ -1,0 +1,4 @@
+# A setup that fails: the tests of the group are skipped with the reason instead of failing one by one.
+platform: web
+name: Broken setup
+setup: [sample-setup-fails]

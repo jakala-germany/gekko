@@ -1,0 +1,5 @@
+name: Group - the first test knows the name from the setup
+tags: [web-only, group]
+steps:
+  - say: The page remembers the name that only the setup stored
+    do: { assertVisible: { id: sample.remembered, text: "Remembered: Ada" } }

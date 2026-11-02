@@ -1,18 +1,19 @@
 ---
 name: gekko-setup
-description: Install and wire up "gekko", Jakala's open-source, fast cross-platform (Android + iOS) UI-test tool, in an Android app repo, an iOS app repo, or a UI-test repo. Use whenever the user wants UI testing, E2E tests or QA automation for a mobile app, wants to replace or speed up Maestro/Appium/Espresso/XCUITest suites, wants natural-language or YAML mobile tests that run on Android and iOS, or mentions gekko, an in-process test agent, `gekko.yaml`, or UI tests in CI — even if they do not say "gekko".
+description: Install and wire up "gekko", Jakala's open-source, fast cross-platform (Android, iOS and web) UI-test tool, in an Android app repo, an iOS app repo, a web app repo, or a UI-test repo. Use whenever the user wants UI testing, E2E tests or QA automation for a mobile or web app, wants to replace or speed up Maestro/Appium/Espresso/XCUITest suites, wants natural-language or YAML mobile tests that run on Android and iOS, or mentions gekko, an in-process test agent, `gekko.yaml`, or UI tests in CI — even if they do not say "gekko".
 ---
 
 # gekko setup
 
-gekko drives mobile UI tests through an **in-process agent** inside debug builds (it reads the UI tree and performs actions in milliseconds, no screen scraping) plus a **system runner** (UiAutomator / XCUITest) for what lives outside the app: browser login, permission dialogs. A native CLI (`gekko`) talks to both and picks the right one automatically. Tests are YAML, written once, run on Android and on iOS simulators. Source and issues: <https://github.com/jakala-germany/gekko> (Apache-2.0).
+gekko drives mobile UI tests through an **in-process agent** inside debug builds (it reads the UI tree and performs actions in milliseconds, no screen scraping) plus a **system runner** (UiAutomator / XCUITest) for what lives outside the app: browser login, permission dialogs. A native CLI (`gekko`) talks to both and picks the right one automatically. Tests are YAML, written once, run on Android, on iOS simulators and in web browsers (Chromium, Firefox, WebKit through Playwright; nothing goes into a web app). Source and issues: <https://github.com/jakala-germany/gekko> (Apache-2.0).
 
-Three kinds of repo can be set up; detect which one you are in, and do only that part:
+Four kinds of repo can be set up; detect which one you are in, and do only that part:
 
 | Repo looks like | Do |
 |---|---|
 | `settings.gradle(.kts)` with a `com.android.application` module | **Android app** below |
 | `*.xcodeproj` / `*.xcworkspace` / app `Package.swift` | **iOS app** below |
+| `package.json` with a web frontend (React, Angular, Next.js, plain HTML) | **Web app** below |
 | has `gekko.yaml`, or is a plain/empty repo meant for tests | **Test repo** below |
 
 If unsure, ask which one. In a monorepo with several, do each separately.
@@ -29,9 +30,9 @@ gekko --version
 gekko devices                              # attached adb devices and booted simulators
 ```
 
-It installs the CLI to `$GEKKO_BIN_DIR` (default `~/.local/bin`: put it on the `PATH`) and the runners to `$GEKKO_HOME/runners` (default `~/.gekko/runners`): `gekko-system-runner.apk` and, on macOS, `gekko-ios-runner/` and `gekko-ios-agent/GekkoAgent.framework`. Every download is checked against the `SHA256SUMS` of the release; with `GEKKO_VERIFY_ATTESTATION=1` and the GitHub CLI the build provenance is verified too. `install.sh --uninstall` removes it again. **The CLI finds the installed Android system runner and iOS runner without any setting.** The iOS agent is injected only when you ask for it: `ios.agentFramework: installed` in `gekko.yaml` (or `GEKKO_IOS_AGENT`). `android.runnerApk` and `ios.runnerDir` accept `installed` too; the environment variables `GEKKO_RUNNER_APK`, `GEKKO_IOS_RUNNER_DIR` and `GEKKO_IOS_AGENT` win over `gekko.yaml` (see `references/cli.md`).
+It installs the CLI to `$GEKKO_BIN_DIR` (default `~/.local/bin`: put it on the `PATH`) and the runners to `$GEKKO_HOME/runners` (default `~/.gekko/runners`): `gekko-system-runner.apk` and, on macOS, `gekko-ios-runner/` and `gekko-ios-agent/GekkoAgent.framework`. Every download is checked against the `SHA256SUMS` of the release; with `GEKKO_VERIFY_ATTESTATION=1` and the GitHub CLI the build provenance is verified too. `install.sh --uninstall` removes it again (also the web files); `install.sh --web[=chromium,firefox,webkit]` additionally installs Playwright and the browsers for web tests (needs Node.js 18 or newer). **The CLI finds the installed Android system runner and iOS runner without any setting.** The iOS agent is injected only when you ask for it: `ios.agentFramework: installed` in `gekko.yaml` (or `GEKKO_IOS_AGENT`). `android.runnerApk` and `ios.runnerDir` accept `installed` too; the environment variables `GEKKO_RUNNER_APK`, `GEKKO_IOS_RUNNER_DIR` and `GEKKO_IOS_AGENT` win over `gekko.yaml` (see `references/cli.md`).
 
-Requirements: Android needs `adb` and an emulator or device; iOS needs macOS with Xcode and a booted simulator (iOS 15 or later, simulators only in 1.0); the CLI also uses `unzip` and `perl`. The Android agent has minSdk 21 and the emulator or device that runs the tests needs API 24 or newer. gekko is tested with AGP 9.x, Gradle 9.x and Kotlin 2.4. Xcode and `xcodegen` are only needed to build the runners from source; users get them from the release.
+Requirements: Android needs `adb` and an emulator or device; web needs Node.js 18 or newer (Playwright and the browsers are downloaded by `gekko install --platform web`); iOS needs macOS with Xcode and a booted simulator (iOS 15 or later, simulators only in 1.0); the CLI also uses `unzip` and `perl`. The Android agent has minSdk 21 and the emulator or device that runs the tests needs API 24 or newer. gekko is tested with AGP 9.x, Gradle 9.x and Kotlin 2.4. Xcode and `xcodegen` are only needed to build the runners from source; users get them from the release.
 
 In CI the CLI and the runners come from the action [`jakala-germany/setup-gekko-cli-action`](https://github.com/jakala-germany/setup-gekko-cli-action) (not from `install.sh`, not from `gh release download` by hand). It installs them for the job, puts `gekko` on the `PATH`, exports `GEKKO_RUNNER_APK` (and with `ios: true` `GEKKO_IOS_RUNNER_DIR` and `GEKKO_IOS_AGENT`, which win over `gekko.yaml`) and removes everything when the job ends. The tag is the version; pin the commit of that tag in your workflows after you have checked it. The action verifies every download against the sha256 digest GitHub reports for the release asset and fails when it differs; the optional inputs `cli-sha256`, `system-runner-sha256`, `ios-runner-sha256` and `ios-agent-sha256` hard-pin a file (the hashes are in `SHA256SUMS` of the gekko release):
 
@@ -72,6 +73,16 @@ The iOS agent is `GekkoAgent.framework` (released as `gekko-ios-agent.zip`, inst
 5. **The agent only starts when the CLI launches the app**: it stays dormant unless `GEKKO_PORT` and `GEKKO_TOKEN` are set, and the CLI sets both. An app started from Xcode, the home screen or `simctl launch` has no agent and `gekko tree` fails. Always start it with `gekko launch` or `gekko run`. The agent also switches on automation accessibility at startup (like XCUITest); without it SwiftUI does not expose identifiers. If `gekko tree` shows no ids, check that the agent was injected (`gekko launch` must print `ok`; `GEKKO_DEBUG=1` shows which driver answers).
 6. If the app exits right after launch with the agent injected but not without, the app rejects injected libraries; report that instead of working around it.
 
+## Web app
+
+A web app needs **no change and no agent**: gekko opens it in a browser that it controls through Playwright and injects a script that only reads the page.
+
+1. Needs Node.js 18 or newer. Install Playwright (pinned to the tested version, into `~/.gekko/web`) and a browser once: `gekko install --platform web -s firefox` (or `chromium`, `webkit`; `install.sh --web` does it together with the CLI; on a Linux CI runner add `--with-deps`).
+2. In `gekko.yaml` set `app.web` to the URL of the app (a staging or local URL; or an HTML file or folder of the repo, which gekko serves on `127.0.0.1`) and, if you want, a `web:` section (`browser`, `viewport`, `idAttributes`, `headless`, `permissions`, `playwright`, see `references/cli.md`). The app under test must be reachable when the tests run: start a local dev server first (gekko does not start it).
+3. Ids: gekko names an element by its `data-testid` attribute (Flutter web: `flt-semantics-identifier`), its text and its accessible label (`aria-label`, an associated `<label>`, `title`, `alt`). Add `data-testid` to the elements the tests need, the same strings as the Android test tags and iOS accessibility identifiers, and one YAML test runs everywhere. A site without test ids can still be tested by text.
+4. The window size is `web.viewport` (default 1280x800) and only what is inside the window counts as visible: give pages that are long or scroll themselves a larger viewport.
+5. Every test starts in a fresh browser context (no cookies, storage or permissions): consent banners and logins come back in every test, so write them as flows. For tests that need a login, put them in a folder with a `group.yaml` (`setup: [login-flow]`): the login runs once for the whole group. Try it: `gekko launch --fresh --platform web -s firefox`, `gekko tree`, then hand over to `gekko-author`.
+
 ## Test repo
 
 1. Copy `assets/test-repo/` into the repo (`gekko.yaml`, `flows/`, `tests/`, `AGENTS.md`, `.gitignore`) and fill `gekko.yaml` with the real application ids, the launcher activity and the permissions the app needs granted before each fresh start. Replace the example flow and test (`search-field-enter-term`, `search-opens-detail`) with real ones, or delete them. `gekko.yaml` is required: gekko stops with exit code 2 without it.
@@ -108,6 +119,7 @@ CI runs with `--heal api` when it is configured (an OpenAI-compatible endpoint: 
 - **Device ordering and choice.** With several devices attached, pass `-s <serial or UDID>`; the CLI does not guess (`gekko devices` lists adb devices first, then booted simulators). `gekko run --devices a,b,c` (or `--devices all`, which includes every attached device and booted simulator, a forgotten phone too) gives each platform its own queue and the first free device takes the next test, so which test runs where, and in which order, is not predictable: tests must not depend on each other. `--every-device` makes every device run every test. Android and iOS can run in the same session.
 - **Exit codes.** 0 all passed, 1 a test failed, 2 usage, YAML, configuration or version problem (also a missing `gekko.yaml`, or an `env:` variable that is not set), 3 device, agent or runner problem or an app crash. CI should treat 1 as a red test and 3 as a broken environment worth a rerun; `failure.json` carries the same split as `kind: test | infrastructure`.
 - **`${env.NAME}` errors.** The name must be listed in `env:`, and the value must exist in the process environment or `.env`. `gekko check` needs them too.
+- **Web:** `Playwright is not installed ...` (exit 2): run `gekko install --platform web -s <browser>` (needs Node.js 18+). `The web bridge did not start`: the message shows the end of `~/.gekko/web/logs/<session>.log`; a port in use means a session of another user or `GEKKO_HOME`. A web session outlives the CLI call and stops after 30 minutes without use; `gekko uninstall --platform web -s <browser>` stops it. `Element not found` for an element that is in `gekko tree`: it is outside the window (a bigger `web.viewport`, or `scrollUntilVisible`) or a native dialog is open (the message says so).
 - The first iOS system-runner start launches an XCUITest runner on the simulator and can take a while (the CLI waits up to two minutes); later calls reuse it.
 - iOS works on simulators only in 1.0.
 

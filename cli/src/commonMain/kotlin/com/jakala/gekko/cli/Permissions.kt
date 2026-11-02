@@ -24,6 +24,38 @@ object PermissionNames {
             "photos" to "photos",
         )
 
+    /**
+     * Playwright permission names; the names of the other platforms map to them, a Playwright name is used as it is.
+     */
+    private val web =
+        mapOf(
+            "location" to listOf("geolocation"),
+            "camera" to listOf("camera"),
+            "microphone" to listOf("microphone"),
+            "notifications" to listOf("notifications"),
+            "clipboard" to listOf("clipboard-read", "clipboard-write"),
+        )
+
+    private val webNative =
+        setOf(
+            "geolocation",
+            "midi",
+            "midi-sysex",
+            "notifications",
+            "camera",
+            "microphone",
+            "background-sync",
+            "ambient-light-sensor",
+            "accelerometer",
+            "gyroscope",
+            "magnetometer",
+            "accessibility-events",
+            "clipboard-read",
+            "clipboard-write",
+            "payment-handler",
+            "storage-access",
+        )
+
     /** A full permission name (it contains a dot) is passed through as is. */
     fun android(name: String): List<String> {
         if ('.' in name) {
@@ -34,6 +66,13 @@ object PermissionNames {
 
     fun ios(name: String): String {
         return ios[name.lowercase()] ?: throw StepFailure("Permission '$name' cannot be set on iOS simulators")
+    }
+
+    fun web(name: String): List<String> {
+        val key = name.lowercase()
+        return web[key]
+            ?: listOf(key).takeIf { key in webNative }
+            ?: throw StepFailure("Unknown permission '$name' for web")
     }
 
     /** `allow` or `deny`; anything else is a typo that should not silently grant or revoke. */

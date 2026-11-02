@@ -1,0 +1,89 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>gekko sample</title>
+  <style>
+    body { font: 16px/1.4 system-ui, sans-serif; margin: 16px; max-width: 480px; }
+    .row { display: flex; gap: 12px; align-items: center; margin: 4px 0; }
+    #gesture { display: inline-block; padding: 8px; border: 1px dashed #888; cursor: pointer; user-select: none; }
+    #list { height: 440px; overflow: auto; border: 1px solid #ccc; }
+    #list div { height: 20px; line-height: 20px; }
+  </style>
+</head>
+<body>
+  <label for="name">Name</label>
+  <input id="name" data-testid="sample.name" type="text">
+  <div class="row">
+    <button data-testid="sample.greet" id="greet">Greet</button>
+    <button data-testid="sample.locate" id="locate">Locate</button>
+  </div>
+  <div class="row">
+    <span data-testid="sample.greeting" id="greeting"></span>
+    <span data-testid="sample.location" id="location">Location: unknown</span>
+  </div>
+  <div id="gesture" data-testid="sample.gesture">Gesture target</div>
+  <div data-testid="sample.gesture.result" id="gesture-result">Gesture: none</div>
+  <div class="row">
+    <button data-testid="sample.confirm" id="confirm">Confirm</button>
+    <span data-testid="sample.confirm.result" id="confirm-result">Confirm: none</span>
+    <a data-testid="sample.link" href="details.html">Open details</a>
+    <span data-testid="sample.scheme" id="scheme"></span>
+  </div>
+  <div class="row">
+    <button data-testid="sample.remember" id="remember">Remember name</button>
+    <span data-testid="sample.remembered" id="remembered"></span>
+  </div>
+  <div id="list" data-testid="sample.list"></div>
+  <script>
+    const $ = (id) => document.getElementById(id)
+    const list = $('list')
+    for (let i = 1; i <= 60; i++) {
+      const row = document.createElement('div')
+      row.dataset.testid = 'sample.row.' + i
+      row.textContent = 'Row ' + i
+      list.appendChild(row)
+    }
+
+    $('greet').addEventListener('click', () => { $('greeting').textContent = 'Hello ' + $('name').value })
+
+    $('locate').addEventListener('click', () => {
+      navigator.geolocation.getCurrentPosition(
+        (position) => { $('location').textContent = 'Location: ' + position.coords.latitude.toFixed(4) + ',' + position.coords.longitude.toFixed(4) },
+        (error) => { $('location').textContent = 'Location: ' + error.message }
+      )
+    })
+
+    const gesture = $('gesture')
+    const result = $('gesture-result')
+    // The length of the press is measured, not timed: a window in the background throttles timers
+    let downAt = 0
+    let longPressed = false
+    gesture.addEventListener('pointerdown', () => { longPressed = false; downAt = performance.now() })
+    gesture.addEventListener('pointerup', () => {
+      if (downAt > 0 && performance.now() - downAt >= 600) { longPressed = true; result.textContent = 'Gesture: long press' }
+      downAt = 0
+    })
+    gesture.addEventListener('click', () => {
+      if (longPressed) { longPressed = false; return }
+      result.textContent = 'Gesture: tap'
+    })
+    gesture.addEventListener('dblclick', () => { result.textContent = 'Gesture: double tap' })
+
+    $('confirm').addEventListener('click', () => {
+      $('confirm-result').textContent = 'Confirm: ' + (confirm('Delete the item?') ? 'yes' : 'no')
+    })
+
+    // Kept in the browser context: a test of a shared session sees what an earlier test stored
+    const showRemembered = () => { $('remembered').textContent = 'Remembered: ' + (localStorage.getItem('gekko.name') || 'nobody') }
+    $('remember').addEventListener('click', () => { localStorage.setItem('gekko.name', $('name').value); showRemembered() })
+    showRemembered()
+
+    const dark = matchMedia('(prefers-color-scheme: dark)')
+    const showScheme = () => { $('scheme').textContent = 'Scheme: ' + (dark.matches ? 'dark' : 'light') }
+    dark.addEventListener('change', showScheme)
+    showScheme()
+  </script>
+</body>
+</html>

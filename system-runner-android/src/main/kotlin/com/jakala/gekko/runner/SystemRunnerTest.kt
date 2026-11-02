@@ -97,6 +97,7 @@ class SystemRunnerTest {
             Command.Foreground -> Response.ForegroundResult(false)
             Command.Screenshot -> Response.Error("Screenshot is handled by the host CLI", ErrorKind.UNSUPPORTED)
             Command.HideKeyboard -> Response.Error("The CLI closes the keyboard over adb", ErrorKind.UNSUPPORTED)
+            is Command.Wheel -> Response.Error("A mouse wheel only exists in a browser", ErrorKind.UNSUPPORTED)
             is Command.WaitIdle -> {
                 device.waitForIdle(command.timeoutMs)
                 Response.Ok

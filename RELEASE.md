@@ -17,7 +17,7 @@ created by release managers (repository ruleset), and releases are immutable (Se
 
 ## Release
 
-1. Make sure `main` is green (CI: unit tests, Apple build, Android end to end, iOS end to end).
+1. Make sure `main` is green (CI: unit tests, Apple build, Android end to end, web end to end, iOS end to end).
 
 2. Update `CHANGELOG.md`:
     1. Change `Snapshot` to the version that is released, e.g. `[1.2.0]`.

@@ -36,6 +36,7 @@ internal class CommandExecutor(private val application: Application, private val
             Command.HideKeyboard -> unsupported("The CLI closes the keyboard over adb")
             is Command.SetLocation,
             Command.ClearLocation -> unsupported("Mock locations are served by the system runner")
+            is Command.Wheel -> unsupported("A mouse wheel only exists in a browser")
             is Command.WaitIdle -> waitIdle(command.timeoutMs)
             is Command.WaitFor -> waitFor(command)
             is Command.Tap -> tap(command)

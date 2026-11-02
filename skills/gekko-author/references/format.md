@@ -62,6 +62,25 @@ Call it from a test or another flow:
 - Flows may call other flows; a flow that calls itself is reported by `gekko check`.
 - `with:` only goes with `use:`.
 
+## Group file (`group.yaml`)
+
+A folder of tests with a `group.yaml` is a **group**: its tests share a start state, typically a login.
+
+```yaml
+# tests/logged-in/group.yaml
+name: Account (logged in)        # optional; shown in the log, default is the folder name
+platform: web                    # optional: android, ios, web or a list; left out, the group runs everywhere
+setup: [account-login-sign-in]   # flows, run once before the first test, in a fresh start
+teardown: [account-cleanup]      # optional flows, run once after the last test
+```
+
+- The tests below the folder (the nearest `group.yaml` counts) run one after the other, sorted by path, **without clearing the app data**: a login of the setup is still there, a browser keeps its context. A test does not need `uses:` for the login.
+- The setup and the teardown are reported as tests of their own (`<name> (setup)`, `<name> (teardown)`). If the setup fails, the tests of the group are reported as `SKIP` with the reason (JUnit `<skipped>`), nothing is retried, and the run still fails because of the setup. The teardown runs whenever the setup passed.
+- A group is one unit: it stays on one device, in one shard, in the order of its tests. `--tags` and `--exclude-tags` filter the tests first; a group with no selected test does not run its setup. `gekko run <one test of the group>` runs the setup first.
+- Tests depend on each other's order and on what the one before left behind; keep them tolerant (a test that changes state undoes it) and put the logout test last (`zz-` folder). `--record` does not record group tests.
+- `platform:` in the `group.yaml` keeps the group off the other platforms entirely (no setup, no tests, not even a skip line), so its tests, and the flows only they use, do not repeat `platform: web` on every step. It does not change how an id map is checked: `id: { web: x }` alone in a group test still needs `platform:` on the step.
+- Flows named in `setup` and `teardown` take no parameters (like `uses:`); `gekko check` reports a missing or broken one.
+
 ## Steps
 
 | Key | Meaning |
@@ -70,7 +89,7 @@ Call it from a test or another flow:
 | `do` | Required. **Exactly one action**: two actions or none is an error when the file is loaded. Write one step per action. |
 | `until` + `attempts` | After `do`, the state in `until` (an `assertVisible` or `assertNotVisible`) must be reached; if not, `do` is repeated, up to `attempts` tries in total (default 1). `attempts` needs an `until`. Before each retry gekko checks whether the state was reached after all, and on iOS a retried `tap` is sent as a real touch (on Android the agent falls back to one by itself). For taps that a reloading screen swallows. Not for `use` and `repeat`. |
 | `timeout` | Timeout in ms for this step (`optional` and `if` use their own short look, see below). Not for `use` and `repeat`. |
-| `platform: android\|ios` | Run the step only on that platform. Also valid inside `do` and `until`: a `do` for another platform skips the step, an `until` for another platform is dropped, so one step can differ per platform: `until: { platform: ios, assertNotVisible: { id: Search.Spinner } }`. Skipped steps are not logged (`GEKKO_DEBUG=1` lists them). Any other value is an error. |
+| `platform: android\|ios\|web` or a list (`platform: [android, web]`) | Run the step only on that platform or those. Also valid inside `do` and `until`: a `do` for another platform skips the step, an `until` for another platform is dropped, so one step can differ per platform: `until: { platform: ios, assertNotVisible: { id: Search.Spinner } }`. Skipped steps are not logged (`GEKKO_DEBUG=1` lists them). Any other value is an error. |
 | `optional: true` | Skip the step when the element it needs is not there (a banner, a tooltip). gekko looks for `optionalTimeoutMs` (default 500 ms) or the step's own `timeout`, not for the full default timeout. Once the element is there the step is a normal step: a failed `until` or a rejected action still fails. Not for `use` and `repeat`; put those behind an `if`. |
 | `if: { visible: <selector> }` or `if: { notVisible: <selector> }` | The step (also `use` and `repeat`) runs only when the screen shows, or does not show, that element. The look is as short as for `optional`. Exactly one of the two. |
 
@@ -93,8 +112,8 @@ Call it from a test or another flow:
 | `assertVisible`<br>`assertNotVisible` | `{ assertVisible: { id: Detail.Title, text: "Tent" } }` | Passes when an element that matches is on screen (its center lies inside the window), or when none is. `gekko tree` also lists off-screen rows, so an id in the tree is not proof it is visible. |
 | `waitForAnimationToEnd` | `{ waitForAnimationToEnd: true }` | Waits until the screen stopped changing (same notion of "done" as for missing elements). |
 | `wait` | `{ wait: 500 }` | Fixed pause in ms. Avoid; assert the end state instead. |
-| `back` | `{ back: true }` | System back button. Android only. |
-| `pressKey` | `{ pressKey: enter }` | `back`, `home`, `enter`, `tab` or an Android key code number. Android only. |
+| `back` | `{ back: true }` | System back button (Android) or history back (web). Not on iOS. |
+| `pressKey` | `{ pressKey: enter }` | Android: `back`, `home`, `enter`, `tab` or a key code number. Web: `enter`, `tab`, `escape`, `space`, `backspace`, `delete`, `home`, `end`, `pageup`, `pagedown`, `up`, `down`, `left`, `right` or any Playwright key name (`a`, `Shift+A`); it goes to the focused element. Not on iOS. |
 | `hideKeyboard` | `{ hideKeyboard: true }` | Closes the keyboard when it is open; do it before a scroll or swipe over the lower part of the screen. |
 | `openLink` | `{ openLink: "example://item/42" }` | Opens a URL or deep link (Android intent, `simctl openurl` on a simulator). |
 | `launchApp` | `{ launchApp: {} }`<br>`{ launchApp: { clearState: true } }`<br>`{ launchApp: { arguments: { feature: "on" } } }` | Starts the app (again). `clearState: true` wipes its data first. `arguments` become Android intent extras (strings) and iOS launch arguments (`-feature on`); keys are letters, digits, `_` or `.`, starting with a letter. |
@@ -117,7 +136,7 @@ Call it from a test or another flow:
 
 | Key | Meaning |
 |---|---|
-| `id` | Test tag / resource id (Android), accessibility identifier (iOS). A shared string (`Search.Field`) or per platform: `{ android: search_field, ios: Search.Field }`. An id that exists for one platform only needs `platform:` on the step (or inside `do`), otherwise loading the file fails. |
+| `id` | Test tag / resource id (Android), accessibility identifier (iOS), `data-testid` (web, see `web.idAttributes`). A shared string (`Search.Field`) or per platform: `{ android: search_field, ios: Search.Field, web: search-field }`. A per-platform id has to name android and ios, and every other platform that has an `app:` entry in `gekko.yaml` (web: `app.web`); otherwise the step needs `platform:` (or inside `do`), or loading the file fails. |
 | `text` | The whole visible text, exact. It also matches the accessibility label (content description). Whitespace is normalized (non-breaking spaces, surrounding blanks). |
 | `textContains` | A part of the text, for texts with changing parts. |
 | `textMatches` | A regular expression the whole text must match: case-insensitive, `.` also matches line breaks. A text that equals the pattern literally matches too, so `What are you looking for?` finds exactly that text. |
@@ -208,16 +227,26 @@ Put it in `gekko.yaml` for all tests or at the top of a test to override it. It 
 
 ## What works where
 
-| | Android | iOS simulator |
-|---|---|---|
-| All selector keys, `tap`, `doubleTap`, `longPress`, `type`, `eraseText`, `scroll`, `scrollUntilVisible`, `swipe`, assertions, `waitForAnimationToEnd`, `wait`, `takeScreenshot`, `copyText`, `hideKeyboard`, `openLink`, `launchApp`, `stopApp`, `clearState`, `setDarkMode`, `setOrientation`, `repeat`, `use`, `system: true` on `tap`, `doubleTap` and `longPress` | yes | yes |
-| `tap` with `point` | yes | no |
-| `back`, `pressKey`, `launchPackage`, `stopPackage`, `setAirplaneMode` | yes | no: the step fails ("is not supported") |
-| `setLocation` | yes (emulators through the console, physical devices through the system runner) | simulators only |
-| `setPermissions` | all names, or a full permission name | `location`, `microphone`, `contacts`, `calendar`, `photos` |
-| `checked` | switches, checkboxes, radio buttons | switches and toggle buttons (iOS 17 and later for toggle buttons) |
+| | Android | iOS simulator | Web (Chromium, Firefox, WebKit) |
+|---|---|---|---|
+| All selector keys, `tap`, `doubleTap`, `longPress`, `type`, `eraseText`, `scroll`, `scrollUntilVisible`, `swipe`, assertions, `waitForAnimationToEnd`, `wait`, `takeScreenshot`, `copyText`, `hideKeyboard`, `openLink`, `launchApp`, `stopApp`, `clearState`, `setDarkMode`, `setOrientation`, `repeat`, `use`, `system: true` on `tap`, `doubleTap` and `longPress` | yes | yes | yes |
+| `tap` with `point` | yes | no | no |
+| `back`, `pressKey`, `setAirplaneMode` | yes | no: the step fails ("is not supported") | yes (history back, keyboard, offline) |
+| `launchPackage`, `stopPackage` | yes | no | no |
+| `setLocation` | yes (emulators through the console, physical devices through the system runner) | simulators only | yes |
+| `setPermissions` | all names, or a full permission name | `location`, `microphone`, `contacts`, `calendar`, `photos` | `location`, `camera`, `microphone`, `notifications`, `clipboard` or a Playwright permission name |
+| `checked` | switches, checkboxes, radio buttons | switches and toggle buttons (iOS 17 and later for toggle buttons) | checkboxes, radio buttons, `aria-checked` and `aria-pressed` |
 
-iOS runs on simulators only in 1.0. Steps that only one platform can do go behind `platform: android` or `platform: ios` so the same file runs on both. Platform-only values for an id belong to the same rule: `id: { android: a }` alone needs `platform: android`.
+iOS runs on simulators only in 1.0. Steps that only one platform can do go behind `platform: android`, `platform: ios` or `platform: web` (or a list such as `platform: [android, web]`) so the same file runs everywhere. Platform-only values for an id belong to the same rule: `id: { android: a }` alone needs `platform: android`.
+
+### On the web
+
+- **What an element is.** `id` is `data-testid` (or `flt-semantics-identifier`; `web.idAttributes` changes the list; the HTML `id` is not used). `text` is the text of the element (the value of a field, the label of a button) and the accessible label (`aria-label`, an associated `<label>`, `title`, `alt`) counts as the text too, so `{ textContains: "E-Mail", action: setText }` is "the e-mail field". `gekko tree` shows what gekko sees.
+- **On screen means in the window.** Content below the fold is not visible; the window size is `web.viewport` (make it as big as the page needs). `tap`, `doubleTap`, `longPress` and `type` scroll the page to an element that is outside the window, `assertVisible` does not, and an element that a container hides (a row far down a list) needs `scroll` or `scrollUntilVisible`. Scrolling turns the mouse wheel, `swipe` drags with the mouse.
+- **Every test is a new browser context:** no cookies, no storage, no granted permissions, so a consent banner is back in every test (an `optional: true` step in a flow dismisses it; raise `optionalTimeoutMs` if it comes late) and a login has to be done in each test (a flow with `${env.NAME}` values). Many logins in a short time can trip a rate limit (a CloudFront 403 page): then use `web.session: shared` (one context for the whole run; the login flow guards its steps with `if: { visible: <login heading> }` so only the first test logs in; tests depend on their order, so the logout test goes last, e.g. in a `zz-` folder) or a pause. `app.web` can name a variable (`${env.STAGE}`) to switch environment.
+- **Dialogs.** A native `alert`, `confirm`, `prompt` or `beforeunload` is the topmost window with the buttons `OK` and `Cancel` (`Leave` and `Stay`): `tap: { text: OK, system: true }`; a prompt takes its text with `type: { id: gekko.dialog.field, value: ... }` first. A step that cannot find its element while a dialog is open says so.
+- **Slow pages.** A page that shows nothing new while a request runs counts as settled after `settleMs`; raise `settleMs` (and `timeout` on the step) for slow backends instead of adding `wait`.
+- **Not available:** URL assertions (assert a text of the new page), native pickers (a `<select>` or a date input is set with `type`), `launchPackage`, `stopPackage`, `tap` with `point`.
 
 ## Healing and the format
 

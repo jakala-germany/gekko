@@ -6,11 +6,21 @@
 
 **New**
 
-- Upcoming additions go here
+- Web: gekko tests web apps in Chromium, Firefox and WebKit through Playwright, with the same YAML tests. A web app needs nothing built in: `app.web` in `gekko.yaml` names a URL (or an HTML file or folder of the project, served on `127.0.0.1`), `gekko install --platform web -s <browser>` installs Playwright and the browser (Node.js 18 or newer), and `gekko run --platform web -s firefox` or `--devices chromium,firefox,webkit` runs the tests. A web device is a named browser session that outlives a CLI call, so `gekko launch`, `gekko tree` and `gekko tap` work step by step. Elements are named by `data-testid` (or `flt-semantics-identifier`, see `web.idAttributes`), text and accessible labels
+- Web: browser dialogs (`alert`, `confirm`, `prompt`, `beforeunload`) show up as the topmost window and are answered with `tap: { text: OK, system: true }`; taps, typing and scrolling bring an element of the page into view; `setDarkMode`, `setAirplaneMode` (offline), `setOrientation`, `setLocation`, `setPermissions`, `device.language`, `device.timeFormat`, `back`, `pressKey`, `openLink` and video (`--record`, as `video.webm`) work; failed tests also leave `console.txt`
+- `platform:` on a step or an action takes a list: `platform: [android, web]`. A per-platform id has to name every platform that has an `app:` entry in `gekko.yaml` (Android and iOS as before)
+- `scripts/install.sh --web[=chromium,firefox,webkit]` also installs Playwright and the browsers; `gekko devices` lists running web sessions
+- `scripts/e2e-web.sh` and a web end-to-end job in CI run the sample tests in all three browsers; `sample-web/` is the sample app (the same ids as the Android and iOS samples), with web-only tests for dialogs, navigation, dark mode and page scrolling
+- Web: `web.session: shared` (or `GEKKO_WEB_SESSION=shared`) keeps one browser context for all tests of a run, in memory only: log in once instead of in every test, or log in by hand in a visible browser (`GEKKO_WEB_HEADED=1 gekko launch`) and run the suite in that session
+- Groups: a folder of tests with a `group.yaml` (`setup`, optional `teardown` and `name`) shares one start state, typically a login. The setup flows run once, the tests follow in one session without clearing the app data (a browser keeps its context), and a failed setup skips the tests (`SKIP`, JUnit `skipped`) instead of failing each. `platform:` in the `group.yaml` (`web` or a list) limits a group to those platforms, so its tests need no `platform:` on every step. A group is never split over devices or shards. The setup and teardown are reported as tests of their own
+- `app.web` may name a declared variable (`https://app-${env.STAGE}.example.com/`), so one project serves every environment
+- The mock location test runs on the web too (tag `location` instead of `android-only`)
 
 **Changed**
 
-- Upcoming changes go here
+- `Device.freshStart` takes `keepState` and `Device.endTest(config, keepSession)` is new (for groups; the defaults keep the old behavior). A test result can be `skipped`; the JUnit file has a `skipped` count
+- The element lookup and waiting code of the Android agent (`com.jakala.gekko.device`: `ElementLookup`, `Waiting`, `Scrolling`, `NodeFacts`) moved from `gekko-transport-jvm` to `gekko-protocol`, which the web agent in the CLI shares; the package stays, so nothing changes for users of `gekko-transport-jvm`
+- The UI node has an optional `clip` (where its ancestors cut it off) and the protocol a `wheel` command; only the web agent uses them, so the protocol number stays 1
 
 ## [1.1.0]
 

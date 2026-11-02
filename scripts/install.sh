@@ -2,13 +2,16 @@
 # Installs the gekko CLI and its system runners from a release of jakala-germany/gekko.
 #
 #   scripts/install.sh [VERSION|latest]        install (default: the latest release)
-#   scripts/install.sh --uninstall             remove the CLI and the runners again
+#   scripts/install.sh --web[=BROWSERS]        also install Playwright and the browsers for web tests (needs Node.js 18+)
+#                                              BROWSERS: comma separated chromium, firefox, webkit (default: chromium)
+#   scripts/install.sh --uninstall             remove the CLI, the runners and the web files again
 #
 # Remote (pin the version in the URL and in the argument):
 #   curl -fsSL https://raw.githubusercontent.com/jakala-germany/gekko/1.0.0/scripts/install.sh | bash -s -- 1.0.0
 #
 # The CLI goes to $GEKKO_BIN_DIR (default ~/.local/bin), the runners to $GEKKO_HOME/runners (default ~/.gekko/runners);
-# gekko finds them there without any setting. Every download is checked against the SHA256SUMS of the release. With
+# gekko finds them there without any setting; Playwright for web tests goes to $GEKKO_HOME/web (the browsers it downloads
+# live in the Playwright cache of the user). Every download is checked against the SHA256SUMS of the release. With
 # GEKKO_VERIFY_ATTESTATION=1 and the GitHub CLI installed the build provenance is verified as well.
 # GEKKO_RELEASE_BASE_URL replaces https://github.com/jakala-germany/gekko/releases (for tests).
 set -euo pipefail
@@ -29,9 +32,12 @@ die() {
 
 version="latest"
 uninstall=false
+web=""
 for argument in "$@"; do
   case "$argument" in
     --uninstall) uninstall=true ;;
+    --web) web="chromium" ;;
+    --web=*) web="${argument#--web=}" ;;
     -h | --help) usage; exit 0 ;;
     -*) die "unknown option $argument (see --help)" ;;
     *) version="$argument" ;;
@@ -39,10 +45,20 @@ for argument in "$@"; do
 done
 
 if [ "$uninstall" = true ]; then
+  # Browsers of web sessions that still run are closed first
+  for session in "$GEKKO_DIR"/web/sessions/*.json; do
+    [ -e "$session" ] || continue
+    pid="$(sed -n 's/.*"pid": *\([0-9][0-9]*\).*/\1/p' "$session")"
+    [ -z "$pid" ] || kill "$pid" 2>/dev/null || true
+  done
   rm -f "$BIN_DIR/gekko"
-  rm -rf "$RUNNERS_DIR"
-  echo "Removed $BIN_DIR/gekko and $RUNNERS_DIR (the token file in $GEKKO_DIR is kept)"
+  rm -rf "$RUNNERS_DIR" "$GEKKO_DIR/web"
+  echo "Removed $BIN_DIR/gekko, $RUNNERS_DIR and $GEKKO_DIR/web (the token file in $GEKKO_DIR is kept)"
   exit 0
+fi
+
+if [ -n "$web" ]; then
+  command -v node >/dev/null 2>&1 || die "--web needs Node.js 18 or newer (https://nodejs.org); nothing was installed"
 fi
 
 case "$(uname -s)-$(uname -m)" in
@@ -106,10 +122,19 @@ if [ "$ios" = true ]; then
 fi
 
 echo "Installed gekko $version to $BIN_DIR/gekko and the runners to $RUNNERS_DIR"
+if [ -n "$web" ]; then
+  IFS=',' read -r -a browsers <<< "$web"
+  for browser in "${browsers[@]}"; do
+    GEKKO_HOME="$GEKKO_DIR" "$BIN_DIR/gekko" install --platform web -s "$browser"
+  done
+fi
 case ":$PATH:" in
   *":$BIN_DIR:"*) ;;
   *) echo "Add $BIN_DIR to your PATH, e.g.: export PATH=\"$BIN_DIR:\$PATH\"" ;;
 esac
 if [ "$ios" = true ]; then
   echo "For iOS simulators set ios.agentFramework: installed in gekko.yaml (or GEKKO_IOS_AGENT)"
+fi
+if [ -z "$web" ]; then
+  echo "For web tests (Node.js 18+): gekko install --platform web -s chromium   (or run this script again with --web)"
 fi

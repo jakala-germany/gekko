@@ -75,27 +75,65 @@ private class GekkoCommand : CliktCommand(name = "gekko") {
 }
 
 private abstract class DeviceCommand(name: String) : CliktCommand(name = name) {
-    val serial by option("--serial", "-s", help = "adb serial or simulator UDID of the device")
+    val serial by
+        option(
+            "--serial",
+            "-s",
+            help =
+                "adb serial, simulator UDID or web browser (chromium, firefox, webkit; -2, -3 for more) of the device",
+        )
     val root by option("--project", help = "Directory containing gekko.yaml").default(".")
     private val requestedPlatform by
-        option("--platform", help = "android or ios (simulator); inferred from -s when that is a simulator UDID")
+        option(
+            "--platform",
+            help = "android, ios (simulator) or web; inferred from -s when that is a simulator UDID or a browser name",
+        )
 
-    /** `--platform`, else ios when `-s` names a booted simulator, else android. */
+    /** `--platform`, else web when `-s` names a browser, ios when it names a booted simulator, else android. */
     protected val platformName: String
         get() {
             requestedPlatform?.let {
                 return it
             }
             val wanted = serial
-            return if (wanted != null && wanted in SimctlDevice.bootedUdids()) "ios" else "android"
+            return when {
+                wanted != null && WebSessions.isWebId(wanted) -> "web"
+                wanted != null && wanted in SimctlDevice.bootedUdids() -> "ios"
+                else -> "android"
+            }
+        }
+
+    protected val platform: Platform
+        get() {
+            return when (platformName) {
+                "android" -> Platform.Android
+                "ios" -> Platform.Ios
+                "web" -> Platform.Web
+                else -> fail("--platform must be android, ios or web")
+            }
         }
 
     protected fun device(): Device {
-        return when (platformName) {
-            "android" -> AdbDevice(androidSerial()).also { it.requireSupportedApi() }
-            "ios" -> SimctlDevice(serial)
-            else -> fail("--platform must be android or ios")
+        return when (platform) {
+            Platform.Android -> AdbDevice(androidSerial()).also { it.requireSupportedApi() }
+            Platform.Ios -> SimctlDevice(serial)
+            Platform.Web -> webDevice()
         }
+    }
+
+    private fun webDevice(): Device {
+        val config = webConfig()
+        val name = serial ?: config.web.browser
+        if (!WebSessions.isWebId(name)) fail("'$name' is not a browser; use chromium, firefox or webkit with -s")
+        return WebDevice(name, config) { echo(it, err = true) }
+    }
+
+    /** True for a command that can do its work for the web without gekko.yaml, like installing the browsers. */
+    protected open val webWithoutProject: Boolean
+        get() = false
+
+    protected fun webConfig(): GekkoConfig {
+        return if (webWithoutProject && !fileExists("$root/gekko.yaml")) GekkoConfig() else Project.load(root).config
     }
 
     private fun androidSerial(): String {
@@ -185,12 +223,13 @@ private abstract class SelectorCommand(name: String) : DeviceCommand(name) {
 
 private class DevicesCommand : CliktCommand(name = "devices") {
     override fun help(context: Context): String {
-        return "List connected Android devices"
+        return "List connected Android devices, booted iOS simulators and running web sessions"
     }
 
     override fun run() {
         AdbDevice.listSerials().forEach { echo("android $it") }
         SimctlDevice.bootedUdids().forEach { echo("ios $it") }
+        WebSessions.running().forEach { echo("web $it") }
     }
 }
 
@@ -315,6 +354,9 @@ private class ScreenshotCommand : DeviceCommand("screenshot") {
 }
 
 private class InstallCommand : DeviceCommand("install") {
+    override val webWithoutProject: Boolean
+        get() = true
+
     val path by
         argument(
                 name = "APP",
@@ -322,16 +364,24 @@ private class InstallCommand : DeviceCommand("install") {
             )
             .optional()
 
+    val withDeps by
+        option(
+                "--with-deps",
+                help = "Web, Linux: also install the system libraries the browser needs (uses sudo)",
+            )
+            .flag()
+
     override fun help(context: Context): String {
 
-        return "Install the app under test, keeping its data"
+        return "Install the app under test, keeping its data; for web: Playwright and the browser"
     }
 
     override fun run() {
         val device = device()
-        val project = Project.load(root)
+        val config = if (platform == Platform.Web) webConfig() else Project.load(root).config
+        (device as? WebDevice)?.withDeps = withDeps
         try {
-            device.install(project.config, path)
+            device.install(config, path)
         } catch (error: IllegalStateException) {
             failWith(error)
         }
@@ -447,18 +497,18 @@ private class RunCommand : DeviceCommand("run") {
             return
         }
         withDrivers { drivers, device, project ->
-            installIfAsked(
-                device,
-                project,
-                if (platformName == "ios") Platform.Ios else Platform.Android,
-                strict = true,
-            )
-            val tests = selectTests(project, wanted) ?: return@withDrivers
+            installIfAsked(device, project, platform, strict = true)
+            val selected = selectTests(project, wanted) ?: return@withDrivers
+            val units = RunUnits.forPlatform(selected, platform)
+            if (units.isEmpty()) {
+                fail("No tests for ${platform.key}: every selected group is limited to other platforms", ExitCode.USAGE)
+            }
+            (device as? WebDevice)?.recordVideo = record != RecordMode.None
             val healer = healer()
             val runner =
                 TestRunner(
                     project,
-                    if (platformName == "ios") Platform.Ios else Platform.Android,
+                    platform,
                     device,
                     drivers,
                     output,
@@ -468,32 +518,52 @@ private class RunCommand : DeviceCommand("run") {
                     record = record,
                 )
             val results = mutableListOf<TestResult>()
-            tests.forEach { (path, test) ->
-                echo("RUN  ${test.name}")
-                runner.run(test, path).also { result ->
-                    results += result
-                    // The report is complete after every test, so a run that is killed still leaves one
-                    junit?.let { writeTextFile(it, Reporter.junit("gekko", results)) }
-                    val healedNote = if (result.healed.isEmpty()) "" else ", ${result.healed.size} step(s) healed"
-                    echo(
-                        if (result.failure == null) "PASS ${test.name} (${result.durationMs}ms$healedNote)"
-                        else "FAIL ${test.name}: ${result.failure}"
-                    )
+            try {
+                units.forEach { unit ->
+                    runner.runUnit(unit, started = { echo("RUN  $it") }) { result ->
+                        results += result
+                        // The report is complete after every test, so a run that is killed still leaves one
+                        junit?.let { writeTextFile(it, Reporter.junit("gekko", results)) }
+                        echo(resultLine(result, ""))
+                    }
                 }
+            } finally {
+                // A browser this run started is not left behind, not even when the run aborts; one that was running
+                // before stays
+                (device as? WebDevice)?.takeIf { it.startedHere && !uninstall }?.stopSession()
             }
             reportHeals(results)
             junit?.let { writeTextFile(it, Reporter.junit("gekko", results)) }
             junitHealed?.let { writeTextFile(it, Reporter.junitHealed("gekko-healed", results)) }
-            val failed = results.count { it.failure != null }
-            echo("${results.size - failed}/${results.size} passed")
+            echo(summary(results))
             if (uninstall) uninstallEverything(device, project)
             exitWith(results)
         }
     }
 
+    private fun resultLine(result: TestResult, prefix: String): String {
+        val healedNote = if (result.healed.isEmpty()) "" else ", ${result.healed.size} step(s) healed"
+        return when {
+            result.skipped -> "${prefix}SKIP ${result.name}: ${result.failure}"
+            result.failure == null -> "${prefix}PASS ${result.name} (${result.durationMs}ms$healedNote)"
+            else -> "${prefix}FAIL ${result.name}: ${result.failure}"
+        }
+    }
+
+    private fun summary(results: List<TestResult>, suffix: String = ""): String {
+        val skipped = results.count { it.skipped }
+        val note = if (skipped > 0) ", $skipped skipped" else ""
+        return "${results.count { it.failure == null }}/${results.size} passed$note$suffix"
+    }
+
     /** The build of [apps] that fits [platform]: `.apk` for Android, `.app` or `.zip` for an iOS simulator. */
     private fun appFor(platform: Platform): String? {
-        val wanted = if (platform == Platform.Android) listOf(".apk") else listOf(".app", ".zip", ".app/")
+        val wanted =
+            when (platform) {
+                Platform.Android -> listOf(".apk")
+                Platform.Ios -> listOf(".app", ".zip", ".app/")
+                Platform.Web -> emptyList()
+            }
         return apps.firstOrNull { path -> wanted.any { path.endsWith(it) } }
     }
 
@@ -502,7 +572,8 @@ private class RunCommand : DeviceCommand("run") {
         val mine = appFor(platform)
         if (apps.isNotEmpty() && mine == null) {
             // With several platforms a build for only one of them is fine; the others keep what is installed
-            if (strict) fail("--app: no build for ${platform.key} (.apk for Android, .app or .zip for iOS)")
+            if (strict)
+                fail("--app: no build for ${platform.key} (.apk for Android, .app or .zip for iOS; none for web)")
             return
         }
         try {
@@ -532,9 +603,14 @@ private class RunCommand : DeviceCommand("run") {
         val duplicates = devices.groupBy { it.id }.filterValues { it.size > 1 }.keys
         if (duplicates.isNotEmpty()) fail("--devices names ${duplicates.joinToString()} more than once")
         val configured = devices.filter { ref ->
-            val set = if (ref.platform == Platform.Android) project.config.app.android else project.config.app.ios
+            val set =
+                when (ref.platform) {
+                    Platform.Android -> project.config.app.android
+                    Platform.Ios -> project.config.app.ios
+                    Platform.Web -> project.config.app.web
+                }
             if (set == null) {
-                val key = if (ref.platform == Platform.Android) "app.android" else "app.ios"
+                val key = "app.${ref.platform.key}"
                 if (!all) fail("$key is not set in gekko.yaml but ${ref.id} is a ${ref.platform.key} device")
                 echo("Skipping ${ref.platform.key} device ${ref.id}: $key is not set in gekko.yaml")
             }
@@ -555,29 +631,41 @@ private class RunCommand : DeviceCommand("run") {
     private fun runOnDevices(ids: List<String>, wanted: List<String>) {
         if (serial != null) fail("Use either --devices or --serial")
         val project = Project.load(root)
-        val tests = selectTests(project, wanted) ?: return
+        val units = selectTests(project, wanted) ?: return
         val resolved =
             try {
-                DeviceResolver.resolve(ids, AdbDevice.listSerials(), SimctlDevice.bootedUdids())
+                DeviceResolver.resolve(ids, AdbDevice.listSerials(), SimctlDevice.bootedUdids(), WebSessions.running())
             } catch (error: IllegalStateException) {
                 failWith(error)
             }
         val refs = configuredDevices(resolved, project, all = ids == listOf(DeviceResolver.ALL))
+        if (refs.none { RunUnits.forPlatform(units, it.platform).isNotEmpty() }) {
+            fail("No tests for these devices: every selected group is limited to other platforms", ExitCode.USAGE)
+        }
         val healer = healer()
         val lock = Mutex()
         val results = mutableListOf<TestResult>()
         runBlocking(Dispatchers.Default) {
             coroutineScope {
                 refs
-                    .groupBy { it.platform }
-                    .forEach { (platform, group) ->
+                    .groupBy { it.group }
+                    .forEach { (_, group) ->
+                        val platform = group.first().platform
+                        // A group limited to other platforms is not part of this platform's run
+                        val mine = RunUnits.forPlatform(units, platform)
+                        if (mine.isEmpty()) {
+                            echo("No selected tests for ${platform.key}; ${group.joinToString { it.id }} is left out")
+                            return@forEach
+                        }
                         launch {
                             val sessions = group.map { ref ->
-                                val device = ref.create()
+                                val device = ref.create(project.config)
+                                (device as? WebDevice)?.recordVideo = record != RecordMode.None
                                 installIfAsked(device, project, platform, strict = false)
                                 val prefix = "[${ref.id}]"
                                 val drivers = Drivers(device, project.config) { echo("$prefix $it") }
-                                ref to
+                                Session(
+                                    ref,
                                     TestRunner(
                                         project,
                                         platform,
@@ -588,29 +676,35 @@ private class RunCommand : DeviceCommand("run") {
                                         healer,
                                         suggestIds = healer == null,
                                         record = record,
-                                    ) to
-                                    drivers
+                                    ),
+                                    drivers,
+                                    device,
+                                )
                             }
                             try {
-                                val work: suspend (Int, Pair<String, TestFile>) -> Unit = { worker, (path, test) ->
-                                    val (refAndRunner, _) = sessions[worker]
-                                    val (ref, runner) = refAndRunner
-                                    echo("[${ref.id}] RUN  ${test.name}")
-                                    val result = runner.run(test, path).copy(device = ref.id)
-                                    echo(
-                                        if (result.failure == null)
-                                            "[${ref.id}] PASS ${test.name} (${result.durationMs}ms)"
-                                        else "[${ref.id}] FAIL ${test.name}: ${result.failure}"
-                                    )
-                                    lock.withLock { results += result }
+                                // The tests of a group stay together: one unit goes to one device
+                                val work: suspend (Int, RunUnit) -> Unit = { worker, unit ->
+                                    val ref = sessions[worker].ref
+                                    sessions[worker].runner.runUnit(unit, started = { echo("[${ref.id}] RUN  $it") }) {
+                                        val result = it.copy(device = ref.id)
+                                        echo(resultLine(result, "[${ref.id}] "))
+                                        lock.withLock { results += result }
+                                    }
                                 }
                                 if (everyDevice) {
-                                    replicate(tests, sessions.size, work)
+                                    replicate(mine, sessions.size, work)
                                 } else {
-                                    distribute(tests, sessions.size, work)
+                                    distribute(mine, sessions.size, work)
                                 }
                             } finally {
-                                sessions.forEach { it.second.close() }
+                                sessions.forEach {
+                                    // A browser this run started is not left behind; it is stopped before its client
+                                    // closes
+                                    (it.device as? WebDevice)
+                                        ?.takeIf { web -> web.startedHere && !uninstall }
+                                        ?.stopSession()
+                                    it.drivers.close()
+                                }
                             }
                         }
                     }
@@ -619,15 +713,11 @@ private class RunCommand : DeviceCommand("run") {
         reportHeals(results)
         junit?.let { writeTextFile(it, Reporter.junit("gekko", results)) }
         junitHealed?.let { writeTextFile(it, Reporter.junitHealed("gekko-healed", results)) }
-        val failed = results.count { it.failure != null }
         if (everyDevice) {
-            refs.forEach { ref ->
-                val onDevice = results.filter { it.device == ref.id }
-                echo("[${ref.id}] ${onDevice.count { it.failure == null }}/${tests.size} passed")
-            }
+            refs.forEach { ref -> echo("[${ref.id}] " + summary(results.filter { it.device == ref.id })) }
         }
-        echo("${results.size - failed}/${results.size} passed on ${refs.size} device(s)")
-        if (uninstall) refs.forEach { uninstallEverything(it.create(), project) }
+        echo(summary(results, " on ${refs.size} device(s)"))
+        if (uninstall) refs.forEach { uninstallEverything(it.create(project.config), project) }
         exitWith(results)
     }
 
@@ -636,7 +726,7 @@ private class RunCommand : DeviceCommand("run") {
         val code =
             when {
                 results.any { it.infrastructure } -> ExitCode.INFRASTRUCTURE
-                results.any { it.failure != null } -> ExitCode.FAILED
+                results.any { it.failed } -> ExitCode.FAILED
                 else -> ExitCode.OK
             }
         if (code != ExitCode.OK) exitProcess(code)
@@ -647,7 +737,7 @@ private class RunCommand : DeviceCommand("run") {
      * filtered by tag and only then split into the shard. Null when this shard has no test: nothing to do, not an
      * error.
      */
-    private fun selectTests(project: Project, wanted: List<String>): List<Pair<String, TestFile>>? {
+    private fun selectTests(project: Project, wanted: List<String>): List<RunUnit>? {
         val problems = Checker.check(project, paths)
         if (problems.isNotEmpty()) {
             problems.forEach { echo(it, err = true) }
@@ -660,7 +750,9 @@ private class RunCommand : DeviceCommand("run") {
                 .filter { (_, test) -> wanted.isEmpty() || test.tags.any { it in wanted } }
                 .filter { (_, test) -> test.tags.none { it in excludedTags } }
         if (selected.isEmpty()) fail("No tests found", ExitCode.USAGE)
-        val mine = shardOf(selected)
+        // A group is one unit: its tests are never split over shards or devices
+        val units = RunUnits.of(project, selected)
+        val mine = shardOf(units)
         if (mine.isEmpty()) {
             echo("Shard $shard has no tests (${selected.size} tests in total); nothing to run")
             junit?.let { writeTextFile(it, Reporter.junit("gekko", emptyList())) }
@@ -681,6 +773,9 @@ private class RunCommand : DeviceCommand("run") {
         return items.filterIndexed { position, _ -> position % count == index - 1 }
     }
 }
+
+/** One device of a parallel run with the runner and the drivers that work on it. */
+private class Session(val ref: DeviceRef, val runner: TestRunner, val drivers: Drivers, val device: Device)
 
 /** Asks the model of `--heal` one short question, so `GEKKO_LLM_*` (or the local CLI) can be tried without a device. */
 private class LlmCheckCommand : CliktCommand(name = "llm-check") {

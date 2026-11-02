@@ -1,0 +1,7 @@
+# Runs after web-session-1-remember in the same browser context: the name is still there, without a new login or entry.
+name: Session - the next test still knows the name
+tags: [web-only, session-shared]
+steps:
+  - say: The page remembers the name from the test before
+    platform: web
+    do: { assertVisible: { id: sample.remembered, text: "Remembered: Grace" } }

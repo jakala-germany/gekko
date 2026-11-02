@@ -3,6 +3,7 @@ app:
   android: com.example.app                        # applicationId of the debug build
   androidActivity: com.example.app.MainActivity   # needed when several launcher activities exist
   ios: com.example.app                            # bundle id of the debug build
+  # web: https://staging.example.com                # a web app: its URL, or an HTML file / folder of this repo (needs Node.js 18+)
 android:
   permissions: []                                 # granted before every fresh start, e.g. android.permission.POST_NOTIFICATIONS
 ios:
@@ -14,6 +15,8 @@ ios:
 # (the value `installed` means the installed one):
 #   android: { runnerApk: tools/gekko-system-runner.apk }
 #   ios: { runnerDir: tools/gekko-ios-runner, agentFramework: tools/gekko-ios-agent/GekkoAgent.framework }
+# Web only (gekko install --platform web -s firefox once; run with --platform web):
+# web: { browser: firefox, viewport: 1280x800 }   # idAttributes (default data-testid), headless, permissions, playwright
 defaultTimeoutMs: 8000
 # tapIntervalMs: 650                              # only for apps that throttle clicks; default is no pacing
 # device: { language: en-US, timeFormat: 24h }    # app language and time format for all tests

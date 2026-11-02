@@ -4,7 +4,9 @@ package com.jakala.gekko.cli
 object Checker {
     fun check(project: Project, filter: List<String>): List<String> {
         val problems = mutableListOf<String>()
+        val checkedGroups = mutableSetOf<String>()
         for (path in project.testFiles(filter)) {
+            project.groupFileOf(path)?.takeIf { checkedGroups.add(it) }?.let { checkGroup(project, it, problems) }
             val test =
                 try {
                     project.loadTest(path)
@@ -16,6 +18,18 @@ object Checker {
             checkSteps(project, uses + test.steps, path, emptyList(), problems)
         }
         return problems
+    }
+
+    private fun checkGroup(project: Project, path: String, problems: MutableList<String>) {
+        val group =
+            try {
+                project.loadGroup(path)
+            } catch (error: Exception) {
+                problems += "$path: ${error.message?.lineSequence()?.firstOrNull() ?: error}"
+                return
+            }
+        val flows = (group.setup + group.teardown).map { Step(action = Action(use = it)) }
+        checkSteps(project, flows, path, emptyList(), problems)
     }
 
     private fun checkSteps(

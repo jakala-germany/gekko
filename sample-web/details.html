@@ -1,0 +1,22 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>gekko sample details</title>
+  <style>body { font: 16px/1.4 system-ui, sans-serif; margin: 16px; }</style>
+</head>
+<body>
+  <h1 data-testid="sample.details.title">Details</h1>
+  <a data-testid="sample.details.home" href="index.html">Back to the sample</a>
+  <!-- The end of the page is below the fold: a tap has to scroll the page to it -->
+  <div style="height: 1600px"></div>
+  <button data-testid="sample.details.footer" id="footer">Footer button</button>
+  <span data-testid="sample.details.footer.result" id="footer-result">Footer: none</span>
+  <script>
+    document.getElementById('footer').addEventListener('click', () => {
+      document.getElementById('footer-result').textContent = 'Footer: tapped'
+    })
+  </script>
+</body>
+</html>

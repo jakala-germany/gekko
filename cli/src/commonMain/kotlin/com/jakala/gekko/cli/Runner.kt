@@ -37,13 +37,16 @@ data class TestResult(
     val healed: List<HealRecord> = emptyList(),
     /** The run failed because of the device, the agent or the runner, not because of the test. */
     val infrastructure: Boolean = false,
-)
+    /** The test did not run, because the setup of its group failed; [failure] says why. */
+    val skipped: Boolean = false,
+) {
+    /** True for a test that ran and failed; a skipped test is not a failure of its own. */
+    val failed: Boolean
+        get() = failure != null && !skipped
+}
 
 class Project(val root: String, val config: GekkoConfig) {
-    private val access: EnvAccess by lazy {
-        val dotEnv = "$root/.env".takeIf { fileExists(it) }?.let { EnvAccess.parseDotEnv(readTextFile(it)) }.orEmpty()
-        EnvAccess(config.env.toSet(), dotEnv).also { Masker.register(it.values()) }
-    }
+    private val access: EnvAccess by lazy { accessFor(root, config) }
 
     init {
         // The values must be known to the masker before any test prints something
@@ -57,12 +60,43 @@ class Project(val root: String, val config: GekkoConfig) {
                 if (path.endsWith(".yaml") || path.endsWith(".yml")) listOf(path) else listFilesRecursive(path)
             }
             .filter { it.endsWith(".yaml") || it.endsWith(".yml") }
+            .filterNot { GROUP_FILES.any { name -> it == name || it.endsWith("/$name") } }
             .distinct()
             .sorted()
     }
 
+    /**
+     * The `group.yaml` that applies to a test: the one in the nearest folder above it, looking up to the project
+     * folder. Null for a test that is in no group.
+     */
+    fun groupFileOf(testPath: String): String? {
+        var directory = testPath.substringBeforeLast('/', "")
+        val top = absolutePath(root, currentDirectory())
+        while (directory.isNotEmpty()) {
+            GROUP_FILES.map { "$directory/$it" }
+                .firstOrNull { fileExists(it) }
+                ?.let {
+                    return it
+                }
+            if (absolutePath(directory, currentDirectory()) == top) return null
+            val parent = directory.substringBeforeLast('/', "")
+            if (parent == directory) return null
+            directory = parent
+        }
+        return null
+    }
+
+    fun loadGroup(path: String): GroupFile {
+        val group = Yamls.parse(GroupFile.serializer(), readTextFile(path))
+        // The flows have to exist and (for the web) carry ids for it; a broken one is reported when the file is checked
+        (group.setup + group.teardown).forEach { loadFlow(it, emptyMap()) }
+        return group
+    }
+
     fun loadTest(path: String): TestFile {
-        return Yamls.parse(TestFile.serializer(), Yamls.substitute(readTextFile(path), emptyMap(), access))
+        val test = Yamls.parse(TestFile.serializer(), Yamls.substitute(readTextFile(path), emptyMap(), access))
+        requireWebIds(test.steps)
+        return test
     }
 
     fun loadFlow(name: String, params: Map<String, String>): FlowFile {
@@ -70,10 +104,30 @@ class Project(val root: String, val config: GekkoConfig) {
         val path =
             listOf("$base.yaml", "$base.yml").firstOrNull { fileExists(it) }
                 ?: throw StepFailure("Flow '$name' not found in ${config.flowsDir}/")
-        return Yamls.parse(FlowFile.serializer(), Yamls.substitute(readTextFile(path), params, access))
+        val flow = Yamls.parse(FlowFile.serializer(), Yamls.substitute(readTextFile(path), params, access))
+        requireWebIds(flow.steps)
+        return flow
+    }
+
+    /** A project that tests a web app needs an id for the web on every step that runs there. */
+    private fun requireWebIds(steps: List<Step>) {
+        if (config.app.web == null) return
+        for (step in steps) {
+            step.requireIdsFor(Platform.Web)
+            step.action.repeat?.let { requireWebIds(it.steps) }
+        }
     }
 
     companion object {
+        private val GROUP_FILES = listOf("group.yaml", "group.yml")
+
+        /** The `${env.NAME}` variables of a project: the names `gekko.yaml` declares, with the values it can find. */
+        private fun accessFor(root: String, config: GekkoConfig): EnvAccess {
+            val dotEnv =
+                "$root/.env".takeIf { fileExists(it) }?.let { EnvAccess.parseDotEnv(readTextFile(it)) }.orEmpty()
+            return EnvAccess(config.env.toSet(), dotEnv).also { Masker.register(it.values()) }
+        }
+
         fun load(root: String): Project {
             val path = "$root/gekko.yaml"
             if (!fileExists(path)) {
@@ -82,8 +136,11 @@ class Project(val root: String, val config: GekkoConfig) {
                     "gekko.yaml not found in ${absolutePath(root, currentDirectory())}$hint; run gekko in your test repository or pass --project"
                 )
             }
-            val parsed = Yamls.parse(GekkoConfig.serializer(), readTextFile(path))
-            return Project(root, parsed.withPathsRelativeTo(absolutePath(root, currentDirectory())))
+            val read = Yamls.parse(GekkoConfig.serializer(), readTextFile(path))
+            return Project(
+                root,
+                read.withEnvInWebApp(accessFor(root, read)).withPathsRelativeTo(absolutePath(root, currentDirectory())),
+            )
         }
     }
 }
@@ -137,7 +194,16 @@ class TestRunner(
         )
     private val settleMs = project.config.settleMs
 
-    suspend fun run(test: TestFile, path: String): TestResult {
+    /**
+     * Runs one test. A test of a group runs with [keepState] (the app data of the test before stays, a browser keeps
+     * its context) and, when another one follows, with [keepSession].
+     */
+    suspend fun run(
+        test: TestFile,
+        path: String,
+        keepState: Boolean = false,
+        keepSession: Boolean = false,
+    ): TestResult {
         heals.clear()
         screenshots.clear()
         currentTest = test.name
@@ -153,9 +219,9 @@ class TestRunner(
             val startBegin = nowMillis()
             val settings = project.config.device.overriddenBy(test.device)
             currentLanguage = settings.language
-            freshStart(settings)
-            log("  (fresh start ${nowMillis() - startBegin}ms)")
-            recording = startRecording()
+            freshStart(settings, keepState)
+            log("  (${if (keepState) "start in the group" else "fresh start"} ${nowMillis() - startBegin}ms)")
+            recording = if (keepState || keepSession) null else startRecording()
             val steps = test.uses.map { Step(say = "use $it", action = Action(use = it)) } + test.steps
             execute(steps, test.timeout ?: project.config.defaultTimeoutMs, outcomes, 0)
         } catch (error: StepFailure) {
@@ -188,7 +254,7 @@ class TestRunner(
             runCatching { drivers.send(Command.ClearLocation, forceSystem = true) }
             locationMocked = false
         }
-        runCatching { device.terminate(project.config) }
+        runCatching { device.endTest(project.config, keepSession) }
         runCatching { restoreSettings() }
         restoreSettings = {}
         return TestResult(
@@ -202,6 +268,61 @@ class TestRunner(
             healed = heals.toList(),
             infrastructure = infrastructure,
         )
+    }
+
+    /**
+     * Runs the tests of a unit. A test on its own is a normal fresh start. A group starts with its setup flows in a
+     * fresh start; when they pass, the tests run one after the other without clearing the app data (a browser keeps its
+     * context, with the login in it), then the teardown flows. When the setup fails the tests are skipped with the
+     * reason, nothing is retried. [started] is told the name before each run, [finished] gets every result.
+     */
+    suspend fun runUnit(
+        unit: RunUnit,
+        started: suspend (String) -> Unit,
+        finished: suspend (TestResult) -> Unit,
+    ): List<TestResult> {
+        val results = mutableListOf<TestResult>()
+        suspend fun record(result: TestResult) {
+            results += result
+            finished(result)
+        }
+        val group = unit.group
+        if (group == null) {
+            for ((path, test) in unit.tests) {
+                started(test.name)
+                record(run(test, path))
+            }
+            return results
+        }
+        val setup = flowsAsTest("${group.name} (setup)", group.file.setup)
+        started(setup.name)
+        val setupResult = run(setup, group.path, keepSession = true)
+        record(setupResult)
+        if (setupResult.failure != null) {
+            // The session was kept for the tests that will not run
+            runCatching { device.endTest(project.config, keepSession = false) }
+            val reason = "skipped: the setup of group '${group.name}' failed: ${setupResult.failure}"
+            for ((path, test) in unit.tests) {
+                record(TestResult(test.name, path, 0, emptyList(), reason, null, emptyList(), skipped = true))
+            }
+            return results
+        }
+        val teardown = group.file.teardown
+        unit.tests.forEachIndexed { index, (path, test) ->
+            started(test.name)
+            val more = index < unit.tests.lastIndex || teardown.isNotEmpty()
+            record(run(test, path, keepState = true, keepSession = more))
+        }
+        if (teardown.isNotEmpty()) {
+            val finish = flowsAsTest("${group.name} (teardown)", teardown)
+            started(finish.name)
+            record(run(finish, group.path, keepState = true, keepSession = false))
+        }
+        return results
+    }
+
+    private fun flowsAsTest(name: String, flows: List<String>): TestFile {
+        return TestFile(name = name, steps = flows.map { Step(say = "use $it", action = Action(use = it)) })
     }
 
     private fun startRecording(): Recording? {
@@ -220,12 +341,12 @@ class TestRunner(
         val keep = record == RecordMode.All || (record == RecordMode.Failures && failed)
         val dir = "$outputDir/${testName.replace(Regex("[^A-Za-z0-9_.-]"), "_")}"
         if (keep) makeDirs(dir)
-        val path = "$dir/video.mp4"
+        val path = "$dir/video.${recording.extension}"
         return if (runCatching { recording.stop(if (keep) path else null) }.getOrDefault(false)) path else null
     }
 
-    private suspend fun freshStart(settings: DeviceSettings) {
-        restoreSettings = device.freshStart(project.config, settings)
+    private suspend fun freshStart(settings: DeviceSettings, keepState: Boolean) {
+        restoreSettings = device.freshStart(project.config, settings, keepState)
         if (!drivers.waitForAgent(AGENT_START_TIMEOUT_MS)) {
             throw InfrastructureException("In-process agent did not respond; is the gekko agent part of this build?")
         }
@@ -927,12 +1048,28 @@ class TestRunner(
         return (drivers.send(Command.Metrics) as? Response.MetricsResult)?.rtl ?: false
     }
 
-    /** Swipes inside [area] from one side of its middle half to the other; a larger [divider] makes a shorter swipe. */
+    /**
+     * Swipes inside [area] from one side of its middle half to the other; a larger [divider] makes a shorter swipe. In
+     * a browser the same stroke is a turn of the mouse wheel: a drag with the mouse does not scroll a page.
+     */
     private suspend fun swipeWithin(area: Bounds, finger: String, divider: Int) {
         val cx = area.centerX
         val cy = area.centerY
         val dx = (area.right - area.left) / divider
         val dy = (area.bottom - area.top) / divider
+        if (platform == Platform.Web) {
+            // The finger moves opposite to the content: a finger going up reveals what is below
+            val wheel =
+                when (finger) {
+                    "up" -> Command.Wheel(cx, cy, 0, 2 * dy)
+                    "down" -> Command.Wheel(cx, cy, 0, -2 * dy)
+                    "left" -> Command.Wheel(cx, cy, 2 * dx, 0)
+                    "right" -> Command.Wheel(cx, cy, -2 * dx, 0)
+                    else -> throw StepFailure("Unknown swipe direction '$finger'")
+                }
+            expectOk(drivers.send(wheel))
+            return
+        }
         val command =
             when (finger) {
                 "up" -> Command.Swipe(cx, cy + dy, cx, cy - dy)
@@ -1158,6 +1295,13 @@ class TestRunner(
                 Masker.mask(TreePrinter.print((tree as? Response.TreeResult)?.windows.orEmpty())),
             )
             artifacts += "$dir/tree.txt"
+        }
+        runCatching {
+            val console = device.consoleLog()
+            if (!console.isNullOrBlank()) {
+                writeTextFile("$dir/console.txt", Masker.mask(console))
+                artifacts += "$dir/console.txt"
+            }
         }
         return artifacts
     }

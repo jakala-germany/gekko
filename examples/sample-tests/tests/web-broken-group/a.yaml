@@ -1,0 +1,5 @@
+name: Broken group - test a is skipped
+tags: [web-only, broken-group]
+steps:
+  - say: Never reached
+    do: { assertVisible: { id: sample.name } }

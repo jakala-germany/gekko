@@ -14,6 +14,7 @@ Thank you for your interest in gekko. Issues, pull requests and ideas are welcom
 | CLI, protocol, transport, Gradle plugin | JDK 17 or newer (the Gradle wrapper is included) |
 | Android agent, system runner, sample app | Android SDK (`ANDROID_HOME`), an emulator for the end-to-end run |
 | iOS agent, system runner, sample app | macOS, Xcode, `brew install xcodegen` |
+| Web agent (`agent-web/`), web end-to-end run | Node.js 18 or newer; `./scripts/e2e-web.sh` installs Playwright and the browsers |
 
 ```
 ./gradlew ktfmtCheck :protocol:jvmTest :cli:jvmTest :transport-jvm:test
@@ -21,6 +22,7 @@ Thank you for your interest in gekko. Issues, pull requests and ideas are welcom
 ./gradlew :cli:linuxX64Test            # Kotlin/Native tests of the shipped binary
 ./gradlew :sample-android:assembleDebug :system-runner-android:assembleDebug
 ./scripts/build-ios-runner.sh          # iOS runner and agent (macOS)
+./scripts/e2e-web.sh                   # sample tests in Chromium, Firefox, WebKit (after :cli:linkReleaseExecutable...)
 ./scripts/check-hygiene.sh             # no secrets or internal names in tracked files
 actionlint -config-file .github/actionlint.yml                                        # the workflows
 actionlint -config-file .github/actionlint.yml skills/gekko-setup/assets/workflows/*.yml   # and the templates

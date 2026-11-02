@@ -1,0 +1,12 @@
+name: Dark mode reaches the page
+tags: [web-only]
+steps:
+  - say: The page starts in the light scheme
+    platform: web
+    do: { assertVisible: { id: sample.scheme, text: "Scheme: light" } }
+  - say: Switch to dark mode
+    platform: web
+    do: { setDarkMode: true }
+  - say: The page follows
+    platform: web
+    do: { assertVisible: { id: sample.scheme, text: "Scheme: dark" } }

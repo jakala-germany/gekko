@@ -1,0 +1,16 @@
+name: A tap scrolls the page to its element
+tags: [web-only]
+steps:
+  - say: Open the details page
+    platform: web
+    do: { openLink: /details.html }
+  - say: The footer is below the fold, so nobody sees it yet
+    platform: web
+    do: { assertNotVisible: { id: sample.details.footer }, }
+    timeout: 500
+  - say: Tap the footer button, the page scrolls to it
+    platform: web
+    do: { tap: { id: sample.details.footer } }
+  - say: The page reacted
+    platform: web
+    do: { assertVisible: { id: sample.details.footer.result, text: "Footer: tapped" } }
