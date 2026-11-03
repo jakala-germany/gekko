@@ -58,6 +58,17 @@ fun writeTextFile(path: String, text: String) {
     writeFile(path, text.encodeToByteArray())
 }
 
+/**
+ * A new directory in `/tmp` that only this user can enter and whose name nobody can guess, for files that hold secrets:
+ * another user can neither plant a link at the path before the file is written nor read the file afterwards.
+ */
+fun createPrivateDirectory(prefix: String): String {
+    val path = "/tmp/$prefix-${randomHex(8)}"
+    makeDirs(path)
+    restrictToOwner(path)
+    return path
+}
+
 expect fun nowMillis(): Long
 
 /** [byteCount] random bytes from the operating system's secure source, as hex. */

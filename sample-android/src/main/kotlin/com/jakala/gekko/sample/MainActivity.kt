@@ -20,6 +20,7 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -30,7 +31,12 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.testTagsAsResourceId
 import androidx.compose.ui.unit.dp
+import java.net.HttpURLConnection
+import java.net.URL
 import java.util.Locale
+import kotlin.concurrent.thread
+import okhttp3.OkHttpClient
+import okhttp3.Request
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -46,7 +52,11 @@ private fun SampleApp() {
     var greeting by rememberSaveable { mutableStateOf("") }
     var gesture by rememberSaveable { mutableStateOf("none") }
     var location by rememberSaveable { mutableStateOf("unknown") }
+    var network by rememberSaveable { mutableStateOf("none") }
+    var startup by rememberSaveable { mutableStateOf("none") }
     val context = LocalContext.current
+    // The first request is made while the app starts, so the end-to-end tests can mock what an app asks for at startup
+    LaunchedEffect(Unit) { thread { startup = fetchWithOkHttp("$BACKEND/startup") } }
     Column(Modifier.padding(16.dp).semantics { testTagsAsResourceId = true }) {
         OutlinedTextField(
             value = name,
@@ -67,6 +77,25 @@ private fun SampleApp() {
             Text(greeting, modifier = Modifier.testTag("sample.greeting"))
             Text("Location: $location", modifier = Modifier.padding(start = 16.dp).testTag("sample.location"))
         }
+        // A host that does not exist: the text comes from a mock of the end-to-end tests, or it is an error
+        Row {
+            Button(
+                onClick = { thread { network = fetchWithOkHttp("$BACKEND/greeting") } },
+                modifier = Modifier.testTag("sample.net.okhttp"),
+            ) {
+                Text("OkHttp")
+            }
+            Button(
+                onClick = { thread { network = fetchWithUrlConnection("$BACKEND/greeting") } },
+                modifier = Modifier.testTag("sample.net.url"),
+            ) {
+                Text("URL")
+            }
+        }
+        Row {
+            Text("Network: $network", modifier = Modifier.testTag("sample.net.result"))
+            Text("Startup: $startup", modifier = Modifier.padding(start = 16.dp).testTag("sample.net.startup"))
+        }
         Text(
             "Gesture target",
             modifier =
@@ -84,6 +113,35 @@ private fun SampleApp() {
         }
     }
 }
+
+private const val BACKEND = "https://api.gekko.invalid/v1"
+
+private val okHttp = OkHttpClient()
+
+/** The status and the body of the answer, or `error`: what the sample shows of a request. */
+private fun fetchWithOkHttp(url: String): String {
+    return try {
+        okHttp.newCall(Request.Builder().url(url).build()).execute().use { "${it.code} ${it.body?.string().orEmpty()}" }
+    } catch (error: Exception) {
+        "error"
+    }
+}
+
+private fun fetchWithUrlConnection(url: String): String {
+    return try {
+        val connection = URL(url).openConnection() as HttpURLConnection
+        connection.connectTimeout = NETWORK_TIMEOUT_MS
+        connection.readTimeout = NETWORK_TIMEOUT_MS
+        val code = connection.responseCode
+        val stream = if (code >= HTTP_ERROR) connection.errorStream else connection.inputStream
+        "$code ${stream?.bufferedReader()?.readText().orEmpty()}"
+    } catch (error: Exception) {
+        "error"
+    }
+}
+
+private const val NETWORK_TIMEOUT_MS = 3_000
+private const val HTTP_ERROR = 400
 
 /** Shows the last GPS fix and asks for the next one, so the end-to-end tests can see a mocked location. */
 @Suppress("DEPRECATION")

@@ -35,6 +35,11 @@
     <button data-testid="sample.remember" id="remember">Remember name</button>
     <span data-testid="sample.remembered" id="remembered"></span>
   </div>
+  <div class="row">
+    <button data-testid="sample.net.fetch" id="net-fetch">Fetch</button>
+    <span data-testid="sample.net.result" id="net-result">Network: none</span>
+    <span data-testid="sample.net.startup" id="net-startup">Startup: none</span>
+  </div>
   <div id="list" data-testid="sample.list"></div>
   <script>
     const $ = (id) => document.getElementById(id)
@@ -79,6 +84,13 @@
     const showRemembered = () => { $('remembered').textContent = 'Remembered: ' + (localStorage.getItem('gekko.name') || 'nobody') }
     $('remember').addEventListener('click', () => { localStorage.setItem('gekko.name', $('name').value); showRemembered() })
     showRemembered()
+
+    // A host that does not exist: the text comes from a mock of the end-to-end tests, or it is an error
+    const BACKEND = 'https://api.gekko.invalid/v1'
+    const load = (path) => fetch(BACKEND + path).then(async (response) => response.status + ' ' + await response.text()).catch(() => 'error')
+    // The first request is made while the page loads, so the tests can mock what an app asks for at startup
+    load('/startup').then((text) => { $('net-startup').textContent = 'Startup: ' + text })
+    $('net-fetch').addEventListener('click', () => { load('/greeting').then((text) => { $('net-result').textContent = 'Network: ' + text }) })
 
     const dark = matchMedia('(prefers-color-scheme: dark)')
     const showScheme = () => { $('scheme').textContent = 'Scheme: ' + (dark.matches ? 'dark' : 'light') }

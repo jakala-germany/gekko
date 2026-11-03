@@ -490,4 +490,121 @@ class ModelTest {
         assertFailsWith<IllegalArgumentException> { config.withEnvInWebApp(EnvAccess.NONE) }
         assertFailsWith<ConfigurationException> { config.withEnvInWebApp(EnvAccess(setOf("TEST_STAGE"), emptyMap())) }
     }
+
+    private fun parse(yaml: String): TestFile {
+        return Yamls.parse(TestFile.serializer(), yaml.trimIndent())
+    }
+
+    @Test
+    fun parsesAMockStepWithEveryKey() {
+        val test =
+            parse(
+                """
+                name: Night bus
+                steps:
+                  - say: The route search fails slowly
+                    do:
+                      mock:
+                        url: "https://api.example.com/graphql"
+                        method: post
+                        bodyContains: '"operationName":"SearchRoutes"'
+                        file: routes/none.json
+                        status: 503
+                        headers: { Retry-After: "30" }
+                        delayMs: 3000
+                  - say: Back to the real backend
+                    do: { clearMocks: true }
+                """
+            )
+
+        val mock = test.steps[0].action.mock!!
+
+        assertEquals("https://api.example.com/graphql", mock.url)
+        assertEquals("post", mock.method)
+        assertEquals("\"operationName\":\"SearchRoutes\"", mock.bodyContains)
+        assertEquals("routes/none.json", mock.file)
+        assertEquals(503, mock.status)
+        assertEquals(mapOf("Retry-After" to "30"), mock.headers)
+        assertEquals(3000, mock.delayMs)
+        assertEquals(true, test.steps[1].action.clearMocks)
+    }
+
+    @Test
+    fun aMockNeedsOnlyAUrlAndAnswersWithOkAndNoDelay() {
+        val mock = parse("name: T\nsteps:\n  - do: { mock: { url: \"https://a/*\" } }").steps[0].action.mock!!
+
+        assertEquals(200, mock.status)
+        assertNull(mock.file)
+        assertNull(mock.method)
+        assertEquals(0, mock.delayMs)
+    }
+
+    @Test
+    fun aMockStepWithAMistakeIsRefusedWhenTheFileIsRead() {
+        fun refused(mock: String, reason: String) {
+            val failure = assertFailsWith<Exception>(mock) { parse("name: T\nsteps:\n  - do: { mock: { $mock } }") }
+            assertTrue(
+                generateSequence<Throwable>(failure) { it.cause }.any { it.message.orEmpty().contains(reason) },
+                "$mock: ${failure.message}",
+            )
+        }
+
+        refused("url: \"\"", "url must not be empty")
+        refused("url: x, method: FETCH", "mock.method")
+        refused("url: x, status: 99", "between 100 and 599")
+        refused("url: x, status: 600", "between 100 and 599")
+        refused("url: x, delayMs: -1", "delayMs")
+        refused("url: x, file: ../secrets.json", "inside the mocks folder")
+        refused("url: x, file: /etc/passwd", "inside the mocks folder")
+        refused("url: x, file: a/../../b.json", "inside the mocks folder")
+        refused("url: x, bodyContains: \"\"", "bodyContains")
+        refused("url: x, headers: { \"A:B\": c }", "header name")
+        refused("url: x, headers: { \"A B\": c }", "header name")
+        refused("url: x, headers: { \"\": c }", "header name")
+        refused("url: x, headers: { A: \"a\\nb\" }", "printable ASCII")
+        refused("url: x, headers: { A: \"Müller\" }", "printable ASCII")
+        refused("url: x, unknownKey: 1", "unknownKey")
+    }
+
+    @Test
+    fun clearMocksFalseIsNotAnAction() {
+        assertFailsWith<Exception> { parse("name: T\nsteps:\n  - do: { clearMocks: false }") }
+    }
+
+    @Test
+    fun aMockStepHasNothingToWaitForOrRetry() {
+        for (extra in listOf("timeout: 100", "optional: true", "until: { assertVisible: { id: a } }")) {
+            assertFailsWith<Exception>(extra) { parse("name: T\nsteps:\n  - do: { mock: { url: x } }\n    $extra") }
+        }
+        assertFailsWith<Exception> { parse("name: T\nsteps:\n  - do: { clearMocks: true }\n    timeout: 5") }
+    }
+
+    @Test
+    fun aMockStepCanBeLimitedToAPlatform() {
+        val step = parse("name: T\nsteps:\n  - platform: web\n    do: { mock: { url: x } }").steps[0]
+
+        assertTrue(step.runsOn(Platform.Web))
+        assertTrue(!step.runsOn(Platform.Ios))
+    }
+
+    @Test
+    fun theMocksFolderCanBeRenamed() {
+        assertEquals("mocks", Yamls.parse(GekkoConfig.serializer(), "app: { android: a.b }").mocksDir)
+        assertEquals("fixtures", Yamls.parse(GekkoConfig.serializer(), "mocksDir: fixtures").mocksDir)
+    }
+
+    @Test
+    fun theUrlOfAMockTakesRuntimePlaceholders() {
+        val step =
+            parse(
+                    "name: T\nsteps:\n  - do: { mock: { url: \"https://a/\${var.id}\", bodyContains: \"\${var.id}\", headers: { X: \"\${var.id}\" } } }"
+                )
+                .steps[0]
+
+        val resolved = step.action.resolved { it.replace("\${var.id}", "42") }.mock!!
+
+        assertEquals("https://a/42", resolved.url)
+        assertEquals("42", resolved.bodyContains)
+        assertEquals(mapOf("X" to "42"), resolved.headers)
+    }
 }

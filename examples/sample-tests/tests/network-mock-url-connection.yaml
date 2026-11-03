@@ -1,0 +1,15 @@
+name: Network mocks answer HttpURLConnection
+tags: [network, android-only]
+steps:
+  - say: Mock the greeting of the backend
+    do: { mock: { url: "https://api.gekko.invalid/v1/greeting*", file: sample/greeting.json } }
+  - say: Ask with HttpURLConnection
+    do: { tap: { id: sample.net.url } }
+  - say: The greeting comes from the mock
+    do: { assertVisible: { id: sample.net.result, textContains: "Hello from the mock" } }
+  - say: A status code of the mock reaches the app
+    do: { mock: { url: "https://api.gekko.invalid/v1/greeting*", status: 404 } }
+  - say: Ask again
+    do: { tap: { id: sample.net.url } }
+  - say: The status is shown
+    do: { assertVisible: { id: sample.net.result, textContains: "404" } }

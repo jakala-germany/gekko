@@ -6,7 +6,11 @@
 
 **New**
 
-- Upcoming additions go here
+- Network mocks: a `mock` step answers the requests of the app that match a URL (a glob with `*`, optionally a `method` and a `bodyContains` for GraphQL) with the content of a file below `mocks/` (`mocksDir` renames the folder), with an optional `status`, `headers` and `delayMs`; `clearMocks` takes every mock away. A test always undoes every mock when it ends, whether it passed or failed. Mock steps at the very start of a test (also in flows) are set before the app starts, so the requests the app makes while it starts are answered too. Android (OkHttp and `HttpURLConnection` of a debuggable build with the Gradle plugin, emulators and devices), iOS simulators (`URLSession`) and the web (every request of the page) are covered; a request that matches no mock goes to the real backend. The log shows every answered request and a mock that no request used is a warning (also in the JUnit file). See "Network mocks" in the format reference
+- `${now(+10m)}`, `${now(-1d, 'HH:mm')}` and `${now(+10m, epochMillis)}` give a point in time relative to the clock of the device, for mock files whose times have to stay in the future
+- `gekko { networkMocks.set(false) }` in the Gradle plugin switches off the OkHttp and `HttpURLConnection` hooks that the mocks need (on by default in the variants that get the agent of the same release; with `version` or `agent` set it is off unless you switch it on, because the hooks call classes that only the agent of the same release has)
+- `gekko check` reports a mock file that is missing, a placeholder in it that is written wrong and a file that is no UTF-8 text (mock files are text only)
+- The sample apps make a request to a host that does not exist, and `network-mock` tests show the three platforms answering it from files
 
 **Changed**
 

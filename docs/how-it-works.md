@@ -61,6 +61,20 @@ Pages that never settle:
 - A page with an endless animation (Lottie, spinner) never gets idle. The Android agent waits at most 500 ms for idle before it looks for the element, so such pages cost no more than that per step.
 - A loading skeleton that is not a progress indicator counts as a settled screen after `settleMs`. Raise `settleMs` for slow networks.
 
+## Network mocks
+
+Some backend answers are hard to provoke (an error, a slow answer, an empty list). A test can say what the backend answers instead, with a `mock` step, and the app needs no code and no update for it. The steps and keys are in the [format reference](../skills/gekko-author/references/format.md#network-mocks), and which clients and platforms are covered is listed under [where mocks work](../skills/gekko-author/references/format.md#where-mocks-work).
+
+![The app sends a request, gekko catches it and answers with a mock file, and the real backend is never asked.](img/network-mocks.png)
+
+The mocks are held by whatever makes the app's requests, and the CLI tells it what to answer:
+
+- **Android.** The Gradle plugin makes every `OkHttpClient` carry one more interceptor and every `URL.openConnection()` of the app and its libraries go through the agent, in the variants that get the agent (`gekko { networkMocks.set(false) }` turns it off). The agent answers a matching request itself and hands every other one on, so nothing changes while no test sets a mock.
+- **iOS simulators.** The injected agent registers a `URLProtocol` and puts it first in every `URLSession` configuration, so everything on `URLSession` is covered, Alamofire and Apollo included.
+- **Web.** The bridge answers matching requests of the browser context with Playwright's `route`.
+
+The mocks reach the app in one of two ways. While the app runs, the CLI sends them over the connection it uses anyway. Mocks at the start of a test have to be there before the app makes its first request, so the CLI writes them to a file that the agent reads while the app starts and then deletes (Android: the private directory of the app, through `run-as`; iOS: a file of the simulator host named in the launch environment) or, on the web, to the bridge. Nothing is left on the device: a test removes every mock when it ends, in every outcome, and a file that no start picked up is deleted.
+
 ## Running on several devices
 
 `gekko run --devices` gives every device its own connection, so Android, iOS and the web, or several devices, run at the same time.
@@ -91,3 +105,4 @@ A folder with a `group.yaml` is a group: its `setup:` flows (a login) run once i
 - `setLocation` works on emulators (console), physical devices (the system runner feeds Android's mock location providers; no setting needed) and iOS simulators.
 - Web: Chromium, Firefox and WebKit through Playwright only, desktop browsers (a `web.device` emulates a phone's viewport and user agent, not its touch). The page script reads open shadow roots and iframes; a closed shadow root is invisible to it. A browser caps one mouse-wheel turn (Firefox: about a page), so long scrolls are sent in steps. Native pickers (the dropdown of a `<select>`, the date picker) are not part of the page: set a `<select>` or a date field with `type`.
 - A group shares its start state between its tests, which therefore depend on each other's order (see [Groups](#groups)).
+- Network mocks reach OkHttp and `HttpURLConnection` on Android (a debuggable build with the Gradle plugin), `URLSession` on iOS simulators, and every request of a page on the web. They do not reach Flutter, Cronet, gRPC, Ktor with the CIO engine or content in a `WebView` on Android, `WKWebView` and Flutter on iOS, or requests a service worker answers on the web. There is no way to mock on a real iPhone, because iOS runs on simulators only. The full list of what works where is in the [format reference](../skills/gekko-author/references/format.md#where-mocks-work).

@@ -32,6 +32,12 @@ internal class CommandExecutor(private val application: Application, private val
             Command.Tree -> Response.TreeResult(snapshotNodes())
             Command.Foreground -> Response.ForegroundResult(isForeground())
             Command.Screenshot -> unsupported("Screenshot is handled by the host CLI")
+            is Command.SetMocks -> setMocks(command)
+            Command.ClearMocks -> {
+                GekkoMocks.clear()
+                Response.Ok
+            }
+            Command.MockHits -> Response.MockHitsResult(GekkoMocks.drainHits())
             is Command.SetOrientation -> unsupported("Rotating the device is served by the system runner")
             Command.HideKeyboard -> unsupported("The CLI closes the keyboard over adb")
             is Command.SetLocation,
@@ -51,10 +57,23 @@ internal class CommandExecutor(private val application: Application, private val
 
     /** Hello and metrics are facts about the agent and the display, and the CLI asks them before anything else. */
     private fun Command.isServedInBackground(): Boolean {
+        // Mocks are state of the app, not something on its screen
         return this == Command.Foreground ||
             this == Command.Hello ||
             this == Command.Metrics ||
-            this is Command.SetOrientation
+            this is Command.SetOrientation ||
+            this is Command.SetMocks ||
+            this == Command.ClearMocks ||
+            this == Command.MockHits
+    }
+
+    private fun setMocks(command: Command.SetMocks): Response {
+        return try {
+            GekkoMocks.set(command.rules)
+            Response.Ok
+        } catch (error: Exception) {
+            Response.Error("A network mock cannot be used: ${error.message}", ErrorKind.UNSUPPORTED)
+        }
     }
 
     private fun unsupported(message: String): Response {

@@ -40,6 +40,7 @@ object Checker {
         problems: MutableList<String>,
     ) {
         for (step in steps) {
+            step.action.mock?.let { checkMock(project, it, where, problems) }
             val use = step.action.use
             val repeat = step.action.repeat
             if (use != null) {
@@ -59,6 +60,26 @@ object Checker {
             if (repeat != null) {
                 checkSteps(project, repeat.steps, where, stack, problems)
             }
+        }
+    }
+
+    /** The mock file has to be there and its placeholders have to be written correctly. */
+    private fun checkMock(project: Project, mock: MockSpec, where: String, problems: MutableList<String>) {
+        val file = mock.file ?: return
+        val shown = "${project.config.mocksDir}/$file"
+        val path = "${project.root}/$shown"
+        if (!fileExists(path)) {
+            problems += "$where: mock file $shown does not exist"
+            return
+        }
+        try {
+            // Texts kept by copyText only exist while a test runs; everything else is checked here
+            val variables = Variables(language = { null }, today = { "2026-01-01" }, random = { "0".repeat(it * 2) })
+            project.renderMock(project.readMockFile(file), { it }) { variables.resolve(it) }
+        } catch (error: StepFailure) {
+            if (error.message?.startsWith("Variable '") != true) problems += "$where: $shown: ${error.message}"
+        } catch (error: Exception) {
+            problems += "$where: $shown: ${error.message?.lineSequence()?.firstOrNull() ?: error}"
         }
     }
 }

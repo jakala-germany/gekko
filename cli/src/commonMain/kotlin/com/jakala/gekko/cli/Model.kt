@@ -404,6 +404,58 @@ data class LaunchSpec(val clearState: Boolean = false, val arguments: Map<String
 
 @Serializable data class LocationSpec(val latitude: Double, val longitude: Double)
 
+/**
+ * Answers the requests that match [url] (a glob over the whole URL, `*` is any text), [method] and [bodyContains] with
+ * the content of the mock [file] (from `mocksDir`) instead of asking the backend. Without a file the body is empty.
+ */
+@Serializable
+data class MockSpec(
+    val url: String,
+    val method: String? = null,
+    val bodyContains: String? = null,
+    val file: String? = null,
+    val status: Int = 200,
+    val headers: Map<String, String> = emptyMap(),
+    val delayMs: Long = 0,
+) {
+    init {
+        require(url.isNotBlank()) { "mock.url must not be empty" }
+        require(method == null || method.uppercase() in MOCK_METHODS) {
+            "mock.method must be one of ${MOCK_METHODS.joinToString()}, was '$method'"
+        }
+        require(bodyContains == null || bodyContains.isNotEmpty()) { "mock.bodyContains must not be empty" }
+        require(file == null || file.isNotBlank()) { "mock.file must not be empty" }
+        require(file == null || isInsideFolder(file)) { "mock.file '$file' must stay inside the mocks folder" }
+        require(status in 100..599) { "mock.status must be between 100 and 599, was $status" }
+        require(delayMs in 0..MAX_MOCK_DELAY_MS) {
+            "mock.delayMs must be between 0 and $MAX_MOCK_DELAY_MS, was $delayMs"
+        }
+        for ((name, value) in headers) {
+            require(name.isNotEmpty() && name.all { it.isHeaderNameChar() }) {
+                "mock.headers: invalid header name '$name': a header name is letters, digits and $HEADER_NAME_SYMBOLS only"
+            }
+            require(value.all { it == '\t' || it in ' '..'~' }) {
+                "mock.headers: the value of '$name' may only have printable ASCII characters, no line breaks or umlauts"
+            }
+        }
+    }
+
+    /** A character a header name may have (RFC 9110 token): the HTTP clients refuse a response with any other. */
+    private fun Char.isHeaderNameChar(): Boolean {
+        return this in 'a'..'z' || this in 'A'..'Z' || this in '0'..'9' || this in HEADER_NAME_SYMBOLS
+    }
+
+    private fun isInsideFolder(path: String): Boolean {
+        return !path.startsWith("/") && path.split('/', '\\').none { it == ".." }
+    }
+}
+
+private val MOCK_METHODS = listOf("GET", "POST", "PUT", "PATCH", "DELETE", "HEAD", "OPTIONS")
+
+private const val MAX_MOCK_DELAY_MS = 120_000L
+
+private const val HEADER_NAME_SYMBOLS = "!#\$%&'*+-.^_`|~"
+
 /** A check of the screen: exactly one of [visible] and [notVisible]. */
 @Serializable
 data class Condition(val visible: SelectorSpec? = null, val notVisible: SelectorSpec? = null) {
@@ -493,6 +545,10 @@ data class Action(
     val stopPackage: String? = null,
     /** Grants or revokes permissions: `{ location: allow, notifications: deny }`. */
     val setPermissions: Map<String, String> = emptyMap(),
+    /** Answers matching network requests from a file instead of the backend; undone when the test ends. */
+    val mock: MockSpec? = null,
+    /** Removes every network mock again. */
+    val clearMocks: Boolean? = null,
     /**
      * Only on this platform, or these (android, ios, web). A `do` for another platform skips the step, an `until` for
      * another platform is dropped, so one step can differ per platform without being written twice.
@@ -507,6 +563,7 @@ data class Action(
                 "clearState" to clearState,
                 "waitForAnimationToEnd" to waitForAnimationToEnd,
                 "hideKeyboard" to hideKeyboard,
+                "clearMocks" to clearMocks,
             )
             .forEach { (name, value) -> require(value != false) { "$name: false is not an action; remove the step" } }
         require(setOrientation == null || setOrientation in ORIENTATIONS) {
@@ -552,6 +609,8 @@ data class Action(
             "launchPackage".takeIf { launchPackage != null },
             "stopPackage".takeIf { stopPackage != null },
             "setPermissions".takeIf { setPermissions.isNotEmpty() },
+            "mock".takeIf { mock != null },
+            "clearMocks".takeIf { clearMocks != null },
         )
     }
 
@@ -602,6 +661,10 @@ data class Step(
     init {
         require(!optional || (action.use == null && action.repeat == null)) {
             "optional works on a single action; put the flow behind an `if` instead"
+        }
+        val mocking = action.mock != null || action.clearMocks != null
+        require(!mocking || (until == null && !optional && timeout == null)) {
+            "until, optional and timeout do not work with mock and clearMocks; they change what the app is told, not what it shows"
         }
         require(attempts >= 1) { "attempts must be at least 1, was $attempts" }
         require(attempts == 1 || until != null) { "attempts needs an until: the state the step has to reach" }
@@ -802,6 +865,8 @@ data class GekkoConfig(
     val tapIntervalMs: Long = 0,
     val testsDir: String = "tests",
     val flowsDir: String = "flows",
+    /** The folder of the files that `mock` steps answer with. */
+    val mocksDir: String = "mocks",
     /**
      * The environment variables tests may read with `${env.NAME}` (test accounts, passwords). Values come from the
      * process environment or a `.env` file next to this file and are masked in everything gekko prints or writes.

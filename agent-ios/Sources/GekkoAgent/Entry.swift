@@ -16,6 +16,8 @@ public func gekkoAgentStart() {
           let token = environment["GEKKO_TOKEN"], !token.isEmpty else { return }
     // Nothing the app starts later should inherit the token
     unsetenv("GEKKO_TOKEN")
+    startMocks(file: environment["GEKKO_MOCKS"])
+    unsetenv("GEKKO_MOCKS")
     enableAutomationAccessibility()
     let executor = CommandExecutor()
     let server = HttpCommandServer(port: port, token: token) { command in executor.execute(command) }
@@ -25,6 +27,26 @@ public func gekkoAgentStart() {
 
 enum GekkoAgentRetainer {
     static var server: HttpCommandServer?
+}
+
+/// Hooks into URLSession before the app makes its first request, and applies the mocks the CLI wrote to `file` (the same
+/// JSON as the setMocks command) so the requests of the app's own start are mocked too. The file belongs to this launch:
+/// it is deleted, and a missing or broken one is ignored.
+private func startMocks(file: String?) {
+    MockURLProtocol.install()
+    guard let file, !file.isEmpty else { return }
+    defer { try? FileManager.default.removeItem(atPath: file) }
+    guard let data = FileManager.default.contents(atPath: file) else { return }
+    guard let command = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any] else {
+        NSLog("Gekko could not read the network mocks of this start: the file is not a JSON object")
+        return
+    }
+    do {
+        try MockStore.shared.setMocks(command)
+    } catch {
+        // The app starts without mocks; the CLI believes it has delivered them, so this is the one place to say so
+        NSLog("Gekko could not read the network mocks of this start: %@", (error as? MockError)?.message ?? "\(error)")
+    }
 }
 
 /// SwiftUI only exposes accessibility identifiers once an accessibility client is attached; automation mode

@@ -26,6 +26,9 @@ sealed interface Response {
 
     @Serializable @SerialName("screenshot") data class ScreenshotResult(val pngBase64: String) : Response
 
+    /** The requests the network mocks answered since the last [Command.MockHits], oldest first. */
+    @Serializable @SerialName("mockHits") data class MockHitsResult(val hits: List<MockHit>) : Response
+
     /** The in-app agent only serves commands while the app owns the focus; the CLI then asks the system runner. */
     @Serializable @SerialName("notForeground") data object NotForeground : Response
 

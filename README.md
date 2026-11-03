@@ -20,6 +20,7 @@ https://github.com/user-attachments/assets/221b71c0-87d5-4141-b0df-c3e5ea8f4fcd
 - **Fast.** On Android and iOS an in-app agent reads the UI tree directly and taps through accessibility actions; on the web a script injected into the page does the same: steps take 10 ms to about 1 s.
 - **Write once.** One test file, shared ids, optional `platform:` on steps (one name or a list), `do` or `until` where the platforms differ.
 - **Reusable flows.** Login or onboarding is defined once and reused with `use:`. A folder with a `group.yaml` makes its tests share one login: the setup flows run once, the tests follow in one session, and a failed setup skips them.
+- **Mock the backend.** A `mock` step answers the app's network requests from a file instead of the real backend, on Android, iOS simulators and the web: a known profile, an error, a slow answer, an empty list. Nothing changes in the app, and a test undoes every mock when it ends. See [network mocks](skills/gekko-author/references/format.md#network-mocks) and [where they work](skills/gekko-author/references/format.md#where-mocks-work): OkHttp and `HttpURLConnection` on Android, `URLSession` on iOS simulators, every request of the page on the web.
 - **LLM only where it helps.** A tester describes a scenario; Claude (their own subscription) writes and repairs the steps. CI replays the compiled steps, and no model decides whether a test passes.
 - **Self-healing on request.** With `--heal`, a missing id does not fail the run: a model picks the element that fits the step's intent, and a warning lists exactly what was missing and what was used instead.
 
@@ -169,7 +170,7 @@ Sources, rules and the CI setup: [Heal in the CLI reference](skills/gekko-setup/
 |---|---|---|
 | ![The Android agent springs out of the app like a jack-in-the-box when the app launches: no app code needed.](docs/img/setup-android-agent.png) | ![On iOS the agent is injected into the simulator app at launch, before main(), and the app stays untouched.](docs/img/setup-ios-agent.png) | ![On the web gekko slips a read-only script into the browser page; the app stays untouched.](docs/img/setup-web-agent.png) |
 
-- **Android.** The Gradle plugin from the quick start adds the agent to the variants you list. It starts itself and needs no app code.
+- **Android.** The Gradle plugin from the quick start adds the agent to the variants you list. It starts itself and needs no app code. It also lets tests answer the app's network requests from files (`mock` steps; `gekko { networkMocks.set(false) }` switches that off).
 - **iOS.** Nothing in the app: the CLI injects `GekkoAgent.framework` into the **simulator** app at launch. The settings are in the iOS note of the quick start.
 - **Web.** Nothing in the app either: gekko opens `app.web` in a browser it controls through Playwright and injects a script that only reads the page. Elements are named by `data-testid` (or `flt-semantics-identifier` for Flutter web), text and accessible labels. The settings are in the web note of the quick start and the `web:` keys of the [CLI reference](skills/gekko-setup/references/cli.md#gekkoyaml).
 - **Versions.** Keep the plugin version and the CLI version in step; the CLI refuses an agent or runner with another protocol number and says what to update.

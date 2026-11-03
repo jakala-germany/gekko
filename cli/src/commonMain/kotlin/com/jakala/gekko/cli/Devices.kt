@@ -1,6 +1,7 @@
 package com.jakala.gekko.cli
 
 import com.jakala.gekko.protocol.Command
+import com.jakala.gekko.protocol.MockRules
 import com.jakala.gekko.protocol.Protocol
 import com.jakala.gekko.protocol.Response
 import io.ktor.client.HttpClient
@@ -15,10 +16,22 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.serialization.json.Json
 
-private val protocolJson = Json {
+internal val protocolJson = Json {
     classDiscriminator = "type"
     encodeDefaults = true
     ignoreUnknownKeys = true
+}
+
+/** A command as it goes over the wire; mock rules are also handed to an app that is not running yet in this form. */
+internal fun encodeCommand(command: Command): String {
+    return protocolJson.encodeToString(Command.serializer(), command)
+}
+
+/** `+0100` or `-0530` (the output of `date +%z`) as minutes east of UTC; null when it is neither. */
+internal fun parseUtcOffset(text: String): Int? {
+    val match = Regex("([+-])(\\d{2})(\\d{2})").matchEntire(text.trim()) ?: return null
+    val minutes = match.groupValues[2].toInt() * 60 + match.groupValues[3].toInt()
+    return if (match.groupValues[1] == "-") -minutes else minutes
 }
 
 /** One server on a device (the in-app agent or the system runner). */
@@ -188,6 +201,20 @@ interface Device {
         return Dates.isoDate(nowMillis())
     }
 
+    /** The clock of the device for `${now(...)}`; unless a device has a clock of its own, the one of this computer. */
+    fun deviceTime(): DeviceTime {
+        val offset = runCatching { parseUtcOffset(runProcess(listOf("date", "+%z")).text) }.getOrNull() ?: 0
+        return DeviceTime(nowMillis(), offset)
+    }
+
+    /**
+     * Hands the network mocks to the app before it starts, so that requests made while it starts are answered too:
+     * [mocks] is the JSON of a [Command.SetMocks]; null takes back what was handed over and not picked up.
+     */
+    fun setStartupMocks(config: GekkoConfig, mocks: String?) {
+        error("network mocks are not supported on this device")
+    }
+
     /** Switches dark mode; returns the function that restores the previous setting. */
     fun setDarkMode(enabled: Boolean): () -> Unit {
         error("setDarkMode is not supported on this device")
@@ -226,16 +253,19 @@ interface Device {
     /**
      * Clears the app data, applies [settings] and launches the app. The settings go in after the data was cleared
      * because clearing also wipes per-app state such as the app language. With [keepState] (a test of a group after the
-     * first) the data stays. Returns the function that restores the settings.
+     * first) the data stays. [beforeLaunch] runs when the device is ready and the app is not started yet (the place to
+     * hand it its network mocks). Returns the function that restores the settings.
      */
     fun freshStart(
         config: GekkoConfig,
         settings: DeviceSettings = DeviceSettings(),
         keepState: Boolean = false,
+        beforeLaunch: () -> Unit = {},
     ): () -> Unit {
         stopOtherApps(config)
         if (!keepState) clearData(config)
         val restore = applySettings(config, settings)
+        beforeLaunch()
         launch(config)
         return restore
     }
@@ -365,6 +395,51 @@ class AdbDevice(val serial: String?) : Device {
 
     override fun today(): String {
         return shell("date", "+%Y-%m-%d").text.trim()
+    }
+
+    /** The clock of the device, not the one of this computer: an emulator's clock is often off. */
+    override fun deviceTime(): DeviceTime {
+        val text = shell("date", "+%s%z").text.trim()
+        val seconds = text.dropLast(5).toLongOrNull()
+        val offset = parseUtcOffset(text.takeLast(5))
+        if (seconds == null || offset == null) return super.deviceTime()
+        return DeviceTime(seconds * 1000, offset)
+    }
+
+    /**
+     * Writes the mocks into the private directory of the app, where the agent reads them while the app starts and
+     * deletes them. The app cannot read what `adb push` leaves in the shared directory; `run-as` (a debuggable build
+     * only, which is what the agent is in) copies it in.
+     */
+    override fun setStartupMocks(config: GekkoConfig, mocks: String?) {
+        val appId = androidAppId(config)
+        if (mocks == null) {
+            shell("run-as", appId, "rm", "-f", MockRules.STARTUP_FILE)
+            return
+        }
+        // The mocks can hold secrets (`${env.*}`): they only live in directories nobody else can enter or guess
+        val localDirectory = createPrivateDirectory("gekko-mocks")
+        val local = "$localDirectory/mocks.json"
+        // run-as has to read the pushed file as the app, so the file is readable for everyone, but the directory above
+        // it can only be entered (not listed) and has a name that no other app on the device can know
+        val remoteDirectory = "/data/local/tmp/gekko-mocks-${randomHex(8)}"
+        val remote = "$remoteDirectory/mocks.json"
+        try {
+            writeTextFile(local, mocks)
+            restrictToOwner(local)
+            val made = shell("mkdir", "-m", "711", remoteDirectory)
+            check(made.exitCode == 0) { "Preparing the network mocks on the device failed: ${made.text}" }
+            val pushed = adb("push", local, remote)
+            check(pushed.exitCode == 0) { "Copying the network mocks to the device failed: ${pushed.text}" }
+            shell("chmod", "644", remote)
+            val copied = shell("run-as", appId, "cp", remote, MockRules.STARTUP_FILE)
+            check(copied.exitCode == 0) {
+                "Network mocks need a debuggable build of $appId (run-as failed: ${copied.text})"
+            }
+        } finally {
+            shell("rm", "-rf", remoteDirectory)
+            runProcess(listOf("rm", "-rf", localDirectory))
+        }
     }
 
     override fun launch(config: GekkoConfig, arguments: Map<String, String>) {
@@ -670,6 +745,15 @@ class Drivers(
         return sendToSystemRunner(command)
     }
 
+    /**
+     * Asks the in-app agent and nobody else, whether or not the app is in front. Null when nothing listens (the app is
+     * not running).
+     */
+    suspend fun sendToAgent(command: Command): Response? {
+        debug("in-app agent", command)
+        return askAgent(command)
+    }
+
     /** Null when nothing listens (app crashed or not started): the system runner then shows what is on screen. */
     private suspend fun askAgent(command: Command): Response? {
         val budgetMs = command.budgetMs() + AGENT_ANSWER_MARGIN_MS
@@ -705,6 +789,9 @@ class Drivers(
             is Command.SetOrientation,
             is Command.SetLocation,
             Command.ClearLocation,
+            is Command.SetMocks,
+            Command.ClearMocks,
+            Command.MockHits,
             Command.HideKeyboard,
             Command.Hello,
             Command.Metrics,

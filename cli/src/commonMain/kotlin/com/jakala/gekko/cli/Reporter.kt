@@ -17,7 +17,12 @@ object Reporter {
             val device = result.device?.let { """ classname="${escape(it)}"""" }.orEmpty()
             builder.append("""  <testcase name="${escape(result.name)}"$device time="${result.durationMs / MILLIS}"""")
             if (result.failure == null) {
-                builder.append("/>\n")
+                if (result.warnings.isEmpty()) {
+                    builder.append("/>\n")
+                } else {
+                    builder.append(">\n")
+                    builder.append(output(result)).append("  </testcase>\n")
+                }
             } else if (result.skipped) {
                 builder
                     .append(">\n")
@@ -28,7 +33,8 @@ object Reporter {
                 val tag = if (result.infrastructure) "error" else "failure"
                 builder.append("""    <$tag message="${escape(result.failure)}">""")
                 builder.append(escape("Step: ${result.failedStep}\nArtifacts: ${result.artifacts.joinToString()}"))
-                builder.append("</$tag>\n  </testcase>\n")
+                builder.append("</$tag>\n")
+                builder.append(output(result)).append("  </testcase>\n")
             }
         }
         builder.append("</testsuite>\n")
@@ -53,6 +59,12 @@ object Reporter {
         }
         builder.append("</testsuite>\n")
         return builder.toString()
+    }
+
+    /** The warnings of a test as its console output; nothing when it has none. */
+    private fun output(result: TestResult): String {
+        if (result.warnings.isEmpty()) return ""
+        return "    <system-out>" + escape(result.warnings.joinToString("\n") { "warning: $it" }) + "</system-out>\n"
     }
 
     private fun escape(value: String): String {

@@ -3,12 +3,14 @@ package com.jakala.gekko.cli
 import kotlin.io.encoding.Base64
 import kotlin.io.encoding.ExperimentalEncodingApi
 import kotlinx.coroutines.runBlocking
+import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.boolean
 import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 
 /**
@@ -226,15 +228,28 @@ class WebDevice(private val name: String, private val config: GekkoConfig, priva
      * A shared session, and every test of a group after the first, starts in the context that is already there: no new
      * context, so cookies and a login stay, and the app is opened again. Without a context yet it is a fresh start.
      */
-    override fun freshStart(config: GekkoConfig, settings: DeviceSettings, keepState: Boolean): () -> Unit {
+    override fun freshStart(
+        config: GekkoConfig,
+        settings: DeviceSettings,
+        keepState: Boolean,
+        beforeLaunch: () -> Unit,
+    ): () -> Unit {
         if (shared || keepState) {
             session()
             if (hasContext()) {
+                beforeLaunch()
                 launch(config)
                 return {}
             }
         }
-        return super.freshStart(config, settings, keepState)
+        return super.freshStart(config, settings, keepState, beforeLaunch)
+    }
+
+    /** The bridge holds the mocks apart from the browser context, so they are there when the context is made. */
+    override fun setStartupMocks(config: GekkoConfig, mocks: String?) {
+        val rules =
+            mocks?.let { Json.parseToJsonElement(it).jsonObject["rules"] as? JsonArray } ?: JsonArray(emptyList())
+        call("setMocks", buildJsonObject { put("rules", rules) })
     }
 
     private fun hasContext(): Boolean {
