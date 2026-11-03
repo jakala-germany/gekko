@@ -142,6 +142,7 @@ optionalTimeoutMs: 500                # how long optional steps, `if` and `repea
 tapIntervalMs: 0                      # minimum pause between taps; only for apps that throttle clicks, e.g. 650
 testsDir: tests
 flowsDir: flows
+mocksDir: mocks                       # the files that `mock` steps answer with
 env: [TEST_USER, TEST_PASSWORD]       # variables tests may read as ${env.NAME}
 ```
 
@@ -165,6 +166,7 @@ env: [TEST_USER, TEST_PASSWORD]       # variables tests may read as ${env.NAME}
 | `optionalTimeoutMs` | 500 | |
 | `tapIntervalMs` | 0 | |
 | `testsDir`, `flowsDir` | `tests`, `flows` | |
+| `mocksDir` | `mocks` | The folder of the files that `mock` steps answer with, see [network mocks](../../gekko-author/references/format.md#network-mocks). |
 | `env` | none | Names only, never values. Names starting with `GEKKO_`, `GITHUB_`, `ACTIONS_`, `RUNNER_`, `OP_`, `ANTHROPIC_`, `OPENAI_`, `AWS_`, `SONATYPE_`, `GPG_`, `NPM_` or `SSH_` are refused. |
 
 Values of `env:` names come from the process environment first, then from a `.env` file next to `gekko.yaml` (`KEY=value` lines, `#` comments, optional quotes). Every used value is masked as `***` in console output, JUnit files, `failure.json`, `tree.txt`, heal prompts and reports; screenshots and videos are not masked.

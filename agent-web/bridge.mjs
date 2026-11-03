@@ -21,8 +21,9 @@ const TOKEN = process.env.GEKKO_BRIDGE_TOKEN || ''
 delete process.env.GEKKO_BRIDGE_TOKEN
 const HERE = path.dirname(fileURLToPath(import.meta.url))
 const PAGE_SCRIPT = fs.readFileSync(path.join(HERE, 'page.js'), 'utf8')
-const MAX_BODY = 1_000_000
+const MAX_BODY = 4_000_000
 const CONSOLE_LINES = 500
+const MOCK_HITS = 5_000
 const WHEEL_STEP = 300
 
 if (!PORT || TOKEN.length < 32) {
@@ -109,6 +110,7 @@ async function newContext({ locale, timezone, permissions = [], geolocation, off
   state.granted = new Set(permissions)
   if (permissions.length > 0) await state.context.grantPermissions(permissions)
   await state.context.addInitScript({ content: PAGE_SCRIPT })
+  await routeMocks(state.context)
   state.context.on('page', (page) => adopt(page))
   adopt(await state.context.newPage())
   return {}
@@ -258,6 +260,128 @@ async function elementHandle(ref) {
   const target = handle.asElement()
   if (!target) throw fail('Element is not editable', 'rejected')
   return target
+}
+
+// ------------------------------------------------------------------------------------------------------------------ mocks
+
+// Network mocks are data from the CLI (a URL regex, a method, a canned answer). They live here, not in a browser context:
+// they are there when a context is made and stay when it is closed (the CLI removes them itself at the end of a test).
+// A context gets its route once, when there is a rule for it; without a rule nothing is intercepted. A request that a
+// service worker answers never reaches a route, so such a request cannot be mocked.
+const mocks = { rules: [], hits: [], routed: new WeakSet() }
+
+function compileMock(rule) {
+  if (!rule || typeof rule !== 'object' || typeof rule.id !== 'string' || typeof rule.urlRegex !== 'string') {
+    throw fail('a mock needs an id and a urlRegex')
+  }
+  const bad = (what) => fail(`mock ${rule.id}: ${what}`)
+  const method = rule.method ?? null
+  const bodyContains = rule.bodyContains ?? null
+  const status = rule.status ?? 200
+  const headers = rule.headers ?? {}
+  const delayMs = rule.delayMs ?? 0
+  const bodyBase64 = rule.bodyBase64 ?? ''
+  if (method !== null && typeof method !== 'string') throw bad('method must be a string')
+  if (bodyContains !== null && typeof bodyContains !== 'string') throw bad('bodyContains must be a string')
+  if (!Number.isInteger(status) || status < 100 || status > 599) throw bad(`status ${status} is not an HTTP status`)
+  if (typeof headers !== 'object' || Array.isArray(headers)) throw bad('headers must be an object')
+  if (typeof delayMs !== 'number' || !(delayMs >= 0)) throw bad('delayMs must be a number of milliseconds')
+  if (typeof bodyBase64 !== 'string') throw bad('bodyBase64 must be a string')
+  let pattern
+  try {
+    pattern = new RegExp(rule.urlRegex)
+  } catch (error) {
+    throw bad(`urlRegex is not a valid regular expression: ${firstLine(error)}`)
+  }
+  const answer = {}
+  for (const [name, value] of Object.entries(headers)) answer[name] = String(value)
+  return {
+    id: rule.id,
+    pattern,
+    method: method === null ? null : method.toUpperCase(),
+    bodyContains,
+    status,
+    headers: answer,
+    names: new Set(Object.keys(answer).map((name) => name.toLowerCase())),
+    delayMs,
+    body: Buffer.from(bodyBase64, 'base64'),
+  }
+}
+
+// The last rule that matches wins
+function matchMock(request) {
+  const method = request.method().toUpperCase()
+  const url = request.url()
+  for (let index = mocks.rules.length - 1; index >= 0; index--) {
+    const rule = mocks.rules[index]
+    if (rule.method !== null && rule.method !== method) continue
+    if (!rule.pattern.test(url)) continue
+    if (rule.bodyContains !== null) {
+      const body = request.postData()
+      if (body === null || !body.includes(rule.bodyContains)) continue
+    }
+    return rule
+  }
+  return null
+}
+
+// The browser applies CORS to what is fulfilled here, so a cross-origin answer has to allow the page that asked. Playwright
+// adds such headers itself only when the answer has no access-control-allow-origin, so ours bring the credentials along
+function corsHeaders(origin, taken) {
+  const headers = { 'access-control-allow-origin': origin || '*' }
+  if (origin && !taken.has('access-control-allow-credentials')) headers['access-control-allow-credentials'] = 'true'
+  if (origin && !taken.has('vary')) headers.vary = 'Origin'
+  return headers
+}
+
+async function answerMock(route) {
+  const request = route.request()
+  try {
+    if (mocks.rules.length === 0) return await route.fallback()
+    const headers = request.headers()
+    const origin = headers.origin
+    if (request.method() === 'OPTIONS' && headers['access-control-request-method'] !== undefined) {
+      const url = request.url()
+      // Only a request that a mock could answer is answered here, so the preflight of any other method (or of a URL no
+      // mock is for) still reaches the real backend and its CORS check. A mock that looks at the body cannot be told
+      // apart before the real request is sent; its preflight is answered.
+      const asked = headers['access-control-request-method'].toUpperCase()
+      const answers = (rule) => (rule.method === null || rule.method === asked) && rule.pattern.test(url)
+      if (!mocks.rules.some(answers)) return await route.fallback()
+      // What the page asks for is allowed as asked: a wildcard does not count when the request has credentials
+      return await route.fulfill({
+        status: 204,
+        headers: {
+          ...corsHeaders(origin, new Set()),
+          'access-control-allow-methods': headers['access-control-request-method'],
+          'access-control-allow-headers': headers['access-control-request-headers'] || '*',
+        },
+      })
+    }
+    const rule = matchMock(request)
+    if (!rule) return await route.fallback()
+    // Counted when the request is seen, so a late answer cannot show up in the log of the next test
+    mocks.hits.push({ id: rule.id, method: request.method(), url: request.url() })
+    if (mocks.hits.length > MOCK_HITS) mocks.hits.shift()
+    if (rule.delayMs > 0) await sleep(rule.delayMs)
+    const answer = rule.names.has('access-control-allow-origin') ? rule.headers : { ...rule.headers, ...corsHeaders(origin, rule.names) }
+    await route.fulfill({ status: rule.status, headers: answer, body: rule.body })
+  } catch (error) {
+    // The context can be gone while a delayed answer waits; anything else is worth a line in the console log
+    if (!TRANSIENT.test(String(error.message))) note(`[gekko] a mock could not answer ${request.url()}: ${firstLine(error)}`)
+    await route.fallback().catch(() => {})
+  }
+}
+
+async function routeMocks(context) {
+  if (!context || mocks.rules.length === 0 || mocks.routed.has(context)) return
+  mocks.routed.add(context)
+  try {
+    await context.route('**/*', answerMock)
+  } catch (error) {
+    mocks.routed.delete(context)
+    throw error
+  }
 }
 
 // ---------------------------------------------------------------------------------------------------------- operations
@@ -427,6 +551,24 @@ const operations = {
       await page.setViewportSize(state.viewport)
     }
     return {}
+  },
+
+  // Replaces all network mocks (an empty list switches mocking off and empties the hit log); the context that is open
+  // starts to use them now, one made later does too
+  async setMocks({ rules }) {
+    if (!Array.isArray(rules)) throw fail('rules must be a list')
+    const compiled = rules.map(compileMock)
+    mocks.rules = compiled
+    if (compiled.length === 0) mocks.hits = []
+    await routeMocks(state.context)
+    return {}
+  },
+
+  // The requests the mocks answered since the last call, oldest first
+  mockHits() {
+    const hits = mocks.hits
+    mocks.hits = []
+    return { hits }
   },
 
   async permissions({ grant = [], revoke = [] }) {

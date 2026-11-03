@@ -108,4 +108,94 @@ class CheckTest {
         assertEquals(1, problems.size)
         assertTrue(problems.single().contains("calls itself"))
     }
+
+    private val mockTest =
+        """
+        name: Mocked
+        steps:
+          - say: Mock the routes
+            do: { mock: { url: "https://api.example.com/*", file: routes.json } }
+        """
+
+    @Test
+    fun acceptsAMockWhoseFileIsThere() {
+        val project =
+            project(
+                mapOf(
+                    "tests/mocked.yaml" to mockTest,
+                    "mocks/routes.json" to "{\"departure\":\"\${now(+10m)}\",\"id\":\"\${random.uuid}\"}",
+                )
+            )
+
+        assertEquals(emptyList(), Checker.check(project, listOf("$root/tests/mocked.yaml")))
+    }
+
+    @Test
+    fun reportsAMockFileThatIsMissing() {
+        val project = project(mapOf("tests/mocked-missing.yaml" to mockTest))
+        deleteIfThere("$root/mocks/routes.json")
+
+        val problems = Checker.check(project, listOf("$root/tests/mocked-missing.yaml"))
+
+        assertEquals(1, problems.size)
+        assertTrue(problems.single().contains("mock file mocks/routes.json does not exist"), problems.single())
+    }
+
+    @Test
+    fun reportsAPlaceholderOfAMockFileThatIsWrittenWrong() {
+        val project =
+            project(
+                mapOf(
+                    "tests/mocked-wrong.yaml" to mockTest,
+                    "mocks/routes.json" to "{\"departure\":\"\${now(+10x)}\"}",
+                )
+            )
+
+        val problems = Checker.check(project, listOf("$root/tests/mocked-wrong.yaml"))
+
+        assertEquals(1, problems.size)
+        assertTrue(problems.single().contains("mocks/routes.json: now(+10x)"), problems.single())
+    }
+
+    @Test
+    fun aMockFileMayUseATextThatCopyTextKeeps() {
+        val project =
+            project(
+                mapOf(
+                    "tests/mocked-var.yaml" to mockTest,
+                    "mocks/routes.json" to "{\"name\":\"\${var.name}\"}",
+                )
+            )
+
+        assertEquals(emptyList(), Checker.check(project, listOf("$root/tests/mocked-var.yaml")))
+    }
+
+    @Test
+    fun reportsAMockFileThatIsNoUtf8Text() {
+        val project = project(mapOf("tests/mocked-binary.yaml" to mockTest, "mocks/routes.json" to "��\u0000PNG"))
+
+        val problems = Checker.check(project, listOf("$root/tests/mocked-binary.yaml"))
+
+        assertEquals(1, problems.size)
+        assertTrue(problems.single().contains("mocks/routes.json: is not a UTF-8 text file"), problems.single())
+    }
+
+    @Test
+    fun aMocksFolderCanBeRenamed() {
+        val project =
+            Project(
+                root,
+                GekkoConfig(mocksDir = "fixtures"),
+            )
+        makeDirs("$root/tests")
+        writeTextFile("$root/tests/mocked-renamed.yaml", mockTest.trimIndent())
+        makeDirs("$root/fixtures")
+        writeTextFile("$root/fixtures/routes.json", "{}")
+
+        assertEquals(emptyList(), Checker.check(project, listOf("$root/tests/mocked-renamed.yaml")))
+    }
+
+    private fun deleteIfThere(path: String) {
+        if (fileExists(path)) runProcess(listOf("rm", path))
+    }
 }

@@ -109,6 +109,18 @@ sealed interface Command {
 
     @Serializable @SerialName("screenshot") data object Screenshot : Command
 
+    /**
+     * Replaces all network mocks of the app with [rules] (see [MockRule]); the agent answers matching requests itself
+     * from then on. An empty list switches mocking off. Served by the in-app agent, also while the app is not in front.
+     */
+    @Serializable @SerialName("setMocks") data class SetMocks(val rules: List<MockRule>) : Command
+
+    /** Removes all network mocks of the app. */
+    @Serializable @SerialName("clearMocks") data object ClearMocks : Command
+
+    /** The requests the mocks answered since the last time this was asked ([Response.MockHitsResult]). */
+    @Serializable @SerialName("mockHits") data object MockHits : Command
+
     companion object {
         const val DEFAULT_TIMEOUT_MS = 5_000L
         const val DEFAULT_HOLD_MS = 700L

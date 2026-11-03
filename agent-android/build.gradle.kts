@@ -21,10 +21,13 @@ dependencies {
     implementation(libs.androidx.startup.runtime)
     implementation(libs.kotlinx.serialization.json)
     compileOnly(libs.androidx.compose.ui)
+    // The apps bring their own OkHttp (3.12 up to 5.x); the agent only uses calls that all of them have
+    compileOnly(libs.okhttp)
 
     testImplementation(libs.kotlin.test.junit)
     testImplementation(libs.junit)
     testImplementation(libs.androidx.compose.ui)
+    testImplementation(libs.okhttp)
 }
 
 mavenPublishing {

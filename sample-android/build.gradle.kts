@@ -5,7 +5,11 @@ plugins {
     id("io.github.jakala-germany.gekko")
 }
 
-gekko { agent.set(project(":agent-android")) }
+gekko {
+    agent.set(project(":agent-android"))
+    // The agent of this build is the one the hooks are made for
+    networkMocks.set(true)
+}
 
 android {
     namespace = "com.jakala.gekko.sample"
@@ -33,4 +37,6 @@ dependencies {
     implementation("androidx.compose.foundation:foundation")
     implementation("androidx.compose.material3:material3")
     implementation(libs.androidx.activity.compose)
+    // The request the sample makes, hooked by the gekko plugin like the OkHttp of any app
+    implementation(libs.okhttp)
 }

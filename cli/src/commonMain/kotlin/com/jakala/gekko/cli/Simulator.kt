@@ -94,6 +94,7 @@ class SimctlDevice(private val requestedUdid: String?) : Device {
                 "/tmp/gekko-screenshot-$udid.png",
             )
         )
+        removeStartupMocks()
         val left = bundles.filter { isInstalled(it) }
         check(left.isEmpty()) { "Still installed after uninstalling: ${left.joinToString()}" }
         return removed
@@ -135,6 +136,33 @@ class SimctlDevice(private val requestedUdid: String?) : Device {
         return if (result.exitCode == 0) result.text else null
     }
 
+    /** The file with the mocks for the next start of the app; the agent in the app reads it and deletes it. */
+    private var startupMocks: String? = null
+
+    /** The private directory that holds that file; it stays until the mocks are taken back or the test ends. */
+    private var startupMocksDirectory: String? = null
+
+    /**
+     * A simulator shares the file system of this computer, so the agent reads the mocks from a file. The mocks can hold
+     * secrets (`${env.*}`), so the file is in a directory that only this user can enter and nobody can guess.
+     */
+    override fun setStartupMocks(config: GekkoConfig, mocks: String?) {
+        removeStartupMocks()
+        if (mocks == null) return
+        val directory = createPrivateDirectory("gekko-mocks")
+        startupMocksDirectory = directory
+        val path = "$directory/mocks.json"
+        writeTextFile(path, mocks)
+        restrictToOwner(path)
+        startupMocks = path
+    }
+
+    private fun removeStartupMocks() {
+        startupMocksDirectory?.let { runProcess(listOf("rm", "-rf", it)) }
+        startupMocksDirectory = null
+        startupMocks = null
+    }
+
     override fun launch(config: GekkoConfig, arguments: Map<String, String>) {
         // The environment wins: a CI action installs the agent for the job without touching gekko.yaml
         val framework =
@@ -157,6 +185,7 @@ class SimctlDevice(private val requestedUdid: String?) : Device {
             check(fileExists(binary)) { "ios.agentFramework not found: $binary" }
             environment["SIMCTL_CHILD_DYLD_INSERT_LIBRARIES"] = binary
         }
+        startupMocks?.let { environment["SIMCTL_CHILD_GEKKO_MOCKS"] = it }
         val result =
             runProcess(
                 listOf("xcrun", "simctl", "launch", udid, bundleId(config)) +
@@ -164,6 +193,8 @@ class SimctlDevice(private val requestedUdid: String?) : Device {
                     arguments.flatMap { (key, value) -> listOf("-$key", value) },
                 environment = environment,
             )
+        // The app takes the mocks from the file once; a later start gets them again from the next setStartupMocks
+        startupMocks = null
         if (result.exitCode != 0) {
             throw InfrastructureException("Launching ${bundleId(config)} on $udid failed: ${result.text}")
         }

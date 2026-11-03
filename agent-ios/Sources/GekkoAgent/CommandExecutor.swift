@@ -33,6 +33,12 @@ final class CommandExecutor {
         case "scroll": return scroll(command)
         case "swipe": return swipe(command)
         case "hideKeyboard": return hideKeyboard()
+        // Mocks are state of the process, not UI: they are served without touching the main thread
+        case "setMocks": return setMocks(command)
+        case "clearMocks":
+            MockStore.shared.clear()
+            return ok()
+        case "mockHits": return ["type": "mockHits", "hits": MockStore.shared.takeHits()]
         case "setOrientation": return failure("setOrientation is served by the system runner", ErrorKind.unsupported)
         case "doubleTap", "longPress": return failure("\(type) needs real touches: the CLI sends it to the system runner", ErrorKind.unsupported)
         default: return failure("Unknown command \(type)", ErrorKind.unsupported)
@@ -46,6 +52,17 @@ final class CommandExecutor {
             return direction == .rightToLeft
         }
         return ["type": "metrics", "density": 1.0, "rtl": rtl]
+    }
+
+    private func setMocks(_ command: [String: Any]) -> [String: Any] {
+        do {
+            try MockStore.shared.setMocks(command)
+            return ok()
+        } catch let problem as MockError {
+            return failure(problem.message, ErrorKind.unsupported)
+        } catch {
+            return failure("Mocks could not be read", ErrorKind.unsupported)
+        }
     }
 
     private func hideKeyboard() -> [String: Any] {

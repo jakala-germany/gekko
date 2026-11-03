@@ -9,6 +9,7 @@ import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
 import kotlin.test.assertFalse
+import kotlin.test.assertNotEquals
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
 import kotlinx.coroutines.test.runTest
@@ -27,6 +28,19 @@ class SecurityTest {
             assertFailsWith<IllegalArgumentException> { Yamls.substitute("x: \"\${env.PATH}\"", emptyMap(), access) }
         assertTrue(error.message.orEmpty().contains("declare PATH"))
         assertFailsWith<IllegalArgumentException> { Yamls.substitute("x: \"\${env.HOME}\"", emptyMap()) }
+    }
+
+    @Test
+    fun aPrivateDirectoryHasAnUnguessableNameAndOnlyItsOwnerCanEnterIt() {
+        val first = createPrivateDirectory("gekko-test")
+        val second = createPrivateDirectory("gekko-test")
+        try {
+            assertNotEquals(first, second)
+            assertTrue(first.startsWith("/tmp/gekko-test-"))
+            assertTrue(runProcess(listOf("ls", "-ld", first)).text.startsWith("drwx------"))
+        } finally {
+            runProcess(listOf("rm", "-rf", first, second))
+        }
     }
 
     @Test

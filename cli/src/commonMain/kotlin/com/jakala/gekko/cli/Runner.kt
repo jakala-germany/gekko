@@ -39,6 +39,8 @@ data class TestResult(
     val infrastructure: Boolean = false,
     /** The test did not run, because the setup of its group failed; [failure] says why. */
     val skipped: Boolean = false,
+    /** Things to look at that did not fail the test, e.g. a network mock that no request used. */
+    val warnings: List<String> = emptyList(),
 ) {
     /** True for a test that ran and failed; a skipped test is not a failure of its own. */
     val failed: Boolean
@@ -109,6 +111,37 @@ class Project(val root: String, val config: GekkoConfig) {
         return flow
     }
 
+    /** Puts the declared `${env.NAME}` variables into the text of a mock file; [escape] fits a value to the file. */
+    fun fillEnv(text: String, escape: (String) -> String): String {
+        return ENV_PLACEHOLDER.replace(text) { match -> escape(access.value(match.groupValues[1])) }
+    }
+
+    /**
+     * The text of a file of the mocks directory. A file that is no UTF-8 text (an image, say) is refused: it would
+     * reach the app as something else than what is in the file.
+     */
+    fun readMockFile(file: String): String {
+        val text = readTextFile("$root/${config.mocksDir}/$file")
+        require('�' !in text) { "is not a UTF-8 text file; mock files are text only" }
+        return text
+    }
+
+    /**
+     * The text of a mock file with its `${env.NAME}` variables and the runtime placeholders of [resolve] filled in. The
+     * values from the environment go in last: a password that looks like a placeholder stays what it is.
+     */
+    fun renderMock(text: String, escape: (String) -> String, resolve: (String) -> String): String {
+        val values = mutableListOf<String>()
+        val marked =
+            fillEnv(text) { value ->
+                values += escape(value)
+                "$ENV_MARK_START${values.size - 1}$ENV_MARK_END"
+            }
+        return ENV_MARK.replace(resolve(marked)) { match ->
+            values.getOrNull(match.groupValues[1].toInt()) ?: match.value
+        }
+    }
+
     /** A project that tests a web app needs an id for the web on every step that runs there. */
     private fun requireWebIds(steps: List<Step>) {
         if (config.app.web == null) return
@@ -120,6 +153,12 @@ class Project(val root: String, val config: GekkoConfig) {
 
     companion object {
         private val GROUP_FILES = listOf("group.yaml", "group.yml")
+        private val ENV_PLACEHOLDER = Regex("""\$\{env\.([A-Za-z0-9_]+)}""")
+
+        /** Stand in for an environment value while the runtime placeholders are filled in (private use characters). */
+        private const val ENV_MARK_START = ''
+        private const val ENV_MARK_END = ''
+        private val ENV_MARK = Regex("$ENV_MARK_START(\\d+)$ENV_MARK_END")
 
         /** The `${env.NAME}` variables of a project: the names `gekko.yaml` declares, with the values it can find. */
         private fun accessFor(root: String, config: GekkoConfig): EnvAccess {
@@ -183,6 +222,8 @@ class TestRunner(
     private var locationMocked = false
     private var currentTest = ""
     private var restoreSettings: () -> Unit = {}
+    private val mocks = MockSet()
+    private var startupMocksDelivered = false
     private val screenshots = mutableListOf<String>()
     private val tapPacer = TapPacer(project.config.tapIntervalMs)
     private var currentLanguage: String? = null
@@ -191,6 +232,7 @@ class TestRunner(
             language = { currentLanguage },
             today = { device.today() },
             onGenerated = { placeholder, value -> log("    $placeholder = \"$value\"") },
+            clock = { device.deviceTime() },
         )
     private val settleMs = project.config.settleMs
 
@@ -208,6 +250,8 @@ class TestRunner(
         screenshots.clear()
         currentTest = test.name
         variables.clear()
+        mocks.reset()
+        startupMocksDelivered = false
         val outcomes = mutableListOf<StepOutcome>()
         val started = nowMillis()
         var failure: String? = null
@@ -215,14 +259,15 @@ class TestRunner(
         val artifacts = mutableListOf<String>()
         var infrastructure = false
         var recording: Recording? = null
+        var warnings = emptyList<String>()
         try {
             val startBegin = nowMillis()
             val settings = project.config.device.overriddenBy(test.device)
             currentLanguage = settings.language
-            freshStart(settings, keepState)
+            val steps = test.uses.map { Step(say = "use $it", action = Action(use = it)) } + test.steps
+            freshStart(settings, keepState) { applyLeadingMocks(steps) }
             log("  (${if (keepState) "start in the group" else "fresh start"} ${nowMillis() - startBegin}ms)")
             recording = if (keepState || keepSession) null else startRecording()
-            val steps = test.uses.map { Step(say = "use $it", action = Action(use = it)) } + test.steps
             execute(steps, test.timeout ?: project.config.defaultTimeoutMs, outcomes, 0)
         } catch (error: StepFailure) {
             failure = error.message?.let(Masker::mask)
@@ -235,7 +280,8 @@ class TestRunner(
             artifacts += collectArtifacts(test.name, path, failure, failedStep, infrastructure)
         } catch (error: ConfigurationException) {
             // A version that does not match (or any other setting to change) is not a failure of this test: stop the
-            // run
+            // run. The mocks of the test do not stay in the app.
+            runCatching { endMocks() }
             throw error
         } catch (error: Exception) {
             failure = Masker.mask(error.message ?: error.toString())
@@ -246,6 +292,8 @@ class TestRunner(
         // Artifacts are collected first; afterwards the app is quit so no test leaves it running
         val video = finishRecording(recording, test.name, failure != null)
         if (video != null) artifacts += video
+        // Whatever the test mocked is undone, however the test ended
+        warnings = endMocks()
         if (rotated) {
             runCatching { drivers.send(Command.SetOrientation(false), forceSystem = true) }
             rotated = false
@@ -267,6 +315,7 @@ class TestRunner(
             artifacts,
             healed = heals.toList(),
             infrastructure = infrastructure,
+            warnings = warnings,
         )
     }
 
@@ -345,8 +394,8 @@ class TestRunner(
         return if (runCatching { recording.stop(if (keep) path else null) }.getOrDefault(false)) path else null
     }
 
-    private suspend fun freshStart(settings: DeviceSettings, keepState: Boolean) {
-        restoreSettings = device.freshStart(project.config, settings, keepState)
+    private suspend fun freshStart(settings: DeviceSettings, keepState: Boolean, beforeLaunch: () -> Unit) {
+        restoreSettings = device.freshStart(project.config, settings, keepState, beforeLaunch)
         if (!drivers.waitForAgent(AGENT_START_TIMEOUT_MS)) {
             throw InfrastructureException("In-process agent did not respond; is the gekko agent part of this build?")
         }
@@ -383,6 +432,7 @@ class TestRunner(
             } else {
                 performHealing(step, step.timeout ?: timeout)
             }
+            if (use == null && repeat == null && mocks.isActive) pullMockHits()
             val duration = nowMillis() - started
             outcomes[outcomes.indexOfLast { it.description == label }] = StepOutcome(label, duration)
             if (use == null && repeat == null) log("    ${duration}ms")
@@ -822,6 +872,8 @@ class TestRunner(
                         action.setPermissions.mapValues { PermissionNames.isGranted(it.value) },
                     )
                 }
+            action.mock != null -> setMock(action.mock)
+            action.clearMocks == true -> clearMocks()
             else -> throw StepFailure("Step has no action")
         }
     }
@@ -911,6 +963,8 @@ class TestRunner(
             if (spec.clearState) {
                 device.clearData(project.config)
             }
+            // A new app process knows nothing of the mocks: it gets them again before it starts
+            if (mocks.isActive) handOverMocks()
             device.launch(project.config, spec.arguments)
         }
         if (!drivers.waitForAgent(AGENT_START_TIMEOUT_MS)) {
@@ -1306,6 +1360,131 @@ class TestRunner(
         return artifacts
     }
 
+    /**
+     * The `mock` steps a test starts with, also inside the flows it calls first. They are applied before gekko starts
+     * the app, so that requests made while the app starts are answered too. A step that needs the screen (or is
+     * conditional) ends the run of leading steps; a step for another platform is not part of it.
+     */
+    private fun leadingMockSteps(steps: List<Step>): Pair<List<Step>, Boolean> {
+        val found = mutableListOf<Step>()
+        for (declared in steps) {
+            if (!declared.runsOn(platform) || !declared.action.runsOn(platform)) continue
+            if (declared.condition != null) return found to false
+            // Nothing else is looked at: a test without leading mocks does not generate values or ask the device here
+            if (declared.action.mock == null && declared.action.use == null) return found to false
+            val step =
+                try {
+                    resolve(declared)
+                } catch (failure: StepFailure) {
+                    return found to false
+                }
+            val use = step.action.use
+            if (step.action.mock != null) {
+                found += declared
+            } else if (use != null) {
+                val flow = project.loadFlow(use, step.action.with)
+                val (inner, more) = leadingMockSteps(flow.steps)
+                found += inner
+                if (!more) return found to false
+            } else {
+                return found to false
+            }
+        }
+        return found to true
+    }
+
+    /** Runs before the app is started: sets the leading mocks and hands them to the app. */
+    private fun applyLeadingMocks(steps: List<Step>) {
+        val leading = leadingMockSteps(steps).first
+        if (leading.isEmpty()) return
+        for (declared in leading) {
+            val spec = resolve(declared).action.mock ?: continue
+            mocks.add(spec, mockBody(spec))
+        }
+        onDevice { handOverMocks() }
+    }
+
+    /** The content of the mock file with its placeholders filled in, or an empty body when the step has no file. */
+    private fun mockBody(spec: MockSpec): String {
+        val file = spec.file ?: return ""
+        if (!fileExists("${project.root}/${project.config.mocksDir}/$file")) {
+            throw StepFailure("Mock file does not exist: ${project.config.mocksDir}/$file")
+        }
+        // A value inside a .json file must not break it; other files are used as they are
+        val json = file.endsWith(".json", ignoreCase = true)
+        val escape = { value: String -> if (json) jsonEscape(value) else value }
+        try {
+            return project.renderMock(project.readMockFile(file), escape) { variables.resolve(it, escape) }
+        } catch (error: IllegalArgumentException) {
+            throw StepFailure("${project.config.mocksDir}/$file: ${error.message}")
+        }
+    }
+
+    /** Gives the mocks to the app that is about to start. */
+    private fun handOverMocks() {
+        device.setStartupMocks(project.config, encodeCommand(Command.SetMocks(mocks.rules())))
+        startupMocksDelivered = true
+    }
+
+    private suspend fun setMock(spec: MockSpec) {
+        val entry = mocks.add(spec, mockBody(spec))
+        log("    mock ${entry.label} → ${entry.answer()}")
+        syncMocks()
+    }
+
+    /** The answers the mocks gave so far are counted first: the mocks that are removed now are not asked again. */
+    private suspend fun clearMocks() {
+        pullMockHits()
+        mocks.clear()
+        syncMocks()
+    }
+
+    /**
+     * Tells the running app what is mocked now. An app that does not run picks the mocks up when it starts, and an app
+     * that cannot mock says so.
+     */
+    private suspend fun syncMocks() {
+        val response = drivers.sendToAgent(if (mocks.isActive) Command.SetMocks(mocks.rules()) else Command.ClearMocks)
+        if (response is Response.Error) {
+            throw StepFailure(
+                "The app cannot mock network requests: ${response.message} " +
+                    "(is the gekko agent of this release part of the build, with network mocks switched on?)"
+            )
+        }
+        if (response == null) {
+            onDevice {
+                if (mocks.isActive) {
+                    handOverMocks()
+                } else if (startupMocksDelivered) {
+                    device.setStartupMocks(project.config, null)
+                }
+            }
+        }
+    }
+
+    /** Logs the requests that mocks answered since the last time; the app may be gone, then there is nothing to ask. */
+    private suspend fun pullMockHits() {
+        val answer = drivers.sendToAgent(Command.MockHits) as? Response.MockHitsResult ?: return
+        mocks.record(answer.hits).forEach { log("    $it") }
+    }
+
+    /**
+     * The end of a test: the last answers are counted, then the app is told to forget every mock and what was handed
+     * over for a start that never came is taken back. Returns a warning for each mock that no request used (a typo in
+     * the URL, or a client gekko cannot reach).
+     */
+    private suspend fun endMocks(): List<String> {
+        if (!mocks.hasBeenSet) return emptyList()
+        runCatching { pullMockHits() }
+        val warnings = mocks.unused().map { "network mock was never used: $it" }
+        runCatching { drivers.sendToAgent(Command.ClearMocks) }
+        if (startupMocksDelivered) runCatching { device.setStartupMocks(project.config, null) }
+        mocks.reset()
+        startupMocksDelivered = false
+        warnings.forEach { log("  warning: $it") }
+        return warnings
+    }
+
     private fun describe(action: Action): String {
         return when {
             action.tap != null -> "tap ${action.tap.point?.let { "point $it" } ?: action.tap.toSelector(platform)}"
@@ -1338,6 +1517,8 @@ class TestRunner(
             action.hideKeyboard == true -> "hide the keyboard"
             action.launchPackage != null -> "launch ${action.launchPackage}"
             action.stopPackage != null -> "stop ${action.stopPackage}"
+            action.mock != null -> "mock ${listOfNotNull(action.mock.method, action.mock.url).joinToString(" ")}"
+            action.clearMocks == true -> "remove the network mocks"
             else -> "step"
         }
     }

@@ -12,12 +12,15 @@ import com.jakala.gekko.protocol.Bounds
 import com.jakala.gekko.protocol.Command
 import com.jakala.gekko.protocol.ErrorKind
 import com.jakala.gekko.protocol.GekkoVersion
+import com.jakala.gekko.protocol.MockHit
+import com.jakala.gekko.protocol.MockRule
 import com.jakala.gekko.protocol.Protocol
 import com.jakala.gekko.protocol.Response
 import com.jakala.gekko.protocol.Selector
 import com.jakala.gekko.protocol.SettleTracker
 import com.jakala.gekko.protocol.UiNode
 import kotlinx.coroutines.delay
+import kotlinx.serialization.builtins.ListSerializer
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonNull
@@ -88,6 +91,9 @@ internal class WebAgentClient(
             Command.Tree -> Response.TreeResult(read()?.windows.orEmpty())
             Command.Foreground -> Response.ForegroundResult(true)
             Command.Screenshot -> unsupported("Screenshot is handled by the host CLI")
+            is Command.SetMocks -> setMocks(command.rules)
+            Command.ClearMocks -> setMocks(emptyList())
+            Command.MockHits -> mockHits()
             Command.HideKeyboard -> {
                 bridge.call("blur")
                 Response.Ok
@@ -154,6 +160,19 @@ internal class WebAgentClient(
 
     private fun unsupported(message: String): Response {
         return Response.Error(message, ErrorKind.UNSUPPORTED)
+    }
+
+    /** The bridge answers the requests of the browser context from these rules, the last matching one first. */
+    private suspend fun setMocks(rules: List<MockRule>): Response {
+        val encoded = protocolJson.encodeToJsonElement(ListSerializer(MockRule.serializer()), rules)
+        bridge.call("setMocks", buildJsonObject { put("rules", encoded) })
+        return Response.Ok
+    }
+
+    private suspend fun mockHits(): Response {
+        val answer = bridge.call("mockHits")["hits"] ?: return Response.MockHitsResult(emptyList())
+        val hits = protocolJson.decodeFromJsonElement(ListSerializer(MockHit.serializer()), answer)
+        return Response.MockHitsResult(hits)
     }
 
     private fun point(x: Int, y: Int): JsonObject {

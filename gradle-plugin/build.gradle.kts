@@ -11,6 +11,7 @@ version = providers.gradleProperty("VERSION_NAME").get()
 dependencies {
     compileOnly(libs.android.gradle.plugin)
     testImplementation(kotlin("test"))
+    testImplementation(libs.asm)
 }
 
 // The agent the plugin adds is the one of the same release: the version is written into the plugin at build time

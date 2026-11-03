@@ -12,6 +12,8 @@ struct ContentView: View {
     @State private var greeting = ""
     @State private var time = Date()
     @State private var gesture = "none"
+    @State private var network = "none"
+    @State private var startup = "none"
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -31,6 +33,15 @@ struct ContentView: View {
                 .accessibilityIdentifier("sample.gesture")
             Text("Gesture: \(gesture)")
                 .accessibilityIdentifier("sample.gesture.result")
+            // A host that does not exist: the text comes from a mock of the end-to-end tests, or it is an error
+            HStack {
+                Button("Fetch") { Task { network = await load("greeting") } }
+                    .accessibilityIdentifier("sample.net.fetch")
+                Text("Network: \(network)")
+                    .accessibilityIdentifier("sample.net.result")
+                Text("Startup: \(startup)")
+                    .accessibilityIdentifier("sample.net.startup")
+            }
             DatePicker("", selection: $time, displayedComponents: [.hourAndMinute])
                 .datePickerStyle(.wheel)
                 .labelsHidden()
@@ -48,5 +59,18 @@ struct ContentView: View {
             .accessibilityIdentifier("sample.list")
         }
         .padding()
+        // The first request is made while the app starts, so the tests can mock what an app asks for at startup
+        .task { startup = await load("startup") }
+    }
+
+    private func load(_ path: String) async -> String {
+        guard let url = URL(string: "https://api.gekko.invalid/v1/\(path)") else { return "error" }
+        do {
+            let (data, response) = try await URLSession.shared.data(from: url)
+            let status = (response as? HTTPURLResponse)?.statusCode ?? 0
+            return "\(status) \(String(decoding: data, as: UTF8.self))"
+        } catch {
+            return "error"
+        }
     }
 }

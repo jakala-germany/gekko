@@ -32,9 +32,25 @@ internal class FakeDevice(
     val starts = mutableListOf<Boolean>()
     val ends = mutableListOf<Boolean>()
 
-    override fun freshStart(config: GekkoConfig, settings: DeviceSettings, keepState: Boolean): () -> Unit {
+    override fun freshStart(
+        config: GekkoConfig,
+        settings: DeviceSettings,
+        keepState: Boolean,
+        beforeLaunch: () -> Unit,
+    ): () -> Unit {
         starts += keepState
-        return super.freshStart(config, settings, keepState)
+        return super.freshStart(config, settings, keepState, beforeLaunch)
+    }
+
+    /** Every handover of mocks to the app, in order; null is the end of a handover that was not picked up. */
+    val startupMocks = mutableListOf<String?>()
+
+    /** What happened to the app and its mocks, in order: `launch`, `mocks` (handed over), `mocks off`. */
+    val events = mutableListOf<String>()
+
+    override fun setStartupMocks(config: GekkoConfig, mocks: String?) {
+        startupMocks += mocks
+        events += if (mocks == null) "mocks off" else "mocks"
     }
 
     override fun endTest(config: GekkoConfig, keepSession: Boolean) {
@@ -75,7 +91,9 @@ internal class FakeDevice(
 
     override fun install(config: GekkoConfig, path: String?) {}
 
-    override fun launch(config: GekkoConfig, arguments: Map<String, String>) {}
+    override fun launch(config: GekkoConfig, arguments: Map<String, String>) {
+        events += "launch"
+    }
 
     override fun uninstall(config: GekkoConfig): List<String> {
         return emptyList()

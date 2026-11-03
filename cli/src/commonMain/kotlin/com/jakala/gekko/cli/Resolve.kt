@@ -52,5 +52,11 @@ internal fun Action.resolved(resolve: (String) -> String): Action {
             ),
         eraseText = eraseText?.resolved(resolve),
         copyText = copyText?.copy(from = copyText.from.resolved(resolve)),
+        mock =
+            mock?.copy(
+                url = resolve(mock.url),
+                bodyContains = mock.bodyContains?.let(resolve),
+                headers = mock.headers.mapValues { resolve(it.value) },
+            ),
     )
 }

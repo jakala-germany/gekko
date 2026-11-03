@@ -1,0 +1,26 @@
+name: Network mocks answer the app
+tags: [network]
+steps:
+  # Mock steps at the very start are set before the app is started: the request it makes while it starts is answered too
+  - say: Mock what the app asks for at startup
+    do: { mock: { url: "https://api.gekko.invalid/v1/startup", file: sample/startup.json } }
+  - say: Mock the greeting of the backend
+    do: { mock: { url: "https://api.gekko.invalid/v1/greeting*", method: GET, file: sample/greeting.json } }
+  - say: The request of the start was answered by the mock
+    do: { assertVisible: { id: sample.net.startup, textContains: "mocked startup" } }
+  - say: Ask for the greeting
+    do: { tap: { id: { android: sample.net.okhttp, ios: sample.net.fetch, web: sample.net.fetch } } }
+  - say: The greeting comes from the mock
+    do: { assertVisible: { id: sample.net.result, textContains: "Hello from the mock" } }
+  - say: The backend fails slowly from now on
+    do: { mock: { url: "https://api.gekko.invalid/v1/greeting*", method: GET, status: 503, delayMs: 300 } }
+  - say: Ask again
+    do: { tap: { id: { android: sample.net.okhttp, ios: sample.net.fetch, web: sample.net.fetch } } }
+  - say: The failure is shown
+    do: { assertVisible: { id: sample.net.result, textContains: "503" } }
+  - say: Back to the real backend
+    do: { clearMocks: true }
+  - say: Ask a third time
+    do: { tap: { id: { android: sample.net.okhttp, ios: sample.net.fetch, web: sample.net.fetch } } }
+  - say: The host does not exist, so the real request fails
+    do: { assertVisible: { id: sample.net.result, textContains: "error" } }

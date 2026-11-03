@@ -1,16 +1,21 @@
 package com.jakala.gekko.cli
 
+/** The clock of the device: an instant and the offset of its time zone to UTC. */
+data class DeviceTime(val epochMillis: Long, val offsetMinutes: Int)
+
 /**
  * Values that only exist while a test runs: texts kept by `copyText` (`${var.name}`), dates relative to the device's
- * today (`${date(-1, 'EEEE, d. MMMM yyyy')}`), written in the language of the test, and fresh test data
- * (`${random.email}`, `${random.number(6)}`, `${random.uuid}`): one value per test for each placeholder, reported
- * through [onGenerated] so a failure can be reproduced.
+ * today (`${date(-1, 'EEEE, d. MMMM yyyy')}`), written in the language of the test, a point in time relative to now
+ * (`${now(+10m)}`, `${now(+10m, 'HH:mm')}`, `${now(+10m, epochMillis)}`), and fresh test data (`${random.email}`,
+ * `${random.number(6)}`, `${random.uuid}`): one value per test for each placeholder, reported through [onGenerated] so
+ * a failure can be reproduced.
  */
 class Variables(
     private val language: () -> String?,
     private val today: () -> String,
     private val random: (Int) -> String = ::randomHex,
     private val onGenerated: (String, String) -> Unit = { _, _ -> },
+    private val clock: () -> DeviceTime = { DeviceTime(nowMillis(), 0) },
 ) {
     private val values = mutableMapOf<String, String>()
     private val generated = mutableMapOf<String, String>()
@@ -24,22 +29,114 @@ class Variables(
         generated.clear()
     }
 
-    fun resolve(text: String): String {
-        if (!text.contains("\${var.") && !text.contains("\${date(") && !text.contains("\${random.")) {
+    /** Fills in the runtime placeholders; [escape] is applied to every value that is put in (e.g. for a JSON file). */
+    fun resolve(text: String, escape: (String) -> String = { it }): String {
+        if (
+            !text.contains("\${var.") &&
+                !text.contains("\${date(") &&
+                !text.contains("\${random.") &&
+                !text.contains("\${now(")
+        ) {
             return text
         }
         val withRandom =
-            RANDOM.replace(text) { match -> generate(match.value, match.groupValues[1], match.groupValues[2]) }
+            RANDOM.replace(text) { match -> escape(generate(match.value, match.groupValues[1], match.groupValues[2])) }
         val withVariables =
             VARIABLE.replace(withRandom) { match ->
                 val name = match.groupValues[1]
-                values[name] ?: throw StepFailure("Variable '$name' is not set; copyText has to run before it is used")
+                escape(
+                    values[name]
+                        ?: throw StepFailure("Variable '$name' is not set; copyText has to run before it is used")
+                )
             }
-        return DATE.replace(withVariables) { match ->
-            val offset = match.groupValues[1].toInt()
-            val pattern = match.groupValues[3]
-            Dates.format(Dates.plusDays(today(), offset), pattern, language())
+        val withDates =
+            DATE.replace(withVariables) { match ->
+                val offset = match.groupValues[1].toInt()
+                val pattern = match.groupValues[3]
+                escape(Dates.format(Dates.plusDays(today(), offset), pattern, language()))
+            }
+        // The clock of the device is read once for a text, and only when it has a now(): every instant is the same one
+        val deviceTime = lazy(clock)
+        return NOW.replace(withDates) { match -> escape(now(match.groupValues[1], deviceTime)) }
+    }
+
+    /** `${now(<offset>, <format>)}`: both arguments are optional; the offset is `+10m`, `-1d`, `+2h`, `+90s`. */
+    private fun now(arguments: String, deviceTime: Lazy<DeviceTime>): String {
+        val items = splitArguments(arguments)
+        val offset = items.firstOrNull()?.let { OFFSET.matchEntire(it) }
+        val skip = if (offset != null) 1 else 0
+        val style = items.getOrNull(skip)
+        if (items.size != skip + (if (style != null) 1 else 0)) {
+            throw StepFailure(
+                "now($arguments) is not understood; write now(), now(+10m), now(-1d, 'HH:mm') or now(+2h, epochMillis)"
+            )
         }
+        val shift =
+            offset?.let {
+                val sign = if (it.groupValues[1] == "-") -1L else 1L
+                sign * it.groupValues[2].toLong() * UNIT_MILLIS.getValue(it.groupValues[3])
+            } ?: 0L
+        val time = deviceTime.value
+        val instant = time.epochMillis + shift
+        return when {
+            style == "epochMillis" -> instant.toString()
+            style == "epochSeconds" -> instant.floorDiv(1000L).toString()
+            style == null -> iso(instant, time.offsetMinutes)
+            style.length >= 2 && style.first() == style.last() && style.first() in "'\"" ->
+                pattern(instant, time.offsetMinutes, style.substring(1, style.length - 1))
+            else ->
+                throw StepFailure(
+                    "now($arguments): the second argument is a quoted pattern, epochMillis or epochSeconds"
+                )
+        }
+    }
+
+    /** The local date and the milliseconds of that day for an instant in a time zone. */
+    private fun localParts(instant: Long, offsetMinutes: Int): Pair<String, Long> {
+        val local = instant + offsetMinutes * MILLIS_PER_MINUTE
+        return Dates.isoDate(local) to local.mod(MILLIS_PER_DAY)
+    }
+
+    private fun iso(instant: Long, offsetMinutes: Int): String {
+        val (date, millisOfDay) = localParts(instant, offsetMinutes)
+        val sign = if (offsetMinutes < 0) "-" else "+"
+        val absolute = if (offsetMinutes < 0) -offsetMinutes else offsetMinutes
+        val seconds = (millisOfDay / 1000).toInt()
+        val time = "${two(seconds / 3600)}:${two(seconds / 60 % 60)}:${two(seconds % 60)}"
+        return "${date}T$time$sign${two(absolute / 60)}:${two(absolute % 60)}"
+    }
+
+    private fun pattern(instant: Long, offsetMinutes: Int, pattern: String): String {
+        val (date, millisOfDay) = localParts(instant, offsetMinutes)
+        val seconds = (millisOfDay / 1000).toInt()
+        return Dates.format(date, pattern, language(), Triple(seconds / 3600, seconds / 60 % 60, seconds % 60))
+    }
+
+    private fun two(value: Int): String {
+        return value.toString().padStart(2, '0')
+    }
+
+    /** Splits at the commas that are not inside quotes. */
+    private fun splitArguments(arguments: String): List<String> {
+        val items = mutableListOf<String>()
+        val current = StringBuilder()
+        var quote: Char? = null
+        for (char in arguments) {
+            if (quote != null) {
+                current.append(char)
+                if (char == quote) quote = null
+            } else if (char == '\'' || char == '"') {
+                quote = char
+                current.append(char)
+            } else if (char == ',') {
+                items += current.toString().trim()
+                current.clear()
+            } else {
+                current.append(char)
+            }
+        }
+        if (current.isNotBlank() || items.isNotEmpty()) items += current.toString().trim()
+        return items
     }
 
     private fun generate(placeholder: String, kind: String, digits: String): String {
@@ -71,6 +168,11 @@ class Variables(
         val RANDOM = Regex("""\$\{random\.(email|uuid|number\((\d+)\))}""")
         val VARIABLE = Regex("""\$\{var\.([A-Za-z0-9_]+)}""")
         val DATE = Regex("""\$\{date\(\s*([+-]?\d+)\s*,\s*(['"])(.*?)\2\s*\)}""")
+        val NOW = Regex("""\$\{now\(((?:[^)'"]|'[^']*'|"[^"]*")*)\)}""")
+        val OFFSET = Regex("""([+-]?)\s*(\d+)\s*([smhd])""")
+        const val MILLIS_PER_MINUTE = 60_000L
+        const val MILLIS_PER_DAY = 86_400_000L
+        val UNIT_MILLIS = mapOf("s" to 1_000L, "m" to MILLIS_PER_MINUTE, "h" to 3_600_000L, "d" to MILLIS_PER_DAY)
     }
 }
 
@@ -132,8 +234,12 @@ object Dates {
         return isoDate((daysFromCivil(year, month, day) + days) * MILLIS_PER_DAY)
     }
 
-    /** Letters of [pattern]: EEEE / EEE weekday, d / dd day, MMMM / MMM / MM / M month, yyyy / yy year. */
-    fun format(isoDate: String, pattern: String, language: String?): String {
+    /**
+     * Letters of [pattern]: EEEE / EEE weekday, d / dd day, MMMM / MMM / MM / M month, yyyy / yy year. With a [time]
+     * (hour, minute, second) also H / HH (0-23), h / hh (1-12), mm minutes, ss seconds and a (AM / PM); without one
+     * those letters are text like any other.
+     */
+    fun format(isoDate: String, pattern: String, language: String?, time: Triple<Int, Int, Int>? = null): String {
         val parts = isoDate.split('-').map { it.toInt() }
         val year = parts[0]
         val month = parts[1]
@@ -164,11 +270,30 @@ object Dates {
                         }
                     )
                 'y' -> builder.append(if (count == 2) (year % 100).toString().padStart(2, '0') else year.toString())
+                'H',
+                'h',
+                'm',
+                's',
+                'a' ->
+                    builder.append(if (time == null) pattern.substring(index, end) else timePart(letter, count, time))
                 else -> builder.append(pattern.substring(index, end))
             }
             index = end
         }
         return builder.toString()
+    }
+
+    private fun timePart(letter: Char, count: Int, time: Triple<Int, Int, Int>): String {
+        fun padded(value: Int): String {
+            return if (count >= 2) value.toString().padStart(2, '0') else value.toString()
+        }
+        return when (letter) {
+            'H' -> padded(time.first)
+            'h' -> padded((time.first + 11) % 12 + 1)
+            'm' -> padded(time.second)
+            's' -> padded(time.third)
+            else -> if (time.first < 12) "AM" else "PM"
+        }
     }
 
     private const val MILLIS_PER_DAY = 86_400_000L

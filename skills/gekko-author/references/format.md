@@ -127,6 +127,8 @@ teardown: [account-cleanup]      # optional flows, run once after the last test
 | `setAirplaneMode` | `{ setAirplaneMode: true }` | Android (API 30 or newer) and the web (the page goes offline); not on iOS simulators. Restored when the test ends. |
 | `setLocation` | `{ setLocation: { latitude: 52.52, longitude: 13.40 } }` | Android emulators, physical Android devices and iOS simulators. A physical Android device (or an emulator with `GEKKO_MOCK_LOCATION=1`) gets the location from the system runner through Android's mock location providers; gekko switches the runner on as the mock location app (`appops`), so nothing has to be set by hand, and ends the mock location when the test ends. |
 | `setPermissions` | `{ setPermissions: { location: allow, notifications: deny } }` | Values are `allow` or `deny`. Names: `location`, `camera`, `microphone`, `notifications`, `contacts`, `calendar`, `photos`; on iOS simulators only `location`, `microphone`, `contacts`, `calendar`, `photos`. On Android a full permission name (`android.permission.CAMERA`) also works. Revoking a permission can restart the app process. |
+| `mock` | `{ mock: { url: "https://api.example.com/v1/profile", file: profile.json } }`<br>`{ mock: { url: "https://api.example.com/v1/profile", status: 503, delayMs: 2000 } }` | Answers the requests of the app that match with a canned response instead of the real backend; the test undoes every mock when it ends. See "Network mocks". |
+| `clearMocks` | `{ clearMocks: true }` | Removes every mock again, so the following requests go to the real backend. |
 | `repeat` | `{ repeat: { times: 3, steps: [ { say: Next page, do: { swipe: { direction: left } } } ] } }`<br>`{ repeat: { while: { visible: { id: Banner.Close } }, max: 5, steps: [...] } }` | Runs the nested steps in a row. Exactly one of `times` and `while`; `while` repeats as long as the condition holds and fails when it still holds after `max` rounds (default 10). |
 | `use` | `{ use: account-login-sign-in, with: { user: qa1 } }` | Runs `flows/<name>.yaml`; `with:` values are strings. |
 
@@ -184,11 +186,12 @@ To prove a scroll worked, assert the target is visible and that something from t
 | `${env.NAME}` | An environment variable. Only names listed in `env:` of `gekko.yaml` work, see below. |
 | `${var.name}` | A text kept by `copyText`. Using it before `copyText` ran fails the step. |
 | `${date(-1, 'EEEE, d. MMMM yyyy')}` | The device's today plus or minus days. Letters: `EEEE`/`EEE` weekday, `d`/`dd` day, `MMMM`/`MMM`/`MM`/`M` month, `yyyy`/`yy` year; everything else is kept. Written in German when the test language is `de`, English otherwise. Android asks the device for its date, an iOS simulator uses the UTC date of the Mac. |
+| `${now(+10m)}` | The device's clock plus or minus a time, as ISO 8601 in the time zone of the device (`2026-11-02T23:40:00+01:00`). The offset is a number and a unit, `s`, `m`, `h` or `d`: `+90s`, `+10m`, `-2h`, `-1d`; `${now()}` is now. A second argument sets the form: a quoted pattern, `${now(+10m, 'HH:mm')}`, or `epochMillis` / `epochSeconds` for a number, `${now(+10m, epochMillis)}`. Pattern letters: the ones of `date()` plus `HH` / `H` (0-23), `hh` / `h` (1-12), `mm`, `ss` and `a` (AM / PM). Android asks the device for its clock (an emulator's clock is often off), an iOS simulator and a browser use the clock and the time zone of the Mac. Made for mock files, see "Network mocks". |
 | `${random.email}` | `gekko-<8 hex>@example.com`. |
 | `${random.number(6)}` | A number of 1 to 18 digits, never starting with 0. |
 | `${random.uuid}` | A version 4 UUID. |
 
-- `${var.x}`, `${date(...)}` and `${random.x}` can be used in the texts of selectors (`text`, `textContains`, `textMatches`), in `type` values, `openLink`, `with:` values and `say`. They are filled in when the step runs. Ids, `within` and `takeScreenshot` names do not take them.
+- `${var.x}`, `${date(...)}`, `${now(...)}` and `${random.x}` can be used in the texts of selectors (`text`, `textContains`, `textMatches`), in `type` values, `openLink`, `with:` values, `say`, and in the `url`, `bodyContains` and `headers` of a `mock` and in the mock files. They are filled in when the step runs. Ids, `within` and `takeScreenshot` names do not take them.
 - A `${random...}` placeholder gives one value per test: the same placeholder written twice is the same value, and the value is printed in the run log (`${random.email} = "gekko-1a2b3c4d@example.com"`) so a failure can be reproduced. A different digit count (`${random.number(4)}`) is a different value.
 - `${env.NAME}` and `${param}` are filled in when the file is loaded, which means `gekko check` also needs the values (process environment or `.env`). A name that is not in `env:`, or a variable that is not set, is an error (exit code 2).
 
@@ -236,6 +239,7 @@ Put it in `gekko.yaml` for all tests or at the top of a test to override it. It 
 | `setLocation` | yes (emulators through the console, physical devices through the system runner) | simulators only | yes |
 | `setPermissions` | all names, or a full permission name | `location`, `microphone`, `contacts`, `calendar`, `photos` | `location`, `camera`, `microphone`, `notifications`, `clipboard` or a Playwright permission name |
 | `checked` | switches, checkboxes, radio buttons | switches and toggle buttons (iOS 17 and later for toggle buttons) | checkboxes, radio buttons, `aria-checked` and `aria-pressed` |
+| `mock`, `clearMocks` | OkHttp and `HttpURLConnection` of a debuggable build with the gekko Gradle plugin, on emulators and devices | everything on `URLSession`, simulators only | every request of the page (not the ones a service worker answers) |
 
 iOS runs on simulators only. Steps that only one platform can do go behind `platform: android`, `platform: ios` or `platform: web` (or a list such as `platform: [android, web]`) so the same file runs everywhere. Platform-only values for an id belong to the same rule: `id: { android: a }` alone needs `platform: android`.
 
@@ -250,6 +254,93 @@ iOS runs on simulators only. Steps that only one platform can do go behind `plat
 - **Dialogs.** A native `alert`, `confirm`, `prompt` or `beforeunload` is the topmost window with the buttons `OK` and `Cancel` (`Leave` and `Stay`): `tap: { text: OK, system: true }`; a prompt takes its text with `type: { id: gekko.dialog.field, value: ... }` first. A step that cannot find its element while a dialog is open says so.
 - **Slow pages.** A page that shows nothing new while a request runs counts as settled after `settleMs`; raise `settleMs` (and `timeout` on the step) for slow backends instead of adding `wait`.
 - **Not available:** URL assertions (assert a text of the new page), native pickers (a `<select>` or a date input is set with `type`), `launchPackage`, `stopPackage`, `tap` with `point`.
+
+## Network mocks
+
+Some backend answers are not easy to provoke: an error, a slow answer, an empty list, data that is only there at some times. A `mock` step makes the app get the answer the test wants, from a file, while everything else still goes to the real backend. The app needs no code for it and no update.
+
+```yaml
+# tests/profile-shows-name.yaml
+name: The profile shows the name
+steps:
+  - say: The backend answers with a known profile          # leading mock: set before the app starts
+    do: { mock: { url: "https://api.example.com/v1/profile", file: profile.json } }
+  - say: Open the profile
+    do: { tap: { id: Home.Tab.Profile } }
+  - say: The name from the file is shown
+    do: { assertVisible: { id: Profile.Name, text: Ada } }
+  - say: Now the backend is down
+    do: { mock: { url: "https://api.example.com/v1/profile", status: 503, delayMs: 2000 } }
+  - say: Reload the profile
+    do: { tap: { id: Profile.Reload } }
+  - say: The error is shown
+    do: { assertVisible: { id: Profile.Error } }
+  - say: Back to the real backend
+    do: { clearMocks: true }
+```
+
+**A test always undoes every mock when it ends**, whether it passed, failed or the app crashed. The next test starts with the real backend again, and `clearMocks` is only needed to go back to it in the middle of a test. The mock is held by the app (and, on the web, by the bridge), never changed on the backend or the device settings.
+
+| Key | Meaning |
+|---|---|
+| `url` | Required. A pattern for the whole URL, query string included: `*` stands for any text (also `/`, `?` and `&`), everything else is literal. `https://api.example.com/v1/items*` matches `/v1/items`, `/v1/items?page=2&sort=name` and `/v1/items/42`. To tell two calls apart by a parameter write it into the pattern (`https://api.example.com/v1/items?*page=2*`); the parameters have to be in that order. |
+| `method` | `GET`, `POST`, `PUT`, `PATCH`, `DELETE`, `HEAD` or `OPTIONS`. Without it every method matches. |
+| `bodyContains` | Text the body of the request has to contain, for APIs that send every call to one URL: `'"operationName":"Profile"'` for a GraphQL operation. Only the first 1 MB of a body is looked at: a larger one (an upload) never matches and goes on to the next mock or the real backend. |
+| `file` | The answer, a file below `mocks/` (`mocksDir` in `gekko.yaml` renames the folder): the body exactly as the backend sends it, so a real response can be pasted in. The extension decides the `Content-Type` (`.json`, `.xml`, `.html`, `.csv`, `.txt`, otherwise `application/octet-stream`). Without `file` the answer has no body, e.g. a bare 503. Text files only, all mocks together up to about 2 MB. |
+| `status` | The HTTP status, `200` by default. |
+| `headers` | More headers of the answer, e.g. `{ Retry-After: "30" }`; a `Content-Type` here wins over the one of the extension. A name has letters, digits and ``!#$%&'*+-.^_`|~`` only, a value printable ASCII only (no line breaks, no umlauts): HTTP clients refuse the rest, so `gekko` refuses it when it reads the test. |
+| `delayMs` | Waits this long before the answer, up to 120000, to see a spinner or a timeout (default 0). |
+
+- **Which mock answers.** Of all mocks that match a request, the one that was set **last** answers, so a later step can override an earlier one. Setting a mock with the same `url`, `method` and `bodyContains` replaces the earlier one. A request that matches no mock goes to the real backend untouched.
+- **Mocks at the start of a test.** Many apps fetch data while they start. Consecutive `mock` steps at the very start of a test (also in the flows of `uses:` or `use` steps that begin the test; steps for other platforms do not break the run) are set **before** gekko starts the app, so even its first request is answered. A `mock` step later takes effect at once in the running app. A step with an `if` or any other action ends the leading run.
+- **Texts in mock files.** The files take the placeholders of tests: `${now(+10m)}` and `${now(+10m, 'HH:mm')}` (a departure in ten minutes, however late the test runs), `${var.name}` (a text kept by `copyText`), `${date(...)}`, `${random.uuid}` and `${env.NAME}` (declared in `env:`). They are filled in when the step runs, and in a `.json` file the values are escaped so that they cannot break it. A placeholder written wrong (`${now(+10x)}`) is reported by `gekko check`, which also reports a missing file.
+
+  ```json
+  { "name": "Ada", "lastSeen": "${now(-5m)}", "lastSeenAt": ${now(-5m, epochMillis)} }
+  ```
+- **What you see.** The log prints every answered request, `mocked GET https://api.example.com/v1/profile → profile.json`, and a mock that no request used is a warning when the test ends (also in the JUnit file as the output of the test): usually a typo in the URL, or an HTTP client gekko cannot reach. The result of the test does not change. `mock` takes no `timeout`, `optional`, `until` or `attempts`; it is limited to a platform with `platform:` like any step.
+- **Launching again.** A new app process knows no mocks, so `launchApp` hands them over again before the app starts. A mock does not survive the app restarting by itself (the system killing it).
+
+### Where mocks work
+
+| Platform | Devices | What it needs |
+|---|---|---|
+| Android | emulators and physical devices | a debuggable build with the gekko Gradle plugin (`networkMocks` is on by default, unless the plugin is told to use an agent of another release) |
+| iOS | simulators only (there is no real-device support at all) | the gekko agent injected into the app (`ios.agentFramework`) |
+| Web | Chromium, Firefox and WebKit | nothing in the page |
+
+A library counts as covered when it makes its requests through one of the covered clients. gekko's own end-to-end tests run OkHttp and `HttpURLConnection` (Android), `URLSession` (iOS) and `fetch` (web); the other names follow from how those libraries send their requests. When a client of yours is not answered, the warning "network mock was never used" at the end of the test tells you.
+
+**Android**
+
+- Works:
+  - **OkHttp** (3.12 up to 5.x) and everything built on it: Retrofit, Apollo Kotlin, Coil, Picasso, Glide with its OkHttp integration, Ktor with the OkHttp engine, React Native.
+  - **`HttpURLConnection`** (`URL.openConnection()` and `URL.openStream()`) in the app and in its libraries: Volley, Glide's default loader, Ktor's Android engine.
+  - HTTP and HTTPS alike: the mock answers before anything goes to the network, so no certificate, proxy or device setting is involved. A mocked OkHttp answer passes the app's own interceptors, so its error handling and logging see it like a real one.
+- Does not work:
+  - Flutter, Cronet, gRPC, Ktor with the CIO engine, WebSocket, networking in native (NDK) code, and any client that opens sockets by itself.
+  - Content inside a `WebView`.
+  - An OkHttp that an app or library repackaged under another package name (not `okhttp3`).
+  - A connection that the app opened before its mock was set.
+- Good to know: the mocks at the start of a test reach the app through its private directory (`run-as`), which needs a debuggable build, the build that has the agent anyway. `gekko { networkMocks.set(false) }` leaves the bytecode of the app alone, and mocks do nothing then.
+
+**iOS simulators**
+
+- Works: everything on **`URLSession`**: `URLSession.shared`, and the default and ephemeral configurations of any session the app creates (also `async`/`await`), so Alamofire, Moya, Apollo iOS, Kingfisher, SDWebImage and React Native work too.
+- Does not work:
+  - `WKWebView` content, Flutter, Cronet, and clients that use sockets or `Network.framework` directly.
+  - Background sessions (`URLSessionConfiguration.background`).
+  - A session whose `protocolClasses` the app replaces itself.
+  - `bodyContains` on a request whose body the app gave as its own `InputStream` (a body set with `httpBody`, the usual JSON or GraphQL case, works).
+- Real iPhones are not supported by gekko.
+
+**Web (Chromium, Firefox, WebKit)**
+
+- Works: every request of the page and its frames, whatever sends it: `fetch`, `XMLHttpRequest`, images, scripts, stylesheets, form posts and navigations. The bridge answers cross-origin requests with the CORS headers the page needs.
+- Does not work:
+  - Requests that a service worker answers or sends.
+  - WebSocket and other streaming connections.
+  - Requests of browser extensions and the browser's own.
 
 ## Healing and the format
 
