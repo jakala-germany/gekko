@@ -61,6 +61,16 @@ Pages that never settle:
 - A page with an endless animation (Lottie, spinner) never gets idle. The Android agent waits at most 500 ms for idle before it looks for the element, so such pages cost no more than that per step.
 - A loading skeleton that is not a progress indicator counts as a settled screen after `settleMs`. Raise `settleMs` for slow networks.
 
+## Panes
+
+A test that repeats `Login.Submit` in thirty places breaks in thirty places. A pane is a screen written once, in `panes/<name>.yaml`: its elements (named selectors, per platform where they differ), its identity (the elements that prove it is shown) and its actions (named steps with params). The rules are in the [format reference](../skills/gekko-author/references/format.md#panes).
+
+![gekko holds up a name tag, login.submit: the tests point at the name, the name points at the button on the screen, and a changed id is fixed once.](img/panes.png)
+
+Panes exist only in the CLI. A reference such as `tap: auth/login.submit` is turned into the plain selector of the platform the step runs on just before the step runs (the keys of the step are added to the element's), so the agents, the protocol and the wire format know nothing about panes and a test written with panes behaves exactly like one with the ids spelled out. That is also why a pane is YAML and not a script: it is read by the strict parser like every other file, so `gekko check` can name an unknown element, an element a platform lacks or a mistyped param without a device.
+
+A pane action starts on its pane: before its steps it waits for the pane's identity, so a test that arrives on the wrong screen fails with `not on pane 'auth/login'` instead of a missing element deep in the action. When a step fails, gekko looks at the screen it already captured and names the panes whose identity holds (`current pane: home`), and the heal report points at the element and the file to change.
+
 ## Network mocks
 
 Some backend answers are hard to provoke (an error, a slow answer, an empty list). A test can say what the backend answers instead, with a `mock` step, and the app needs no code and no update for it. The steps and keys are in the [format reference](../skills/gekko-author/references/format.md#network-mocks), and which clients and platforms are covered is listed under [where mocks work](../skills/gekko-author/references/format.md#where-mocks-work).

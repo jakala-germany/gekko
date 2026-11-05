@@ -12,7 +12,7 @@ internal fun SelectorSpec.resolved(resolve: (String) -> String): SelectorSpec {
 }
 
 internal fun Condition.resolved(resolve: (String) -> String): Condition {
-    return Condition(visible?.resolved(resolve), notVisible?.resolved(resolve))
+    return Condition(visible?.resolved(resolve), notVisible?.resolved(resolve), pane)
 }
 
 internal fun Action.resolved(resolve: (String) -> String): Action {

@@ -1,0 +1,16 @@
+# The screen of the sample app. Tests refer to these names (`sample.greet`), so a renamed id is fixed here once.
+identity: [name, greet]
+elements:
+  name: { id: sample.name }
+  greet: { id: sample.greet }
+  greeting: { id: sample.greeting }
+  remember: { id: sample.remember }
+  remembered: { id: sample.remembered }
+actions:
+  greetPerson:
+    params: [name]
+    steps:
+      - say: Enter the name
+        do: { type: { element: name, value: "${name}" } }
+      - say: Press greet
+        do: { tap: greet }

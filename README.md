@@ -20,6 +20,7 @@ https://github.com/user-attachments/assets/221b71c0-87d5-4141-b0df-c3e5ea8f4fcd
 - **Fast.** On Android and iOS an in-app agent reads the UI tree directly and taps through accessibility actions; on the web a script injected into the page does the same: steps take 10 ms to about 1 s.
 - **Write once.** One test file, shared ids, optional `platform:` on steps (one name or a list), `do` or `until` where the platforms differ.
 - **Reusable flows.** Login or onboarding is defined once and reused with `use:`. A folder with a `group.yaml` makes its tests share one login: the setup flows run once, the tests follow in one session, and a failed setup skips them.
+- **Panes.** A screen is written once, in `panes/login.yaml`: its elements (one selector, or one per platform), what proves it is shown and the actions you do on it. Tests say `tap: login.submit`, `assertPane: login` or `use: login.signIn`, so a renamed id is fixed in one file, not in every test. See [panes](skills/gekko-author/references/format.md#panes).
 - **Mock the backend.** A `mock` step answers the app's network requests from a file instead of the real backend, on Android, iOS simulators and the web: a known profile, an error, a slow answer, an empty list. Nothing changes in the app, and a test undoes every mock when it ends. See [network mocks](skills/gekko-author/references/format.md#network-mocks) and [where they work](skills/gekko-author/references/format.md#where-mocks-work): OkHttp and `HttpURLConnection` on Android, `URLSession` on iOS simulators, every request of the page on the web.
 - **LLM only where it helps.** A tester describes a scenario; Claude (their own subscription) writes and repairs the steps. CI replays the compiled steps, and no model decides whether a test passes.
 - **Self-healing on request.** With `--heal`, a missing id does not fail the run: a model picks the element that fits the step's intent, and a warning lists exactly what was missing and what was used instead.
@@ -136,14 +137,48 @@ steps:
 - `platform:` limits a step to a platform (`android`, `ios`, `web` or a list); ids can be shared or `{ android: a, ios: b, web: c }`.
 - A folder with a `group.yaml` is a group: its `setup:` flows (a login) run once and its tests share that session. Needs gekko 1.2.0.
 
+### Panes
+
+An id that is copied into thirty tests breaks thirty tests. A pane writes a screen once, with its elements, what proves it is shown and the actions you do on it; tests refer to it by name.
+
+```yaml
+# panes/login.yaml
+identity: [title, email]                  # all visible: the login is on screen
+elements:
+  title: { id: Login.Title }
+  email: { id: Login.Email }
+  submit:                                 # one selector per platform, where they differ
+    android: { id: login_submit }
+    ios:     { text: "Sign in" }
+actions:
+  signIn:
+    params: [user]
+    steps:
+      - say: Enter the user
+        do: { type: { element: email, value: "${user}" } }
+      - say: Submit
+        do: { tap: submit }
+```
+
+```yaml
+# tests/login.yaml
+steps:
+  - say: Sign in with the test account          # waits for the login pane first
+    do: { use: login.signIn, with: { user: "${env.TEST_USER}" } }
+  - say: The home screen is shown
+    do: { assertPane: home }
+```
+
+A renamed id is fixed in one file. `gekko check` names an unknown element with a hint and warns about elements nothing uses; a failed step says which element it was and which pane is on screen; `gekko tree` marks the elements it knows. Added after 1.2.0.
+
 Every action, selector, variable and the rules of the format: [Test and flow format](skills/gekko-author/references/format.md).
 
 ## Running tests
 
 ```bash
 gekko devices                              # adb serials, booted simulators and running web sessions
-gekko tree                                 # what is on screen (ids, texts, actions)
-gekko check                                # read all tests and flows, no device needed
+gekko tree                                 # what is on screen (ids, texts, actions, pane elements)
+gekko check                                # read all tests, flows and panes, no device needed
 gekko run                                  # every test on the attached device
 gekko run --tags smoke --junit out.xml     # tagged tests only, with a JUnit file
 gekko run -s firefox                       # a web app in a browser

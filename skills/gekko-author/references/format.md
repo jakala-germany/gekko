@@ -1,6 +1,6 @@
 # Test and flow format
 
-Tests live in `tests/` (any depth), flows in `flows/`; both folders can be renamed with `testsDir` and `flowsDir` in `gekko.yaml`. gekko is strict: an unknown key, a misspelled action, a step with two actions or none, or an id that exists for one platform only is an error when the file is loaded, with a hint (`tapp` gives "did you mean 'tap'?"). `gekko check` reads every test and flow without a device and reports these errors; `gekko run` does the same before it starts anything.
+Tests live in `tests/` (any depth), flows in `flows/`, the screens of the app (panes) in `panes/`; the folders can be renamed with `testsDir`, `flowsDir` and `panesDir` in `gekko.yaml`. gekko is strict: an unknown key, a misspelled action, a step with two actions or none, or an id that exists for one platform only is an error when the file is loaded, with a hint (`tapp` gives "did you mean 'tap'?"). `gekko check` reads every test and flow without a device and reports these errors; `gekko run` does the same before it starts anything.
 
 The format is part of the 1.0 compatibility promise: keys and actions listed here are not removed or renamed in a 1.x release.
 
@@ -91,7 +91,7 @@ teardown: [account-cleanup]      # optional flows, run once after the last test
 | `timeout` | Timeout in ms for this step (`optional` and `if` use their own short look, see below). Not for `use` and `repeat`. |
 | `platform: android\|ios\|web` or a list (`platform: [android, web]`) | Run the step only on that platform or those. Also valid inside `do` and `until`: a `do` for another platform skips the step, an `until` for another platform is dropped, so one step can differ per platform: `until: { platform: ios, assertNotVisible: { id: Search.Spinner } }`. Skipped steps are not logged (`GEKKO_DEBUG=1` lists them). Any other value is an error. |
 | `optional: true` | Skip the step when the element it needs is not there (a banner, a tooltip). gekko looks for `optionalTimeoutMs` (default 500 ms) or the step's own `timeout`, not for the full default timeout. Once the element is there the step is a normal step: a failed `until` or a rejected action still fails. Not for `use` and `repeat`; put those behind an `if`. |
-| `if: { visible: <selector> }` or `if: { notVisible: <selector> }` | The step (also `use` and `repeat`) runs only when the screen shows, or does not show, that element. The look is as short as for `optional`. Exactly one of the two. |
+| `if: { visible: <selector> }`, `if: { notVisible: <selector> }` or `if: { pane: <pane> }` | The step (also `use` and `repeat`) runs only when the screen shows, or does not show, that element, or when the identity of that pane is on screen (see "Panes"). The look is as short as for `optional`. Exactly one of the three. |
 
 **Waiting.** There are no sleeps. The timeout (`defaultTimeoutMs`, 10 s by default) only covers a screen that is still loading. Once the screen is done (nothing changed for `settleMs`, 2.5 s, and no progress indicator is shown) a missing element fails at once. Raise `timeout:` on a step that waits for a slow network call, or `settleMs` for slow backends; do not add `wait`.
 
@@ -110,6 +110,7 @@ teardown: [account-cleanup]      # optional flows, run once after the last test
 | `scrollUntilVisible` | `{ scrollUntilVisible: { id: Search.Result.40, direction: down, maxScrolls: 10, in: { id: Search.List } } }` | Scrolls until the element is completely visible, see "Scrolling". |
 | `swipe` | `{ swipe: { direction: up } }`<br>`{ swipe: { from: { id: Slider.Handle }, direction: right, durationMs: 400 } }`<br>`{ swipe: { start: "50%,80%", end: "50%,20%" } }` | A physical finger gesture, see "Scrolling". |
 | `assertVisible`<br>`assertNotVisible` | `{ assertVisible: { id: Detail.Title, text: "Tent" } }` | Passes when an element that matches is on screen (its center lies inside the window), or when none is. `gekko tree` also lists off-screen rows, so an id in the tree is not proof it is visible. |
+| `assertPane` | `{ assertPane: auth/login }` | Passes when every element of the identity of the pane is visible, see "Panes". Also valid as the `until` of a step. |
 | `waitForAnimationToEnd` | `{ waitForAnimationToEnd: true }` | Waits until the screen stopped changing (same notion of "done" as for missing elements). |
 | `wait` | `{ wait: 500 }` | Fixed pause in ms. Avoid; assert the end state instead. |
 | `back` | `{ back: true }` | System back button (Android) or history back (web). Not on iOS. |
@@ -150,10 +151,94 @@ teardown: [account-cleanup]      # optional flows, run once after the last test
 | `selected` | `true` or `false`: only selected or unselected tabs, chips and segments. |
 | `system` | `true`: use the system runner instead of the in-app agent (permission dialogs, the browser) and wait for the element there. Only `tap`, `doubleTap` and `longPress` take it; `type`, `scroll` and `scrollUntilVisible` reject it when the file is loaded, and the other actions ignore it. |
 | `point` | `"x%,y%"` of the screen, e.g. `"50%,95%"`: taps that spot instead of an element. Only `tap` knows it, on Android only; a last resort for an element without id and text, and no other key is needed. |
+| `element` | An element of a pane, `<pane>.<element>` (`auth/login.submit`): its selector, with the other keys of the step added. A plain string stands for it where a selector is a map (`tap: auth/login.submit`). See "Panes". |
 
-A selector needs at least one of `id`, `text`, `textContains`, `textMatches` or `action` (or, for `tap`, a `point`); `index`, `within`, `enabled`, `checked`, `selected` and `system` only narrow it down or route it. All keys given must match at once.
+A selector needs at least one of `id`, `text`, `textContains`, `textMatches`, `action` or `element` (or, for `tap`, a `point`); `index`, `within`, `enabled`, `checked`, `selected` and `system` only narrow it down or route it. All keys given must match at once.
 
 Prefer ids: they survive copy changes and other device languages. Text selectors are for system UI and third-party screens you cannot tag.
+
+## Panes
+
+A pane is one screen of the app, written once in `panes/<name>.yaml` and used by every test and flow, like the page objects of other test tools. It holds the **elements** of the screen (named selectors), an **identity** (what proves the screen is shown) and **actions** (named steps of that screen). When the app changes you fix the pane, not every test. `panesDir` in `gekko.yaml` renames the folder.
+
+```yaml
+# panes/auth/login.yaml
+identity: [title, email]                     # all of them visible: the login is on screen
+elements:
+  title: { id: Login.Title }
+  email: { id: Login.Email }
+  password: { id: Login.Password }
+  submit:                                    # a whole selector per platform, where they differ
+    android: { id: login_submit }
+    ios:     { text: "Sign in" }
+    web:     { id: login-submit }
+  dialog:    { id: Login.Dialog }
+  dialog.ok: { text: OK, within: dialog }    # dots are only for reading; within names an element of this pane
+actions:
+  signIn:
+    params: [user, password]
+    steps:
+      - say: Enter the user
+        do: { type: { element: email, value: "${user}" } }
+      - say: Enter the password
+        do: { type: { element: password, value: "${password}" } }
+      - say: Submit
+        do: { tap: submit }
+```
+
+| Key | Meaning |
+|---|---|
+| `identity` | Optional list of element names of this pane. The pane is on screen when all of them are visible. |
+| `elements` | Name → selector. A name is letters, digits, `_`, `-` and `.`. A selector has the keys of "Selectors" (not `element` and `point`; `system: true` is fine), or it is one selector per platform: `{ android: {...}, ios: {...}, web: {...} }`. |
+| `actions` | Name → `{ params: [...], steps: [...] }`. The steps are normal steps; a name is letters, digits and `_`. |
+
+The name of a pane is its path below `panes/` without the extension: `panes/checkout/payment.yaml` is `checkout/payment` (letters, digits, `_`, `-`, and `/` for folders). There is no `name:` key, so the name cannot drift from the file.
+
+**Using elements.**
+
+```yaml
+- do: { tap: auth/login.submit }                                       # <pane>.<element>
+- do: { type: { element: auth/login.email, value: "${env.TEST_USER}" } }
+- do: { assertVisible: { element: cart.row, index: 2 } }              # the step adds to the element
+- do: { assertVisible: { element: home.greeting, text: "Hi Ada" } }
+```
+
+- A reference is `<pane>.<element>`: the pane is everything up to the first `.` after the last `/`, the rest is the element, so `checkout/payment.card.number` is the element `card.number` of the pane `checkout/payment`.
+- A plain string is a reference wherever a selector is a map: `tap`, `doubleTap`, `longPress`, `eraseText`, `scroll`, `scrollUntilVisible` (and its `in:`), `assertVisible`, `assertNotVisible`, `swipe.from`, `copyText.from` and the `if` conditions. `type` needs its `value`, so it takes `element:`.
+- `element:` plus other selector keys: the keys of the step are added to the element's (all must match), and where both set the same key the step wins. An `index` of 0 is the default, so it does not replace the `index` of an element. `element:` together with `id:` or `point:` is an error.
+- The element is read for the platform the step runs on. An element that has no selector for a platform where the step runs is an error when the file is loaded, unless `platform:` limits the step (the same rule as an id for one platform only; web counts when `app.web` is set).
+- `within` of an element: a name of another element of the same pane means that element, which must have an id and nothing else (the agents look for an id); any other value is an id, as in a plain selector. `within` in a step stays an id.
+- Inside a pane (its identity, its actions) an element is written without the pane. When a name is an element of the pane and also `<pane>.<element>` of another pane, it is an error; write the one you mean with the pane name or rename one.
+- Elements take `${var.x}`, `${date(...)}` and `${now(...)}` in their texts like any selector, and `${env.NAME}` is filled in when the file is loaded. `${param}` is only for actions.
+
+**Identity.**
+
+```yaml
+- do: { assertPane: auth/login }                 # every element of the identity is visible
+- do: { tap: home.profile }
+  until: { assertPane: profile }                 # the state the step must reach
+- if: { pane: onboarding }                       # a short look, like optional
+  do: { use: onboarding.skip }
+```
+
+A pane without an `identity` cannot be used with `assertPane` or `if: { pane }`.
+
+**Actions.**
+
+```yaml
+- say: Sign in with the test account
+  do: { use: auth/login.signIn, with: { user: "${env.TEST_USER}", password: "${env.TEST_PASSWORD}" } }
+```
+
+- `use: <pane>.<action>` runs it; inside an action of the same pane `use: signIn` is enough. It works in steps, in `uses:` and in the `setup` and `teardown` of a group (an action without params there, like a flow).
+- `with:` gives exactly the params of the action: a missing one and one the action does not declare are errors. `${param}` in the steps is filled in like in a flow; a `${name}` that is not a param of its action breaks the pane when it is read.
+- Before its first step an action **waits for the identity of its pane** (the step timeout): `not on pane 'auth/login': Expected visible: Selector(id=Login.Title)`. A pane without an identity has no wait.
+- A name that is both a flow and an action of a pane is ambiguous and an error. Flows stay for journeys across screens; an action belongs to one screen.
+
+**What gekko tells you.**
+
+- `gekko check` reports an unknown pane, element or action with a hint (`Did you mean 'auth/login.submit'?`), an element without a selector for a platform, a pane file that cannot be read and wrong params. When it checks the whole project it also warns (the exit code stays 0) about elements, actions and panes that nothing uses; an element in an `identity` or the `within` of another element counts as used.
+- A failed step names the element and what it stands for (`element auth/login.submit = Selector(id=login_submit)`) and, when it can tell from the screen, `current pane: home`. The log shows `tap auth/login.submit` for a step without `say`. `gekko tree` marks the lines that are elements of a pane (`<- auth/login.email`) and prints the current pane. The heal report says which element of which pane file to fix.
 
 ## Scrolling and swiping
 
@@ -344,4 +429,4 @@ A library counts as covered when it makes its requests through one of the covere
 
 ## Healing and the format
 
-With `--heal`, a step whose element is missing can pass with a warning. Only these steps are healed: `tap`, `type` and `scroll` (the model picks an existing element; a healed `scroll` scrolls down by the default distance), `assertVisible` (only when its id is nowhere in the tree and its texts and states hold on the screen), and the `until` of a step, checked like an assertion. `doubleTap`, `longPress`, `eraseText`, `scrollUntilVisible`, `swipe` and `assertNotVisible` are never healed. At most 15 heals per test. A `tap` with `system: true` that finds no element is skipped with a warning and an entry in the heal report (no model call): a permission dialog that did not appear is not an error under `--heal`, and the entry also shows up in `--junit-healed`. See `../../gekko-setup/references/cli.md`.
+With `--heal`, a step whose element is missing can pass with a warning. Only these steps are healed: `tap`, `type` and `scroll` (the model picks an existing element; a healed `scroll` scrolls down by the default distance), `assertVisible` (only when its id is nowhere in the tree and its texts and states hold on the screen), and the `until` of a step, checked like an assertion. `doubleTap`, `longPress`, `eraseText`, `scrollUntilVisible`, `swipe` and `assertNotVisible` are never healed. At most 15 heals per test. A `tap` with `system: true` that finds no element is skipped with a warning and an entry in the heal report (no model call): a permission dialog that did not appear is not an error under `--heal`, and the entry also shows up in `--junit-healed`. When the step used an element of a pane, the report names it and its file (`fix: login.submit (panes/login.yaml)`): fix the element there and every test is repaired. See `../../gekko-setup/references/cli.md`.

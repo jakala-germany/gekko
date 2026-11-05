@@ -126,6 +126,51 @@ object PlatformScopeSerializer : KSerializer<PlatformScope> {
     }
 }
 
+/**
+ * A selector written as a map, or as a plain string: a pane element (`tap: auth/login.submit`). Maps keep the strict
+ * reading of the generated serializer.
+ */
+open class ElementShorthandSerializer<T : Any>(
+    name: String,
+    private val delegate: KSerializer<T>,
+    private val ofElement: (String) -> T,
+) : KSerializer<T> {
+    @OptIn(InternalSerializationApi::class)
+    override val descriptor: SerialDescriptor = buildSerialDescriptor(name, SerialKind.CONTEXTUAL)
+
+    override fun deserialize(decoder: Decoder): T {
+        val node = (decoder as? YamlInput)?.node
+        if (node is YamlScalar) {
+            return ofElement(node.content)
+        }
+        return delegate.deserialize(decoder)
+    }
+
+    override fun serialize(encoder: Encoder, value: T) {
+        delegate.serialize(encoder, value)
+    }
+}
+
+object SelectorSpecSerializer :
+    ElementShorthandSerializer<SelectorSpec>("SelectorSpec", SelectorSpec.serializer(), { SelectorSpec(element = it) })
+
+object ScrollSpecSerializer :
+    ElementShorthandSerializer<ScrollSpec>("ScrollSpec", ScrollSpec.serializer(), { ScrollSpec(element = it) })
+
+object ScrollUntilSpecSerializer :
+    ElementShorthandSerializer<ScrollUntilSpec>(
+        "ScrollUntilSpec",
+        ScrollUntilSpec.serializer(),
+        { ScrollUntilSpec(element = it) },
+    )
+
+object LongPressSpecSerializer :
+    ElementShorthandSerializer<LongPressSpec>(
+        "LongPressSpec",
+        LongPressSpec.serializer(),
+        { LongPressSpec(element = it) },
+    )
+
 @Serializable
 data class SelectorSpec(
     val id: PlatformId? = null,
@@ -144,11 +189,13 @@ data class SelectorSpec(
     val point: String? = null,
     /** Only selected (true) or unselected (false) tabs, chips and segments. */
     val selected: Boolean? = null,
+    /** A pane element (`auth/login.submit`) the selector starts from; the other keys narrow it down. */
+    val element: String? = null,
 ) {
     init {
         require(point == null || Points.parse(point) != null) { "point must be like '50%,95%', was '$point'" }
         if (point == null) {
-            requireSelectorCriterion(id, text, textContains, textMatches, action)
+            requireSelectorCriterion(id, text, textContains, textMatches, action, element)
         }
     }
 
@@ -178,9 +225,12 @@ internal fun requireSelectorCriterion(
     textContains: String?,
     textMatches: String?,
     action: String?,
+    element: String? = null,
 ) {
-    require(id != null || text != null || textContains != null || textMatches != null || action != null) {
-        "a selector needs id, text, textContains, textMatches or action; index, within, enabled, checked and selected only narrow it down"
+    require(
+        id != null || text != null || textContains != null || textMatches != null || action != null || element != null
+    ) {
+        "a selector needs id, text, textContains, textMatches, action or element; index, within, enabled, checked and selected only narrow it down"
     }
 }
 
@@ -209,9 +259,11 @@ data class TypeSpec(
     val checked: Boolean? = null,
     val selected: Boolean? = null,
     val value: String,
+    /** A pane element the selector starts from, see [SelectorSpec.element]. */
+    val element: String? = null,
 ) {
     init {
-        requireSelectorCriterion(id, text, textContains, textMatches, action)
+        requireSelectorCriterion(id, text, textContains, textMatches, action, element)
     }
 
     fun selector(platform: Platform): Selector {
@@ -226,6 +278,7 @@ data class TypeSpec(
                 enabled,
                 checked,
                 selected = selected,
+                element = element,
             )
             .toSelector(platform)
     }
@@ -249,9 +302,11 @@ data class ScrollSpec(
     val selected: Boolean? = null,
     val direction: String = ScrollDirection.DOWN,
     val distance: Int = Command.DEFAULT_SCROLL_DP,
+    /** A pane element the selector starts from, see [SelectorSpec.element]. */
+    val element: String? = null,
 ) {
     init {
-        requireSelectorCriterion(id, text, textContains, textMatches, action)
+        requireSelectorCriterion(id, text, textContains, textMatches, action, element)
         requireScrollDirection("scroll", direction)
         require(distance > 0) { "scroll.distance must be positive, was $distance" }
     }
@@ -268,6 +323,7 @@ data class ScrollSpec(
                 enabled,
                 checked,
                 selected = selected,
+                element = element,
             )
             .toSelector(platform)
     }
@@ -288,7 +344,7 @@ private val SWIPE_DIRECTIONS = listOf("up", "down", "left", "right")
 @Serializable
 data class SwipeSpec(
     val direction: String? = null,
-    val from: SelectorSpec? = null,
+    @Serializable(with = SelectorSpecSerializer::class) val from: SelectorSpec? = null,
     val start: String? = null,
     val end: String? = null,
     /** How long the finger takes; sliders that confirm a purchase need a slower swipe than a list. */
@@ -327,10 +383,12 @@ data class ScrollUntilSpec(
     val selected: Boolean? = null,
     val direction: String = ScrollDirection.DOWN,
     val maxScrolls: Int = 10,
-    @SerialName("in") val container: SelectorSpec? = null,
+    @SerialName("in") @Serializable(with = SelectorSpecSerializer::class) val container: SelectorSpec? = null,
+    /** A pane element the selector starts from, see [SelectorSpec.element]. */
+    val element: String? = null,
 ) {
     init {
-        requireSelectorCriterion(id, text, textContains, textMatches, action)
+        requireSelectorCriterion(id, text, textContains, textMatches, action, element)
         requireScrollDirection("scrollUntilVisible", direction)
         require(maxScrolls >= 1) { "scrollUntilVisible.maxScrolls must be at least 1, was $maxScrolls" }
     }
@@ -347,6 +405,7 @@ data class ScrollUntilSpec(
                 enabled,
                 checked,
                 selected = selected,
+                element = element,
             )
             .toSelector(platform)
     }
@@ -367,9 +426,11 @@ data class LongPressSpec(
     val selected: Boolean? = null,
     val holdMs: Long = Command.DEFAULT_HOLD_MS,
     val system: Boolean = false,
+    /** A pane element the selector starts from, see [SelectorSpec.element]. */
+    val element: String? = null,
 ) {
     init {
-        requireSelectorCriterion(id, text, textContains, textMatches, action)
+        requireSelectorCriterion(id, text, textContains, textMatches, action, element)
         require(holdMs > 0) { "longPress.holdMs must be positive, was $holdMs" }
     }
 
@@ -385,6 +446,7 @@ data class LongPressSpec(
                 enabled,
                 checked,
                 selected = selected,
+                element = element,
             )
             .toSelector(platform)
     }
@@ -456,11 +518,17 @@ private const val MAX_MOCK_DELAY_MS = 120_000L
 
 private const val HEADER_NAME_SYMBOLS = "!#\$%&'*+-.^_`|~"
 
-/** A check of the screen: exactly one of [visible] and [notVisible]. */
+/** A check of the screen: exactly one of [visible], [notVisible] and [pane] (the identity of a pane is shown). */
 @Serializable
-data class Condition(val visible: SelectorSpec? = null, val notVisible: SelectorSpec? = null) {
+data class Condition(
+    @Serializable(with = SelectorSpecSerializer::class) val visible: SelectorSpec? = null,
+    @Serializable(with = SelectorSpecSerializer::class) val notVisible: SelectorSpec? = null,
+    val pane: String? = null,
+) {
     init {
-        require((visible == null) != (notVisible == null)) { "a condition needs exactly one of visible and notVisible" }
+        require(listOfNotNull(visible, notVisible, pane).size == 1) {
+            "a condition needs exactly one of visible, notVisible and pane"
+        }
     }
 }
 
@@ -487,7 +555,11 @@ data class RepeatSpec(
  * the first group of that regular expression, or the whole match when it has no group.
  */
 @Serializable
-data class CopyTextSpec(val from: SelectorSpec, val match: String? = null, @SerialName("as") val name: String) {
+data class CopyTextSpec(
+    @Serializable(with = SelectorSpecSerializer::class) val from: SelectorSpec,
+    val match: String? = null,
+    @SerialName("as") val name: String,
+) {
     init {
         require(Regex("[A-Za-z0-9_]+").matches(name)) { "copyText.as must be letters, digits or _, was '$name'" }
     }
@@ -495,25 +567,25 @@ data class CopyTextSpec(val from: SelectorSpec, val match: String? = null, @Seri
 
 @Serializable
 data class Action(
-    val tap: SelectorSpec? = null,
+    @Serializable(with = SelectorSpecSerializer::class) val tap: SelectorSpec? = null,
     val type: TypeSpec? = null,
-    val scroll: ScrollSpec? = null,
+    @Serializable(with = ScrollSpecSerializer::class) val scroll: ScrollSpec? = null,
     val swipe: SwipeSpec? = null,
-    val assertVisible: SelectorSpec? = null,
-    val assertNotVisible: SelectorSpec? = null,
+    @Serializable(with = SelectorSpecSerializer::class) val assertVisible: SelectorSpec? = null,
+    @Serializable(with = SelectorSpecSerializer::class) val assertNotVisible: SelectorSpec? = null,
     val wait: Long? = null,
     val pressKey: String? = null,
     val openLink: String? = null,
     val use: String? = null,
     val with: Map<String, String> = emptyMap(),
     /** Two quick touches on the element. */
-    val doubleTap: SelectorSpec? = null,
+    @Serializable(with = SelectorSpecSerializer::class) val doubleTap: SelectorSpec? = null,
     /** Holds the element pressed, for context menus and drag handles. */
-    val longPress: LongPressSpec? = null,
+    @Serializable(with = LongPressSpecSerializer::class) val longPress: LongPressSpec? = null,
     /** Swipes until the element shows up, for lists longer than the screen. */
-    val scrollUntilVisible: ScrollUntilSpec? = null,
+    @Serializable(with = ScrollUntilSpecSerializer::class) val scrollUntilVisible: ScrollUntilSpec? = null,
     /** Clears a text field. */
-    val eraseText: SelectorSpec? = null,
+    @Serializable(with = SelectorSpecSerializer::class) val eraseText: SelectorSpec? = null,
     /** Presses the system back button (Android). */
     val back: Boolean? = null,
     val repeat: RepeatSpec? = null,
@@ -549,6 +621,8 @@ data class Action(
     val mock: MockSpec? = null,
     /** Removes every network mock again. */
     val clearMocks: Boolean? = null,
+    /** Passes when the identity of this pane (`auth/login`) is on screen: all of its identity elements are visible. */
+    val assertPane: String? = null,
     /**
      * Only on this platform, or these (android, ios, web). A `do` for another platform skips the step, an `until` for
      * another platform is dropped, so one step can differ per platform without being written twice.
@@ -611,6 +685,7 @@ data class Action(
             "setPermissions".takeIf { setPermissions.isNotEmpty() },
             "mock".takeIf { mock != null },
             "clearMocks".takeIf { clearMocks != null },
+            "assertPane".takeIf { assertPane != null },
         )
     }
 
@@ -865,6 +940,8 @@ data class GekkoConfig(
     val tapIntervalMs: Long = 0,
     val testsDir: String = "tests",
     val flowsDir: String = "flows",
+    /** The folder of the pane files: the screens of the app with their elements, identity and actions. */
+    val panesDir: String = "panes",
     /** The folder of the files that `mock` steps answer with. */
     val mocksDir: String = "mocks",
     /**
@@ -911,7 +988,7 @@ fun GekkoConfig.withPathsRelativeTo(root: String): GekkoConfig {
 }
 
 object Yamls {
-    private val yaml = Yaml(configuration = YamlConfiguration(strictMode = true))
+    internal val yaml = Yaml(configuration = YamlConfiguration(strictMode = true))
 
     fun <T> parse(serializer: kotlinx.serialization.DeserializationStrategy<T>, text: String): T {
         try {
@@ -942,7 +1019,7 @@ object Yamls {
         )
 
     /** The valid key that differs from [name] by at most two edits, for a typo like `tapp`. */
-    private fun closest(name: String, valid: Set<String>): String? {
+    internal fun closest(name: String, valid: Set<String>): String? {
         return valid
             .map { it to editDistance(name.lowercase(), it.lowercase()) }
             .filter { it.second <= 2 }
@@ -973,9 +1050,15 @@ object Yamls {
 
     /**
      * Replaces `${key}` with params and `${env.KEY}` with a declared environment variable; `${var.x}`, `${date(...)}`
-     * and `${random.x}` stay for the moment the step runs. Comment lines are left alone.
+     * and `${random.x}` stay for the moment the step runs. Comment lines are left alone. With [keepUnknown] a parameter
+     * that is not given stays as it is (a pane file holds the actions of several callers).
      */
-    fun substitute(text: String, params: Map<String, String>, access: EnvAccess = EnvAccess.NONE): String {
+    fun substitute(
+        text: String,
+        params: Map<String, String>,
+        access: EnvAccess = EnvAccess.NONE,
+        keepUnknown: Boolean = false,
+    ): String {
         val pattern = Regex("""\$\{([A-Za-z0-9_.]+)}""")
         return text.lines().joinToString("\n") { line ->
             if (line.trimStart().startsWith("#")) {
@@ -987,6 +1070,7 @@ object Yamls {
                         // Runtime variables are filled in while the test runs
                         key.startsWith("var.") || key.startsWith("random.") -> match.value
                         key.startsWith("env.") -> quoted(access.value(key.removePrefix("env.")))
+                        keepUnknown && key !in params -> match.value
                         else -> params[key]?.let(::quoted) ?: error("Missing parameter '$key'")
                     }
                 }
