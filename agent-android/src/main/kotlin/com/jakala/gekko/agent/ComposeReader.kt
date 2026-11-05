@@ -119,14 +119,18 @@ internal object ComposeReader {
                 rtl = rtl,
             )
         sink += element
-        node.children.forEach { child ->
-            element.children += readNode(child, element, root, origin, clip, sink, unmerged)
-        }
+        // A lazy list keeps rows that scrolled out of view, but does not place them: their bounds are still the ones
+        // from when they were shown, so they would count as on screen. Compose's own accessibility skips them too.
+        node.children
+            .filter { it.layoutInfo.isPlaced }
+            .forEach { child -> element.children += readNode(child, element, root, origin, clip, sink, unmerged) }
         // A node that merges its descendants (a button, a list row) hides the texts inside it in this tree;
         // accessibility
         // services and other UI-test tools see them as nodes of their own, so they are added below it
         val own = if (unmerged != null && node.config.isMergingSemanticsOfDescendants) unmerged[node.id] else null
-        own?.children?.forEach { child -> element.children += readNode(child, element, root, origin, clip, sink, null) }
+        own?.children
+            ?.filter { it.layoutInfo.isPlaced }
+            ?.forEach { child -> element.children += readNode(child, element, root, origin, clip, sink, null) }
         return element
     }
 
