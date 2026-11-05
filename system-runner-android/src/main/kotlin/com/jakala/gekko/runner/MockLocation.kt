@@ -11,8 +11,8 @@ import java.util.concurrent.TimeUnit
 
 /**
  * The location of a physical device (and of an emulator) through Android's test location providers, the same way Appium
- * and Maestro do it: the providers `gps` and `network` answer with the coordinates of [set] until [clear]. Needs `adb
- * shell appops set <this package> android:mock_location allow`, which the CLI runs; without it [set] throws a
+ * does it: the providers `gps` and `network` answer with the coordinates of [set] until [clear]. Needs `adb shell
+ * appops set <this package> android:mock_location allow`, which the CLI runs; without it [set] throws a
  * [SecurityException].
  */
 internal class MockLocation(context: Context) {
