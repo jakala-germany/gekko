@@ -28,7 +28,7 @@ Without `-s`, Android uses the one attached device, iOS the one booted simulator
 | Command | Purpose |
 |---|---|
 | `gekko devices` | Attached adb devices, booted simulators and running web sessions, one per line: `android <serial>`, `ios <UDID>`, `web <browser>` |
-| `gekko tree [--json]` | The current UI as the active driver sees it: role, `id=`, `text=`, `desc=`, `actions=`, `disabled` |
+| `gekko tree [--json]` | The current UI as the active driver sees it: role, `id=`, `text=`, `desc=`, `actions=`, `disabled`. Lines that are an element of a pane (`panes/`) end with `<- pane.element`, and a last line `current pane: ...` names the panes whose identity is on screen (not with `--json`) |
 | `gekko tap SELECTOR` | Tap an element; when the in-app agent's accessibility tap is not handled, the tap is repeated as a real touch through the system runner |
 | `gekko type SELECTOR "text"` | Type into an element (replaces its text) |
 | `gekko scroll SELECTOR [--direction D] [--distance DP]` | Scroll the container of an element; `--direction` is where the wanted content is: `down` (default), `up`, `start`, `end`, `left`, `right`; `--distance` in dp, points on iOS, CSS pixels on the web (default 400) |
@@ -38,7 +38,7 @@ Without `-s`, Android uses the one attached device, iOS the one booted simulator
 | `gekko uninstall` | Remove the app, the system runner and the port forwards from the device; fails when something is left. Web: stops the browser session |
 | `gekko launch [--fresh]` | Start the app from `gekko.yaml`; `--fresh` clears its data first and grants the configured permissions. Prints `ok` once the agent answers |
 | `gekko run [PATH...] [flags]` | Run YAML tests, see below |
-| `gekko check [FILE...] [--project DIR]` | Read all tests and the flows they use, no device needed: broken YAML, unknown keys, steps with two actions or none, missing flows or parameters, flows that call themselves. Prints `N tests ok` or the problems and exits 2. It reads `${env.NAME}` values, so they must be set |
+| `gekko check [FILE...] [--project DIR]` | Read all tests and the flows they use, no device needed: broken YAML, unknown keys, steps with two actions or none, missing flows or parameters, flows that call themselves, and the panes: unknown panes, elements and actions with a hint, an element without a selector for a platform, a pane file that cannot be read, wrong params of an action. Prints `N tests ok` or the problems and exits 2. For the whole project it also prints `warning:` lines for elements, actions and panes that nothing uses (they do not change the exit code). It reads `${env.NAME}` values, so they must be set |
 | `gekko llm-check [--heal claude\|opencode\|api]` | Ask the model of `--heal` (default `api`) one short question and print the answer, no device needed: tries `GEKKO_LLM_*` or the local CLI. Exit 3 when the model does not answer, 2 when it is not configured |
 | `gekko --version` | The version of the CLI |
 
@@ -142,6 +142,7 @@ optionalTimeoutMs: 500                # how long optional steps, `if` and `repea
 tapIntervalMs: 0                      # minimum pause between taps; only for apps that throttle clicks, e.g. 650
 testsDir: tests
 flowsDir: flows
+panesDir: panes                       # the screens of the app: elements, identity, actions
 mocksDir: mocks                       # the files that `mock` steps answer with
 env: [TEST_USER, TEST_PASSWORD]       # variables tests may read as ${env.NAME}
 ```
@@ -166,6 +167,7 @@ env: [TEST_USER, TEST_PASSWORD]       # variables tests may read as ${env.NAME}
 | `optionalTimeoutMs` | 500 | |
 | `tapIntervalMs` | 0 | |
 | `testsDir`, `flowsDir` | `tests`, `flows` | |
+| `panesDir` | `panes` | The folder of the pane files: the screens of the app with their elements, identity and actions, see [panes](../../gekko-author/references/format.md#panes). |
 | `mocksDir` | `mocks` | The folder of the files that `mock` steps answer with, see [network mocks](../../gekko-author/references/format.md#network-mocks). |
 | `env` | none | Names only, never values. Names starting with `GEKKO_`, `GITHUB_`, `ACTIONS_`, `RUNNER_`, `OP_`, `ANTHROPIC_`, `OPENAI_`, `AWS_`, `SONATYPE_`, `GPG_`, `NPM_` or `SSH_` are refused. |
 

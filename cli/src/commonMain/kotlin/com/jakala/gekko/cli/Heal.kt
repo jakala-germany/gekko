@@ -244,6 +244,8 @@ data class HealRecord(
     val missing: String,
     val applied: String,
     val reason: String,
+    /** The pane elements of the step, `pane.element (file)`: the place to fix when the app changed. */
+    val elements: List<String> = emptyList(),
 )
 
 /**
@@ -327,6 +329,7 @@ object HealReport {
             builder.append("      say:  \"${record.say}\"\n")
             builder.append("      used: ${record.applied}\n")
             if (record.reason.isNotEmpty()) builder.append("      why:  ${record.reason}\n")
+            if (record.elements.isNotEmpty()) builder.append("      fix:  ${record.elements.joinToString("; ")}\n")
         }
         builder.append("Add or fix these ids in the app or the test; healed steps depend on a model's judgement.\n")
         return Masker.mask(builder.toString())
@@ -335,10 +338,13 @@ object HealReport {
     /** For a job summary: the model's words and the app's texts must not become markdown, mentions or HTML. */
     fun markdown(records: List<HealRecord>): String {
         val builder = StringBuilder("# gekko heal report\n\n${records.size} step(s) were healed.\n\n")
-        builder.append("| Test | Missing | say | Used instead | Why |\n|---|---|---|---|---|\n")
+        val fix = records.any { it.elements.isNotEmpty() }
+        builder.append("| Test | Missing | say | Used instead | Why |${if (fix) " Fix in |" else ""}\n")
+        builder.append("|---|---|---|---|---|${if (fix) "---|" else ""}\n")
         records.forEach {
+            val where = if (fix) " ${cell(it.elements.joinToString("; "))} |" else ""
             builder.append(
-                "| ${cell(it.test)} | `${cell(it.missing)}` | ${cell(it.say)} | ${cell(it.applied)} | ${cell(it.reason)} |\n"
+                "| ${cell(it.test)} | `${cell(it.missing)}` | ${cell(it.say)} | ${cell(it.applied)} | ${cell(it.reason)} |$where\n"
             )
         }
         return Masker.mask(builder.toString())

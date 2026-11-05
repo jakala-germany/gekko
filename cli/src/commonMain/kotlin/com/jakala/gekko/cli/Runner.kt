@@ -47,8 +47,24 @@ data class TestResult(
         get() = failure != null && !skipped
 }
 
+/** What a `use:` runs: a flow, or an action of a pane ([pane] is that pane, the scope of its element names). */
+class Callable(val name: String, val steps: List<Step>, val pane: String?)
+
 class Project(val root: String, val config: GekkoConfig) {
     private val access: EnvAccess by lazy { accessFor(root, config) }
+
+    /** The screens of the app: elements, identity and actions, see [Panes]. */
+    val panes: Panes by lazy {
+        Panes("$root/${config.panesDir}", config.panesDir) { path, params ->
+            Yamls.substitute(readTextFile(path), params, access, keepUnknown = true)
+        }
+    }
+
+    /** The platforms a pane reference has to resolve on: web only for a project that tests a web app. */
+    internal val panePlatforms: List<Platform>
+        get() {
+            return if (config.app.web != null) Platform.entries else listOf(Platform.Android, Platform.Ios)
+        }
 
     init {
         // The values must be known to the masker before any test prints something
@@ -91,24 +107,55 @@ class Project(val root: String, val config: GekkoConfig) {
     fun loadGroup(path: String): GroupFile {
         val group = Yamls.parse(GroupFile.serializer(), readTextFile(path))
         // The flows have to exist and (for the web) carry ids for it; a broken one is reported when the file is checked
-        (group.setup + group.teardown).forEach { loadFlow(it, emptyMap()) }
+        (group.setup + group.teardown).forEach { loadCallable(it, emptyMap()) }
         return group
     }
 
     fun loadTest(path: String): TestFile {
         val test = Yamls.parse(TestFile.serializer(), Yamls.substitute(readTextFile(path), emptyMap(), access))
         requireWebIds(test.steps)
+        panes.validate(test.steps, null, panePlatforms)
         return test
     }
 
-    fun loadFlow(name: String, params: Map<String, String>): FlowFile {
+    private fun flowPath(name: String): String? {
         val base = "$root/${config.flowsDir}/$name"
+        return listOf("$base.yaml", "$base.yml").firstOrNull { fileExists(it) }
+    }
+
+    fun loadFlow(name: String, params: Map<String, String>): FlowFile {
         val path =
-            listOf("$base.yaml", "$base.yml").firstOrNull { fileExists(it) }
-                ?: throw StepFailure("Flow '$name' not found in ${config.flowsDir}/")
+            flowPath(name)
+                ?: throw StepFailure("Flow '$name' not found in ${config.flowsDir}/${panes.unknownActionHint(name)}")
         val flow = Yamls.parse(FlowFile.serializer(), Yamls.substitute(readTextFile(path), params, access))
         requireWebIds(flow.steps)
+        panes.validate(flow.steps, null, panePlatforms)
         return flow
+    }
+
+    /**
+     * What `use: [name]` runs: a flow (`flows/<name>.yaml`) or an action of a pane (`<pane>.<action>`, or just
+     * `<action>` inside an action of that pane, the [scope]). A name that could be both is an error.
+     */
+    fun loadCallable(name: String, params: Map<String, String>, scope: String? = null): Callable {
+        val own = scope?.takeIf { panes.hasAction(it, name) }
+        val qualified = panes.splitRef(name)?.takeIf { panes.hasAction(it.first, it.second) }
+        val matches =
+            listOfNotNull(
+                flowPath(name)?.let { "the flow '$name'" },
+                own?.let { "the action '$name' of the pane '$it'" },
+                qualified?.let { "the action '${it.second}' of the pane '${it.first}'" },
+            )
+        require(matches.size <= 1) { "'$name' is ambiguous: ${matches.joinToString(" and ")}; rename one of them" }
+        val pane = own ?: qualified?.first
+        val action = if (own != null) name else qualified?.second
+        if (pane == null || action == null) {
+            return Callable(name, loadFlow(name, params).steps, null)
+        }
+        val steps = panes.action(pane, action, params)
+        requireWebIds(steps)
+        panes.validate(steps, pane, panePlatforms)
+        return Callable("$pane.$action", steps, pane)
     }
 
     /** Puts the declared `${env.NAME}` variables into the text of a mock file; [escape] fits a value to the file. */
@@ -236,6 +283,12 @@ class TestRunner(
         )
     private val settleMs = project.config.settleMs
 
+    /** The pane whose action is running: its element names are written without the pane. */
+    private var scope: String? = null
+
+    /** The pane elements the step that is running refers to, as `pane.element (file)`, for the heal report. */
+    private var stepElements: List<String> = emptyList()
+
     /**
      * Runs one test. A test of a group runs with [keepState] (the app data of the test before stays, a browser keeps
      * its context) and, when another one follows, with [keepSession].
@@ -270,7 +323,7 @@ class TestRunner(
             recording = if (keepState || keepSession) null else startRecording()
             execute(steps, test.timeout ?: project.config.defaultTimeoutMs, outcomes, 0)
         } catch (error: StepFailure) {
-            failure = error.message?.let(Masker::mask)
+            failure = error.message?.let(Masker::mask)?.let { it + currentPanesNote() }
             // A step that fails because the app died is not a failure of the test: say so and count it as the device's
             if (runCatching { device.isAppRunning(project.config) }.getOrNull() == false) {
                 failure = "The app is not running any more (it crashed or was stopped): $failure"
@@ -411,7 +464,8 @@ class TestRunner(
             val resolved = resolve(declared)
             val step =
                 if (resolved.until?.runsOn(platform) == false) resolved.copy(until = null, attempts = 1) else resolved
-            val label = "  ".repeat(depth) + (step.say ?: describe(step.action))
+            val named = declared.elementReferences().isNotEmpty()
+            val label = "  ".repeat(depth) + (step.say ?: describe(if (named) declared.action else step.action))
             val condition = step.condition
             if (condition != null && !holds(condition)) {
                 log("  $label (skipped, condition not met)")
@@ -423,14 +477,24 @@ class TestRunner(
             val use = step.action.use
             val repeat = step.action.repeat
             if (use != null) {
-                val flow = project.loadFlow(use, step.action.with)
-                execute(flow.steps, timeout, outcomes, depth + 1)
+                val callable = project.loadCallable(use, step.action.with, scope)
+                val outer = scope
+                scope = callable.pane
+                try {
+                    callable.pane?.let { requireOnPane(it, timeout) }
+                    execute(callable.steps, timeout, outcomes, depth + 1)
+                } finally {
+                    scope = outer
+                }
             } else if (repeat != null) {
                 repeatSteps(repeat, timeout, outcomes, depth)
-            } else if (step.optional) {
-                performOptional(step, timeout)
             } else {
-                performHealing(step, step.timeout ?: timeout)
+                stepElements = qualifiedElements(declared)
+                try {
+                    if (step.optional) performOptional(step, timeout) else performHealing(step, step.timeout ?: timeout)
+                } catch (failure: StepFailure) {
+                    throw naming(failure, declared)
+                }
             }
             if (use == null && repeat == null && mocks.isActive) pullMockHits()
             val duration = nowMillis() - started
@@ -440,12 +504,64 @@ class TestRunner(
     }
 
     private fun resolve(step: Step): Step {
-        return step.copy(
-            say = step.say?.let(variables::resolve),
-            action = step.action.resolved(variables::resolve),
-            until = step.until?.resolved(variables::resolve),
-            condition = step.condition?.resolved(variables::resolve),
+        val expanded = PaneExpander(project.panes, platform, scope).step(step)
+        return expanded.copy(
+            say = expanded.say?.let(variables::resolve),
+            action = expanded.action.resolved(variables::resolve),
+            until = expanded.until?.resolved(variables::resolve),
+            condition = expanded.condition?.resolved(variables::resolve),
         )
+    }
+
+    /** The panes whose identity is on screen now, as a line for a failure message; empty without panes. */
+    private suspend fun currentPanesNote(): String {
+        val current = currentPanes(null)
+        return if (current.isEmpty()) "" else "\n    current pane: ${current.joinToString(", ")}"
+    }
+
+    private suspend fun currentPanes(known: List<UiNode>?): List<String> {
+        if (project.panes.isEmpty) return emptyList()
+        val windows = known ?: runCatching { (drivers.send(Command.Tree) as? Response.TreeResult)?.windows }.getOrNull()
+        return windows?.let { project.panes.current(it, platform) }.orEmpty()
+    }
+
+    /** `pane.element (panes/pane.yaml)` for every pane element a step refers to. */
+    private fun qualifiedElements(declared: Step): List<String> {
+        return declared.elementReferences().distinct().map { reference ->
+            val found = runCatching { project.panes.resolveElement(reference, scope) }.getOrNull()
+            if (found == null) reference
+            else "${found.qualified} (${project.panes.pathOf(found.pane).removePrefix("${project.root}/")})"
+        }
+    }
+
+    /** A failure of a step that used pane elements says which, and what they stand for on this platform. */
+    private fun naming(failure: StepFailure, declared: Step): StepFailure {
+        val expander = PaneExpander(project.panes, platform, scope)
+        val lines =
+            declared.elementReferences().distinct().mapNotNull { reference ->
+                val found =
+                    runCatching { project.panes.resolveElement(reference, scope) }.getOrNull() ?: return@mapNotNull null
+                val selector = runCatching { expander.elementSpec(found).toSelector(platform) }.getOrNull()
+                "    element ${found.qualified} = ${selector ?: "?"}"
+            }
+        if (lines.isEmpty()) return failure
+        return StepFailure("${failure.message}\n${lines.joinToString("\n")}", failure.inUntil)
+    }
+
+    /** An action of a pane starts on that pane: when it has an identity the action waits for it first. */
+    private suspend fun requireOnPane(pane: String, timeout: Long) {
+        if (project.panes.pane(pane).identity.isEmpty()) return
+        assertPane(pane, timeout, settle = true)
+    }
+
+    private suspend fun assertPane(pane: String, timeout: Long, settle: Boolean) {
+        for (selector in project.panes.identity(pane, platform)) {
+            try {
+                assertVisible(selector, timeout, true, settle)
+            } catch (failure: StepFailure) {
+                throw StepFailure("not on pane '$pane': ${failure.message}")
+            }
+        }
     }
 
     private suspend fun repeatSteps(repeat: RepeatSpec, timeout: Long, outcomes: MutableList<StepOutcome>, depth: Int) {
@@ -472,7 +588,12 @@ class TestRunner(
 
     /** Looks at the screen briefly: a condition is about something that may well not be there. */
     private suspend fun holds(condition: Condition): Boolean {
-        val resolved = condition.resolved(variables::resolve)
+        val expanded = PaneExpander(project.panes, platform, scope).condition(condition)
+        val resolved = expanded.resolved(variables::resolve)
+        val pane = resolved.pane
+        if (pane != null) {
+            return project.panes.identity(pane, platform).all { glimpse(it, true) }
+        }
         val spec = resolved.visible ?: resolved.notVisible ?: return false
         return glimpse(spec.toSelector(platform), resolved.visible != null)
     }
@@ -625,7 +746,9 @@ class TestRunner(
             return true
         }
         val windows = (drivers.send(Command.Tree) as? Response.TreeResult)?.windows ?: return false
-        val tree = TreePrinter.print(windows)
+        val paneLine =
+            currentPanes(windows).takeIf { it.isNotEmpty() }?.let { "Current pane: ${it.joinToString(", ")}\n" }
+        val tree = paneLine.orEmpty() + TreePrinter.print(windows)
         val kind =
             when {
                 action.tap != null -> "tap"
@@ -734,7 +857,7 @@ class TestRunner(
 
     private fun record(say: String, missing: String, applied: String, reason: String) {
         log("    healed: $applied")
-        heals += HealRecord(currentTest, say, missing, applied, reason)
+        heals += HealRecord(currentTest, say, missing, applied, reason, stepElements)
     }
 
     private fun describeMissing(action: Action): String? {
@@ -874,6 +997,7 @@ class TestRunner(
                 }
             action.mock != null -> setMock(action.mock)
             action.clearMocks == true -> clearMocks()
+            action.assertPane != null -> assertPane(action.assertPane, timeout, settle)
             else -> throw StepFailure("Step has no action")
         }
     }
@@ -1365,7 +1489,7 @@ class TestRunner(
      * the app, so that requests made while the app starts are answered too. A step that needs the screen (or is
      * conditional) ends the run of leading steps; a step for another platform is not part of it.
      */
-    private fun leadingMockSteps(steps: List<Step>): Pair<List<Step>, Boolean> {
+    private fun leadingMockSteps(steps: List<Step>, inScope: String? = null): Pair<List<Step>, Boolean> {
         val found = mutableListOf<Step>()
         for (declared in steps) {
             if (!declared.runsOn(platform) || !declared.action.runsOn(platform)) continue
@@ -1382,8 +1506,8 @@ class TestRunner(
             if (step.action.mock != null) {
                 found += declared
             } else if (use != null) {
-                val flow = project.loadFlow(use, step.action.with)
-                val (inner, more) = leadingMockSteps(flow.steps)
+                val callable = project.loadCallable(use, step.action.with, inScope)
+                val (inner, more) = leadingMockSteps(callable.steps, callable.pane)
                 found += inner
                 if (!more) return found to false
             } else {
@@ -1487,18 +1611,24 @@ class TestRunner(
 
     private fun describe(action: Action): String {
         return when {
-            action.tap != null -> "tap ${action.tap.point?.let { "point $it" } ?: action.tap.toSelector(platform)}"
-            action.type != null -> "type into ${action.type.id ?: action.type.text}"
+            action.tap != null ->
+                "tap ${action.tap.point?.let { "point $it" } ?: action.tap.element ?: action.tap.toSelector(platform)}"
+            action.type != null -> "type into ${action.type.element ?: action.type.id ?: action.type.text}"
             action.scroll != null -> "scroll"
             action.swipe != null -> "swipe ${action.swipe.direction ?: "between points"}"
-            action.assertVisible != null -> "assert visible ${action.assertVisible.toSelector(platform)}"
-            action.assertNotVisible != null -> "assert not visible ${action.assertNotVisible.toSelector(platform)}"
+            action.assertVisible != null ->
+                "assert visible ${action.assertVisible.element ?: action.assertVisible.toSelector(platform)}"
+            action.assertNotVisible != null ->
+                "assert not visible ${action.assertNotVisible.element ?: action.assertNotVisible.toSelector(platform)}"
+            action.assertPane != null -> "assert pane ${action.assertPane}"
             action.wait != null -> "wait ${action.wait}ms"
             action.pressKey != null -> "press ${action.pressKey}"
             action.openLink != null -> "open ${action.openLink}"
             action.use != null -> "use ${action.use}"
-            action.doubleTap != null -> "double tap ${action.doubleTap.id ?: action.doubleTap.text}"
-            action.longPress != null -> "long press ${action.longPress.id ?: action.longPress.text}"
+            action.doubleTap != null ->
+                "double tap ${action.doubleTap.element ?: action.doubleTap.id ?: action.doubleTap.text}"
+            action.longPress != null ->
+                "long press ${action.longPress.element ?: action.longPress.id ?: action.longPress.text}"
             action.scrollUntilVisible != null -> "scroll until visible"
             action.eraseText != null -> "erase text"
             action.back == true -> "press back"
@@ -1538,13 +1668,16 @@ class TestRunner(
 }
 
 object TreePrinter {
-    fun print(windows: List<UiNode>): String {
+    /**
+     * One line per element that has an id, a text or an action. [label] adds a note to a line, e.g. the pane element.
+     */
+    fun print(windows: List<UiNode>, label: (UiNode) -> String? = { null }): String {
         val builder = StringBuilder()
-        windows.forEach { append(builder, it, 0) }
+        windows.forEach { append(builder, it, 0, label) }
         return builder.toString()
     }
 
-    private fun append(builder: StringBuilder, node: UiNode, depth: Int) {
+    private fun append(builder: StringBuilder, node: UiNode, depth: Int, label: (UiNode) -> String?) {
         val interesting =
             node.id != null ||
                 !node.text.isNullOrEmpty() ||
@@ -1561,11 +1694,12 @@ object TreePrinter {
                     ?.let { builder.append(" desc=\"").append(it).append('"') }
                 if (node.actions.isNotEmpty()) builder.append(" actions=").append(node.actions.joinToString(","))
                 if (!node.enabled) builder.append(" disabled")
+                label(node)?.let { builder.append("  <- ").append(it) }
                 builder.append('\n')
                 depth + 1
             } else {
                 depth
             }
-        node.children.forEach { append(builder, it, nextDepth) }
+        node.children.forEach { append(builder, it, nextDepth, label) }
     }
 }

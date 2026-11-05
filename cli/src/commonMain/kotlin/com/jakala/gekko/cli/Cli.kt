@@ -242,13 +242,21 @@ private class TreeCommand : DeviceCommand("tree") {
     }
 
     override fun run() {
-        withDrivers { drivers, _, _ ->
+        withDrivers { drivers, _, project ->
             val response = drivers.send(Command.Tree)
             if (response !is Response.TreeResult) fail("Unexpected response: $response", ExitCode.INFRASTRUCTURE)
-            echo(
-                if (json) treeJson.encodeToString(ListSerializer(UiNode.serializer()), response.windows)
-                else TreePrinter.print(response.windows)
-            )
+            if (json) {
+                echo(treeJson.encodeToString(ListSerializer(UiNode.serializer()), response.windows))
+                return@withDrivers
+            }
+            // The elements of the panes that match a line are named, and so is the pane that is on screen
+            val elements = project.panes.selectors(platform)
+            val label = { node: UiNode ->
+                elements.filter { it.second.matches(node) }.joinToString(", ") { it.first.qualified }.ifEmpty { null }
+            }
+            echo(TreePrinter.print(response.windows, label))
+            val current = project.panes.current(response.windows, platform)
+            if (current.isNotEmpty()) echo("current pane: ${current.joinToString(", ")}")
         }
     }
 }
@@ -813,12 +821,14 @@ private class CheckCommand : CliktCommand(name = "check") {
 
     override fun run() {
         val project = Project.load(root)
-        val problems = Checker.check(project, files)
-        if (problems.isEmpty()) {
+        val report = Checker.report(project, files)
+        if (report.problems.isEmpty()) {
             echo("${project.testFiles(files).size} tests ok")
+            report.warnings.forEach { echo("warning: $it", err = true) }
             return
         }
-        problems.forEach { echo(it, err = true) }
+        report.problems.forEach { echo(it, err = true) }
+        report.warnings.forEach { echo("warning: $it", err = true) }
         exitProcess(ExitCode.USAGE)
     }
 }

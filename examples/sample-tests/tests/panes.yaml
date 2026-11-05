@@ -1,0 +1,16 @@
+name: Panes name the elements of a screen
+tags: [smoke, panes]
+steps:
+  - say: The sample screen is shown
+    do: { assertPane: sample }
+  - say: Greet Ada
+    do: { use: sample.greetPerson, with: { name: Ada } }
+  - say: The greeting is visible; the step adds its own text to the element
+    do: { assertVisible: { element: sample.greeting, text: "Hello Ada" } }
+  - say: Let the page remember the name
+    platform: web
+    do: { tap: sample.remember }
+    until: { assertVisible: { element: sample.remembered, text: "Remembered: Ada" } }
+  - say: Say hello again when the sample screen is shown
+    if: { pane: sample }
+    do: { tap: sample.greet }
