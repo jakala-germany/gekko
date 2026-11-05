@@ -36,6 +36,19 @@ fun runProcess(
     return result
 }
 
+/**
+ * Runs [command] with the short limit [timeoutSeconds] and once more when that runs out. For a call that is normally
+ * instant but hangs now and then (seen with `simctl terminate` on a freshly booted CI simulator): it costs
+ * [timeoutSeconds], not the whole [PROCESS_TIMEOUT_SECONDS]. A second time out fails like [runProcess] does.
+ */
+fun runProcessRetrying(command: List<String>, timeoutSeconds: Int): ProcessResult {
+    return try {
+        runProcess(command, timeoutSeconds = timeoutSeconds)
+    } catch (error: InfrastructureException) {
+        runProcess(command, timeoutSeconds = timeoutSeconds)
+    }
+}
+
 expect fun env(name: String): String?
 
 expect fun readTextFile(path: String): String

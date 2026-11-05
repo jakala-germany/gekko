@@ -11,6 +11,7 @@
 **Changed**
 
 - A test whose app process is gone right after its start (on Android the late end of the `pm clear` before it killed the new process, so the agent never answered) starts the app once more instead of failing with "In-process agent did not respond"
+- iOS simulators: `simctl terminate` gets 30 seconds and one more try instead of 300 seconds, so a call that hangs on a freshly booted simulator no longer fails the first test of a run
 - Upcoming changes go here
 
 ## [1.3.0]

@@ -40,7 +40,12 @@ class SimctlDevice(private val requestedUdid: String?) : Device {
     }
 
     override fun terminate(config: GekkoConfig) {
-        simctl("terminate", udid, bundleId(config))
+        terminateApp(bundleId(config))
+    }
+
+    /** `simctl terminate` answers at once; one that hangs is asked again instead of holding the run for 300 s. */
+    private fun terminateApp(bundle: String) {
+        runProcessRetrying(listOf("xcrun", "simctl", "terminate", udid, bundle), TERMINATE_TIMEOUT_SECONDS)
     }
 
     override fun setDarkMode(enabled: Boolean): () -> Unit {
@@ -65,7 +70,7 @@ class SimctlDevice(private val requestedUdid: String?) : Device {
 
     override fun clearData(config: GekkoConfig) {
         val bundle = bundleId(config)
-        simctl("terminate", udid, bundle)
+        terminateApp(bundle)
         val container = simctl("get_app_container", udid, bundle, "data").text
         if (container.startsWith("/")) {
             runProcess(listOf("find", container, "-mindepth", "1", "-delete"))
@@ -80,7 +85,7 @@ class SimctlDevice(private val requestedUdid: String?) : Device {
         val removed = mutableListOf<String>()
         val bundles = listOf(bundleId(config), RUNNER_HOST_BUNDLE, RUNNER_TESTS_BUNDLE)
         for (bundle in bundles.filter { isInstalled(it) }) {
-            simctl("terminate", udid, bundle)
+            terminateApp(bundle)
             val result = simctl("uninstall", udid, bundle)
             check(result.exitCode == 0) { "Uninstalling $bundle failed: ${result.text}" }
             removed += bundle
@@ -277,6 +282,8 @@ class SimctlDevice(private val requestedUdid: String?) : Device {
     }
 
     companion object {
+        /** Terminating an app takes a second at most; a call that takes longer hangs. */
+        const val TERMINATE_TIMEOUT_SECONDS = 30
         const val RUNNER_HOST_BUNDLE = "com.jakala.gekko.runnerhost"
         const val RUNNER_TESTS_BUNDLE = "com.jakala.gekko.runneruitests.xctrunner"
 
