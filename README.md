@@ -21,7 +21,7 @@ https://github.com/user-attachments/assets/221b71c0-87d5-4141-b0df-c3e5ea8f4fcd
 - **Write once.** One test file, shared ids, optional `platform:` on steps (one name or a list), `do` or `until` where the platforms differ.
 - **Reusable flows.** Login or onboarding is defined once and reused with `use:`. A folder with a `group.yaml` makes its tests share one login: the setup flows run once, the tests follow in one session, and a failed setup skips them.
 - **Panes.** A screen is written once, in `panes/login.yaml`: its elements (one selector, or one per platform), what proves it is shown and the actions you do on it. Tests say `tap: login.submit`, `assertPane: login` or `use: login.signIn`, so a renamed id is fixed in one file, not in every test. See [panes](skills/gekko-author/references/format.md#panes).
-- **Mock the backend.** A `mock` step answers the app's network requests from a file instead of the real backend, on Android, iOS simulators and the web: a known profile, an error, a slow answer, an empty list. Nothing changes in the app, and a test undoes every mock when it ends. See [network mocks](skills/gekko-author/references/format.md#network-mocks) and [where they work](skills/gekko-author/references/format.md#where-mocks-work): OkHttp and `HttpURLConnection` on Android, `URLSession` on iOS simulators, every request of the page on the web.
+- **Mock the backend.** A `mock` step answers the app's network requests from a file instead of the real backend, on Android, iOS simulators and the web: a known profile, an error, a slow answer, an empty list. Nothing changes in the app, and a test undoes every mock when it ends. See [network mocks](skills/gekko-author/references/format.md#network-mocks) and [where they work](skills/gekko-author/references/format.md#where-mocks-work): OkHttp and `HttpURLConnection` on Android, `URLSession` on iOS simulators, every request of the page on the web. Needs gekko 1.3.0.
 - **LLM only where it helps.** A tester describes a scenario; Claude (their own subscription) writes and repairs the steps. CI replays the compiled steps, and no model decides whether a test passes.
 - **Self-healing on request.** With `--heal`, a missing id does not fail the run: a model picks the element that fits the step's intent, and a warning lists exactly what was missing and what was used instead.
 
@@ -169,7 +169,7 @@ steps:
     do: { assertPane: home }
 ```
 
-A renamed id is fixed in one file. `gekko check` names an unknown element with a hint and warns about elements nothing uses; a failed step says which element it was and which pane is on screen; `gekko tree` marks the elements it knows. Added after 1.2.0.
+A renamed id is fixed in one file. `gekko check` names an unknown element with a hint and warns about elements nothing uses; a failed step says which element it was and which pane is on screen; `gekko tree` marks the elements it knows. Needs gekko 1.3.0.
 
 Every action, selector, variable and the rules of the format: [Test and flow format](skills/gekko-author/references/format.md).
 

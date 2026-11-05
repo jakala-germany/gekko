@@ -2,7 +2,19 @@
 
 ## [Snapshot]
 
-[Snapshot]: https://github.com/jakala-germany/gekko/compare/1.2.0...HEAD
+[Snapshot]: https://github.com/jakala-germany/gekko/compare/1.3.0...HEAD
+
+**New**
+
+- Upcoming additions go here
+
+**Changed**
+
+- Upcoming changes go here
+
+## [1.3.0]
+
+[1.3.0]: https://github.com/jakala-germany/gekko/compare/1.2.0...1.3.0
 
 **New**
 
@@ -18,7 +30,6 @@
 **Changed**
 
 - Android: the agent no longer reports rows of a lazy list that scrolled out of view as on screen. Compose keeps them in its tree without placing them, so their old positions made `assertNotVisible` on a scrolled-away row fail (seen on Android 15 and 16 emulators)
-- Upcoming changes go here
 
 ## [1.2.0]
 
