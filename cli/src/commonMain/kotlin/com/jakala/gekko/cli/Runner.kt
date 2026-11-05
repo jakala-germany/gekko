@@ -263,6 +263,8 @@ class TestRunner(
     private val suggestIds: Boolean = false,
     /** Which tests keep a video of the screen. */
     private val record: RecordMode = RecordMode.None,
+    /** How long a started app may take to answer. */
+    private val agentStartTimeoutMs: Long = AGENT_START_TIMEOUT_MS,
 ) {
     private val heals = mutableListOf<HealRecord>()
     private var rotated = false
@@ -449,10 +451,26 @@ class TestRunner(
 
     private suspend fun freshStart(settings: DeviceSettings, keepState: Boolean, beforeLaunch: () -> Unit) {
         restoreSettings = device.freshStart(project.config, settings, keepState, beforeLaunch)
-        if (!drivers.waitForAgent(AGENT_START_TIMEOUT_MS)) {
+        if (!drivers.waitForAgent(agentStartTimeoutMs) && !startAppAgain()) {
             throw InfrastructureException("In-process agent did not respond; is the gekko agent part of this build?")
         }
-        drivers.waitForForeground(AGENT_START_TIMEOUT_MS)
+        drivers.waitForForeground(agentStartTimeoutMs)
+    }
+
+    /**
+     * An app process that is killed right after its start never answers (on Android the late end of the `pm clear`
+     * before it did that), so an app that is gone is started once more. False when the app still runs, or when the
+     * device cannot tell, or when it does not answer the second time either.
+     */
+    private suspend fun startAppAgain(): Boolean {
+        if (runCatching { device.isAppRunning(project.config) }.getOrNull() != false) return false
+        log("  (the app is not running, starting it again)")
+        onDevice {
+            // A new app process knows nothing of the mocks: it gets them again before it starts
+            if (mocks.isActive) handOverMocks()
+            device.launch(project.config)
+        }
+        return drivers.waitForAgent(agentStartTimeoutMs)
     }
 
     private suspend fun execute(steps: List<Step>, timeout: Long, outcomes: MutableList<StepOutcome>, depth: Int) {
@@ -1091,10 +1109,10 @@ class TestRunner(
             if (mocks.isActive) handOverMocks()
             device.launch(project.config, spec.arguments)
         }
-        if (!drivers.waitForAgent(AGENT_START_TIMEOUT_MS)) {
+        if (!drivers.waitForAgent(agentStartTimeoutMs)) {
             throw StepFailure("In-process agent did not respond after launching the app")
         }
-        drivers.waitForForeground(AGENT_START_TIMEOUT_MS)
+        drivers.waitForForeground(agentStartTimeoutMs)
     }
 
     private suspend fun takeScreenshot(name: String) {

@@ -7,13 +7,16 @@ import com.jakala.gekko.protocol.Response
 internal class FakeClient(private val answer: suspend (Command) -> Response) : CommandClient {
     val received = mutableListOf<Command>()
 
+    /** Whether the client answers yet; evaluated on every check. */
+    var reachable: () -> Boolean = { true }
+
     override suspend fun send(command: Command): Response {
         received += command
         return answer(command)
     }
 
     override suspend fun isReachable(): Boolean {
-        return true
+        return reachable()
     }
 
     override fun close() {}

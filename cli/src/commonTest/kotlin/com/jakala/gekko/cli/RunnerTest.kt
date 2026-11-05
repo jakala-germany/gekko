@@ -47,6 +47,7 @@ class RunnerTest {
         healer: Healer? = null,
         device: FakeDevice = FakeDevice(supportsWaitFor = true),
         system: FakeClient = FakeClient { Response.Ok },
+        agentStartTimeoutMs: Long = 20_000L,
     ): TestRunner {
         val drivers = Drivers(device, GekkoConfig(), agent = client, system = system)
         return TestRunner(
@@ -58,6 +59,7 @@ class RunnerTest {
             { log += it },
             healer = healer,
             suggestIds = suggestIds,
+            agentStartTimeoutMs = agentStartTimeoutMs,
         )
     }
 
@@ -667,6 +669,77 @@ class RunnerTest {
                     )
 
             assertEquals("Expected visible: Selector(id=Next.Screen)", result.failure)
+        }
+    }
+
+    private val killedStartTest =
+        """
+        name: Killed start
+        steps:
+          - say: Look at the screen
+            do: { assertVisible: { id: Search.Button.Large } }
+        """
+
+    @Test
+    fun anAppThatIsGoneRightAfterItsStartIsStartedOnce() {
+        runTest {
+            val device = FakeDevice(supportsWaitFor = true, appRunning = false)
+            // The first process is killed: only the second one answers
+            val client = FakeClient { command ->
+                when (command) {
+                    Command.Foreground -> Response.ForegroundResult(true)
+                    else -> Response.Ok
+                }
+            }
+            client.reachable = { device.events.count { it == "launch" } >= 2 }
+            val log = mutableListOf<String>()
+
+            val result =
+                runner(
+                        Platform.Android,
+                        client,
+                        suggestIds = false,
+                        log = log,
+                        device = device,
+                        agentStartTimeoutMs = 200,
+                    )
+                    .run(test(killedStartTest), "tests/killed.yaml")
+
+            assertNull(result.failure)
+            assertEquals(listOf("launch", "launch"), device.events)
+            assertTrue(log.any { it.contains("starting it again") })
+        }
+    }
+
+    @Test
+    fun anAppThatStillRunsButDoesNotAnswerIsNotStartedAgain() {
+        runTest {
+            val device = FakeDevice(supportsWaitFor = true, appRunning = true)
+            val client = FakeClient { Response.Ok }
+            client.reachable = { false }
+
+            val result =
+                runner(Platform.Android, client, suggestIds = false, device = device, agentStartTimeoutMs = 200)
+                    .run(test(killedStartTest), "tests/killed.yaml")
+
+            assertEquals("In-process agent did not respond; is the gekko agent part of this build?", result.failure)
+            assertEquals(listOf("launch"), device.events)
+        }
+    }
+
+    @Test
+    fun anAppThatIsGoneAgainAfterTheSecondStartFails() {
+        runTest {
+            val device = FakeDevice(supportsWaitFor = true, appRunning = false)
+            val client = FakeClient { Response.Ok }
+            client.reachable = { false }
+
+            val result =
+                runner(Platform.Android, client, suggestIds = false, device = device, agentStartTimeoutMs = 200)
+                    .run(test(killedStartTest), "tests/killed.yaml")
+
+            assertEquals("In-process agent did not respond; is the gekko agent part of this build?", result.failure)
+            assertEquals(listOf("launch", "launch"), device.events)
         }
     }
 }
