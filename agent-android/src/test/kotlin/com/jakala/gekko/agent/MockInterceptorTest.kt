@@ -12,17 +12,20 @@ import kotlin.test.assertNull
 import kotlin.test.assertTrue
 import okhttp3.Interceptor
 import okhttp3.MediaType
-import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
 import okhttp3.Protocol
 import okhttp3.Request
 import okhttp3.RequestBody
-import okhttp3.RequestBody.Companion.toRequestBody
 import okhttp3.Response
-import okhttp3.ResponseBody.Companion.toResponseBody
 import okio.Buffer
 import okio.BufferedSink
+import org.junit.Assume.assumeTrue
 
+/**
+ * Runs against the OkHttp of the build and again against every OkHttp minor from 3.12 (see `testOkHttpVersions` in
+ * build.gradle.kts), so it only calls what all of them have: no `toMediaType()`, `toRequestBody()` or
+ * `toResponseBody()`, which are OkHttp 4 and later.
+ */
 class MockInterceptorTest {
     @AfterTest
     fun noMocksAreLeft() {
@@ -70,7 +73,7 @@ class MockInterceptorTest {
                 .protocol(Protocol.HTTP_1_1)
                 .code(200)
                 .message("OK")
-                .body("real".toResponseBody("text/plain".toMediaType()))
+                .body(MockBody("real".encodeToByteArray(), "text/plain"))
                 .build()
         }
     }
@@ -111,7 +114,8 @@ class MockInterceptorTest {
         val response = get(client(network), "https://api.example.com/routes?from=A&to=B")
 
         assertEquals(201, response.code)
-        assertEquals("yes", response.header("X-Mocked"))
+        // Both arguments: the default one is a method that OkHttp 3 does not have
+        assertEquals("yes", response.header("X-Mocked", null))
         assertEquals("application/json", response.body!!.contentType().toString())
         assertEquals("""{"routes":[]}""", response.body!!.string())
         assertEquals(0, network.requests)
@@ -156,12 +160,7 @@ class MockInterceptorTest {
         assertEquals("real", get(client, "https://api.example.com/routes").body!!.string())
         val post =
             client
-                .newCall(
-                    Request.Builder()
-                        .url("https://api.example.com/routes")
-                        .post("{}".toRequestBody("application/json".toMediaType()))
-                        .build()
-                )
+                .newCall(Request.Builder().url("https://api.example.com/routes").post(TextBody("{}")).build())
                 .execute()
         assertEquals("mocked", post.body!!.string())
         assertEquals(1, network.requests)
@@ -184,7 +183,7 @@ class MockInterceptorTest {
         val client = client(network)
 
         fun post(text: String): String {
-            val body = text.toRequestBody("application/json".toMediaType())
+            val body = TextBody(text)
             val request = Request.Builder().url("https://api.example.com/graphql").post(body).build()
             return client.newCall(request).execute().body!!.string()
         }
@@ -246,6 +245,23 @@ class MockInterceptorTest {
         assertTrue(derived.interceptors[1] === app)
     }
 
+    /** A body that is a text, with the length known beforehand. */
+    private class TextBody(text: String) : RequestBody() {
+        private val bytes = text.encodeToByteArray()
+
+        override fun contentType(): MediaType? {
+            return null
+        }
+
+        override fun contentLength(): Long {
+            return bytes.size.toLong()
+        }
+
+        override fun writeTo(sink: BufferedSink) {
+            sink.write(bytes)
+        }
+    }
+
     /** A body of [parts] times 100 kB whose length nobody knows beforehand, like a streamed upload. */
     private class StreamedBody(private val parts: Int, private val oneShot: Boolean = false) : RequestBody() {
         var written = 0
@@ -272,7 +288,7 @@ class MockInterceptorTest {
     fun aBodyOverTheLimitIsNotLookedAtAndStillReachesTheNetworkWhole() {
         GekkoMocks.set(listOf(rule("m1", "https://api.example.com/*", body = "x", bodyContains = "needle")))
         val network = Network()
-        val upload = ("a".repeat(2_000_000) + "needle").toRequestBody("text/plain".toMediaType())
+        val upload = TextBody("a".repeat(2_000_000) + "needle")
 
         val response = post(client(network), upload)
 
@@ -294,6 +310,8 @@ class MockInterceptorTest {
 
     @Test
     fun aBodyThatCanBeSentOnlyOnceIsLeftForTheNetwork() {
+        // One-shot bodies came with OkHttp 3.14; before that every body can be sent twice
+        assumeTrue(RequestBody::class.java.methods.any { it.name == "isOneShot" })
         GekkoMocks.set(listOf(rule("m1", "https://api.example.com/*", body = "x", bodyContains = "aaa")))
         val network = Network()
         val upload = StreamedBody(parts = 1, oneShot = true)
