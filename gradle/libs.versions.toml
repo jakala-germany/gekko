@@ -1,7 +1,7 @@
 # Every version of the root build, the Gradle plugin and build-logic lives here. The three builds read this one file.
 [versions]
 kotlin = "2.4.21"
-agp = "9.5.0"
+agp = "9.5.1"
 vanniktech-maven-publish = "0.36.0"
 ktfmt-gradle = "0.27.0"
 kotlinx-serialization = "1.12.0"
