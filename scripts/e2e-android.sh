@@ -29,7 +29,10 @@ adb install -r sample-android/build/outputs/apk/debug/sample-android-debug.apk
 
 # Every test that is expected to pass, with a junit file
 "$GEKKO" run --project examples/sample-tests --exclude-tags broken,ios-only,web-only \
-  --junit "$OUT/junit.xml" --output "$OUT/results"
+  --junit "$OUT/junit.xml" --output "$OUT/results" 2>&1 | tee "$OUT/run.log"
+
+# A drag moves the list exactly as far as the finger, a fast swipe flings it, a slow one does not
+./scripts/check-touches.sh "$OUT/run.log"
 
 # The system runner keeps time: this test forces it to hold three long presses of 900 ms and to swipe and drag. It takes
 # a few seconds; while the runner stepped through UiDevice.swipe it took far more than the bound (#31)

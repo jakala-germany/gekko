@@ -1,0 +1,12 @@
+name: The system runner holds a spot of an element
+tags: [touches]
+steps:
+  - say: The target waits for a gesture
+    platform: [android, ios]
+    do: { assertVisible: { id: sample.gesture.result, text: "Gesture: none" } }
+  - say: Hold the center of the target with a real touch
+    platform: [android, ios]
+    do: { longPress: { id: sample.gesture, point: "50%,50%", holdMs: 900, system: true } }
+  - say: The app saw a long press
+    platform: [android, ios]
+    do: { assertVisible: { id: sample.gesture.result, text: "Gesture: long press" } }

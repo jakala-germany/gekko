@@ -1,0 +1,21 @@
+name: A short swipe flings the list on and a long one does not
+tags: [touches, exactness]
+# A slow swipe moves the list about as far as the finger, a fast one of the same length flings it on much further.
+# scripts/check-touches.sh compares the two distances that this test logs.
+steps:
+  - say: A slow swipe of 10 percent of the screen, 1000 ms
+    platform: [android, ios]
+    do: { swipe: { start: "11%,90%", end: "11%,80%", durationMs: 1000 } }
+  - platform: [android, ios]
+    do: { wait: 1000 }
+  - say: Read how far the list is scrolled
+    platform: [android, ios]
+    do: { copyText: { from: { id: sample.list.offset }, match: "\\d+", as: agentSlow } }
+  - say: A fast swipe of the same length, 100 ms
+    platform: [android, ios]
+    do: { swipe: { start: "11%,90%", end: "11%,80%", durationMs: 100 } }
+  - platform: [android, ios]
+    do: { wait: 4000 }
+  - say: Read how far the list is scrolled now
+    platform: [android, ios]
+    do: { copyText: { from: { id: sample.list.offset }, match: "\\d+", as: agentFast } }

@@ -1,0 +1,9 @@
+name: A long press holds a spot of an element
+tags: [touches]
+steps:
+  - say: The target waits for a gesture
+    do: { assertVisible: { id: sample.gesture.result, text: "Gesture: none" } }
+  - say: Hold the center of the target by its position
+    do: { longPress: { id: sample.gesture, point: "50%,50%", holdMs: 900 } }
+  - say: The app saw a long press
+    do: { assertVisible: { id: sample.gesture.result, text: "Gesture: long press" } }

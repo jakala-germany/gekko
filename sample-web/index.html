@@ -24,7 +24,10 @@
     <span data-testid="sample.location" id="location">Location: unknown</span>
   </div>
   <div id="gesture" data-testid="sample.gesture">Gesture target</div>
-  <div data-testid="sample.gesture.result" id="gesture-result">Gesture: none</div>
+  <div class="row">
+    <div data-testid="sample.gesture.result" id="gesture-result">Gesture: none</div>
+    <span data-testid="sample.list.offset" id="list-offset">Scroll: 0</span>
+  </div>
   <div class="row">
     <button data-testid="sample.confirm" id="confirm">Confirm</button>
     <span data-testid="sample.confirm.result" id="confirm-result">Confirm: none</span>
@@ -50,6 +53,9 @@
       row.textContent = 'Row ' + i
       list.appendChild(row)
     }
+
+    // How far the list is scrolled, in pixels: the end-to-end tests of the native samples compare what a drag moved
+    list.addEventListener('scroll', () => { $('list-offset').textContent = 'Scroll: ' + Math.round(list.scrollTop) })
 
     $('greet').addEventListener('click', () => { $('greeting').textContent = 'Hello ' + $('name').value })
 

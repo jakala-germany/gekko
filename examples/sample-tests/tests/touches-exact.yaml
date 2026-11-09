@@ -1,0 +1,22 @@
+name: A drag moves the list exactly as far as the finger
+tags: [touches, exactness]
+# The sample shows how far its list is scrolled. After a drag of 10 percent of the screen and one of 20 percent, the list
+# must be scrolled 3 times as far as after the first: a drag that loses the touch slop (about 8 dp) every time ends short
+# of that. scripts/check-touches.sh compares the two values that this test logs.
+steps:
+  - say: Drag by 10 percent of the screen
+    platform: [android, ios]
+    do: { drag: { start: "11%,90%", end: "11%,80%" } }
+  - platform: [android, ios]
+    do: { wait: 500 }
+  - say: Read how far the list is scrolled
+    platform: [android, ios]
+    do: { copyText: { from: { id: sample.list.offset }, match: "\\d+", as: agentTen } }
+  - say: Drag by 20 percent of the screen
+    platform: [android, ios]
+    do: { drag: { start: "11%,90%", end: "11%,70%" } }
+  - platform: [android, ios]
+    do: { wait: 500 }
+  - say: Read how far the list is scrolled now
+    platform: [android, ios]
+    do: { copyText: { from: { id: sample.list.offset }, match: "\\d+", as: agentThirty } }
