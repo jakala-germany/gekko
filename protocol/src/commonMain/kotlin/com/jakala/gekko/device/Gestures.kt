@@ -27,22 +27,33 @@ object Gestures {
     /**
      * The movement of a finger that drags the content under the start to the end. A scroll container follows the finger
      * only after it moved the touch slop ([slop] in pixels), so the finger goes that far beyond the end, on the line of
-     * the drag. The caller lets it rest for [DRAG_REST_MS] at the last position before it lifts: it then has no speed
-     * and the content stops where the finger stops.
+     * the drag. It gets slower towards the end: Android resamples touches and guesses where a moving finger is a few
+     * milliseconds from now, which would carry the content past the end of a finger that stops abruptly. The caller
+     * lets it rest for [DRAG_REST_MS] at the last position before it lifts: it then has no speed and the content stops
+     * where the finger stops.
      */
     fun dragPath(fromX: Int, fromY: Int, toX: Int, toY: Int, slop: Float): List<TouchPoint> {
         val dx = (toX - fromX).toFloat()
         val dy = (toY - fromY).toFloat()
         val length = sqrt(dx * dx + dy * dy)
         val beyond = if (length == 0f) 0f else slop / length
-        return line(fromX.toFloat(), fromY.toFloat(), toX + dx * beyond, toY + dy * beyond, DRAG_MOVE_MS)
+        return line(fromX.toFloat(), fromY.toFloat(), toX + dx * beyond, toY + dy * beyond, DRAG_MOVE_MS, true)
     }
 
-    private fun line(fromX: Float, fromY: Float, toX: Float, toY: Float, durationMs: Long): List<TouchPoint> {
+    /** [slowingDown]: the finger gets slower until it stands still at the end, like a finger that is about to rest. */
+    private fun line(
+        fromX: Float,
+        fromY: Float,
+        toX: Float,
+        toY: Float,
+        durationMs: Long,
+        slowingDown: Boolean = false,
+    ): List<TouchPoint> {
         val total = durationMs.coerceAtLeast(0)
         val steps = (total / MOVE_INTERVAL_MS).toInt().coerceAtLeast(1)
         return (1..steps).map { step ->
-            val fraction = step / steps.toFloat()
+            val elapsed = step / steps.toFloat()
+            val fraction = if (slowingDown) 1f - (1f - elapsed) * (1f - elapsed) else elapsed
             TouchPoint(fromX + (toX - fromX) * fraction, fromY + (toY - fromY) * fraction, total * step / steps)
         }
     }

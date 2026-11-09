@@ -53,10 +53,12 @@ class GesturesTest {
     }
 
     @Test
-    fun aDragMovesStraightToTheOvershoot() {
+    fun aDragMovesStraightToTheOvershootAndSlowsDown() {
         val path = Gestures.dragPath(0, 0, 0, 1000, slop = 20f)
         val speeds = path.zipWithNext().map { (a, b) -> (b.y - a.y) / (b.atMs - a.atMs) }
         assertTrue(speeds.all { it > 0f })
+        assertTrue(speeds.zipWithNext().all { (a, b) -> b < a }, "the finger gets slower with every step")
+        assertTrue(speeds.last() < 0.2f, "the last step is almost still: ${speeds.last()} px/ms")
         assertEquals(1020f, path.last().y, 0.001f)
     }
 
