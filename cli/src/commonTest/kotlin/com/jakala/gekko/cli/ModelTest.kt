@@ -398,8 +398,18 @@ class ModelTest {
         assertFailsWith<Exception> { Yamls.parse(Step.serializer(), "do: { drag: { start: 'top', end: '50%,30%' } }") }
         assertFailsWith<Exception> { Yamls.parse(Step.serializer(), "do: { drag: { start: '50%,80%', end: 'x' } }") }
         assertFailsWith<Exception> { Yamls.parse(Step.serializer(), "do: { longPress: { point: 'middle' } }") }
-        // A spot or an element, not both
-        assertFailsWith<Exception> { Yamls.parse(Step.serializer(), "do: { longPress: { point: '50%,50%', id: a } }") }
+        assertFailsWith<Exception> { Yamls.parse(Step.serializer(), "do: { longPress: { point: '50%,50%,1%' } }") }
+    }
+
+    @Test
+    fun aLongPressSpotLiesInAnElementWhenOneIsNamed() {
+        val inElement =
+            Yamls.parse(Step.serializer(), "do: { longPress: { id: Map, point: '25%,75%' } }").action.longPress
+        val onScreen = Yamls.parse(Step.serializer(), "do: { longPress: { point: '25%,75%' } }").action.longPress
+
+        assertTrue(inElement?.namesElement() == true)
+        assertEquals("25%,75%", inElement?.point)
+        assertTrue(onScreen?.namesElement() == false)
     }
 
     @Test

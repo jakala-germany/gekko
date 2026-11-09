@@ -738,7 +738,7 @@ class TestRunner(
             return it.selector(platform)
         }
         action.longPress?.let {
-            return if (it.point == null) it.toSelector(platform) else null
+            return if (it.namesElement()) it.toSelector(platform) else null
         }
         action.doubleTap?.let {
             return it.toSelector(platform)
@@ -1419,26 +1419,31 @@ class TestRunner(
         expectOk(response)
     }
 
-    /** Where the element is on screen, once it is visible: the center of the first one the selector means. */
-    private suspend fun centerOf(from: SelectorSpec, timeout: Long): Pair<Int, Int> {
-        val selector = from.toSelector(platform)
+    /** Where the element is on screen, once it is visible: the bounds of the first one the selector means. */
+    private suspend fun boundsOf(selector: Selector, timeout: Long): Bounds {
         assertVisible(selector, timeout, true)
         val windows = (drivers.send(Command.Tree) as? Response.TreeResult)?.windows.orEmpty()
         val node =
             windows
                 .flatMap { window -> window.findAll(selector).filter { it.isOnScreen(window.bounds) } }
                 .getOrNull(selector.index) ?: throw StepFailure("Element not found: $selector")
-        return node.bounds.centerX to node.bounds.centerY
+        return node.bounds
     }
 
-    /** A long press of an element, or of a spot of the screen. */
+    private suspend fun centerOf(from: SelectorSpec, timeout: Long): Pair<Int, Int> {
+        val bounds = boundsOf(from.toSelector(platform), timeout)
+        return bounds.centerX to bounds.centerY
+    }
+
+    /** A long press of an element, of a spot of an element, or of a spot of the screen. */
     private suspend fun longPress(spec: LongPressSpec, timeout: Long) {
         val point = spec.point
         if (point == null) {
             touchGesture(Command.LongPress(spec.toSelector(platform), spec.holdMs, timeout, settleMs), spec.system)
             return
         }
-        val (x, y) = pointOf(screenBounds(), point)
+        val area = if (spec.namesElement()) boundsOf(spec.toSelector(platform), timeout) else screenBounds()
+        val (x, y) = pointOf(area, point)
         touchGesture(Command.LongPressAt(x, y, spec.holdMs), spec.system)
     }
 
@@ -1688,7 +1693,9 @@ class TestRunner(
                 "double tap ${action.doubleTap.element ?: action.doubleTap.id ?: action.doubleTap.text}"
             action.longPress != null -> {
                 val target = action.longPress
-                "long press ${target.point?.let { "point $it" } ?: target.element ?: target.id ?: target.text}"
+                val name = target.element ?: target.id ?: target.text
+                val at = target.point
+                "long press ${if (at == null) name else if (name == null) "point $at" else "$name at $at"}"
             }
             action.scrollUntilVisible != null -> "scroll until visible"
             action.eraseText != null -> "erase text"
