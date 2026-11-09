@@ -15,7 +15,7 @@ Thank you for your interest in gekko. Issues, pull requests and ideas are welcom
 | Android agent, system runner, sample app | Android SDK (`ANDROID_HOME`), an emulator for the end-to-end run |
 | iOS agent, system runner, sample app | macOS, Xcode, `brew install xcodegen` |
 | Web agent (`agent-web/`), web end-to-end run | Node.js 18 or newer; `./scripts/e2e-web.sh` installs Playwright and the browsers |
-| Windows binary (`mingwX64`) | Any host links it (Kotlin/Native cross-compiles); its tests run on Windows only (`./gradlew.bat :cli:mingwX64Test`, or `./gradlew` in Git Bash) |
+| Windows binary (`mingwX64`) | Any host links it (Kotlin/Native cross-compiles); its tests run on Windows only (`./gradlew.bat :cli:mingwX64Test`, or `./gradlew` in Git Bash). The JVM tests of the CLI (`:cli:jvmTest`) are for macOS and Linux: Java quotes the arguments of a program its own way on Windows |
 
 ```bash
 ./gradlew ktfmtCheck :protocol:jvmTest :cli:jvmTest :transport-jvm:test
