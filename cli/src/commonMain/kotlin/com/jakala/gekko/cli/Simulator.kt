@@ -4,6 +4,14 @@ package com.jakala.gekko.cli
 class SimctlDevice(private val requestedUdid: String?) : Device {
     private val udid: String by lazy { requestedUdid ?: singleBootedUdid() }
 
+    init {
+        if (isWindowsHost) {
+            throw ConfigurationException(
+                "iOS simulators need a Mac with Xcode; from Windows gekko drives Android devices and web browsers"
+            )
+        }
+    }
+
     // Simulators share the host's loopback, so each one gets its own deterministic port pair.
     override fun agentPort(config: GekkoConfig): Int {
         return agentPort()
@@ -290,6 +298,9 @@ class SimctlDevice(private val requestedUdid: String?) : Device {
         const val RUNNER_TESTS_BUNDLE = "com.jakala.gekko.runneruitests.xctrunner"
 
         fun bootedUdids(): List<String> {
+            if (isWindowsHost) {
+                return emptyList()
+            }
             val pattern = Regex("\\(([0-9A-Fa-f-]{36})\\) \\(Booted\\)")
             return runProcess(listOf("xcrun", "simctl", "list", "devices", "booted")).text.lines().mapNotNull {
                 pattern.find(it)?.groupValues?.get(1)
