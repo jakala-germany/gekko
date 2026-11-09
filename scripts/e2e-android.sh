@@ -6,6 +6,7 @@ cd "$(dirname "$0")/.."
 
 case "$(uname -s)" in
   Darwin) DEFAULT_GEKKO=cli/build/bin/macosArm64/releaseExecutable/gekko.kexe ;;
+  MINGW* | MSYS* | CYGWIN*) DEFAULT_GEKKO=cli/build/bin/mingwX64/releaseExecutable/gekko.exe ;;
   *) DEFAULT_GEKKO=cli/build/bin/linuxX64/releaseExecutable/gekko.kexe ;;
 esac
 GEKKO="${GEKKO:-$DEFAULT_GEKKO}"

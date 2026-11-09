@@ -1,12 +1,13 @@
 #!/bin/bash
 # Runs examples/sample-tests in Chromium, Firefox and WebKit with the freshly built CLI; used by CI, works locally too.
-# Needs: ./gradlew :cli:linkReleaseExecutableLinuxX64 (or :macosArm64) and Node.js 18 or newer.
+# Needs: ./gradlew :cli:linkReleaseExecutableLinuxX64 (or :macosArm64, :mingwX64 in Git Bash on Windows) and Node.js 18+.
 # GEKKO_WEB_WITH_DEPS=1 also installs the system libraries of the browsers (Linux CI).
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
 case "$(uname -s)" in
   Darwin) DEFAULT_GEKKO=cli/build/bin/macosArm64/releaseExecutable/gekko.kexe ;;
+  MINGW* | MSYS* | CYGWIN*) DEFAULT_GEKKO=cli/build/bin/mingwX64/releaseExecutable/gekko.exe ;;
   *) DEFAULT_GEKKO=cli/build/bin/linuxX64/releaseExecutable/gekko.kexe ;;
 esac
 GEKKO="${GEKKO:-$DEFAULT_GEKKO}"
