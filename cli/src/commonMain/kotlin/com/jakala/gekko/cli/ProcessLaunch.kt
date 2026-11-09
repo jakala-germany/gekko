@@ -149,7 +149,16 @@ internal fun batchArgument(argument: String): String {
 
 /** The file that [command] starts, found like the system finds it on `PATH`, or null. */
 fun findOnPath(command: String): String? {
-    return findProgram(command, isWindowsHost, env("PATH"), env("PATHEXT"), ::fileExists)
+    return findProgram(command, isWindowsHost, env("PATH"), env("PATHEXT"), ::isExecutableFile)
+}
+
+/** How [command] is started on this host; null when the program is not there. */
+internal fun launchOf(command: List<String>): Launch? {
+    return try {
+        planLaunch(command, isWindowsHost, ::env, ::isExecutableFile)
+    } catch (error: IllegalArgumentException) {
+        throw InfrastructureException(error.message ?: "cannot start ${command.first()}")
+    }
 }
 
 internal fun findProgram(

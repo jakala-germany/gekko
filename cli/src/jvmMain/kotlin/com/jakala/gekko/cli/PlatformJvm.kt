@@ -17,14 +17,6 @@ actual val isWindowsHost: Boolean = System.getProperty("os.name").orEmpty().star
 
 private val nullDevice = File(if (isWindowsHost) "NUL" else "/dev/null")
 
-private fun launchOf(command: List<String>): Launch? {
-    return try {
-        planLaunch(command, isWindowsHost, ::env, ::fileExists)
-    } catch (error: IllegalArgumentException) {
-        throw InfrastructureException(error.message ?: "cannot start ${command.first()}")
-    }
-}
-
 actual fun executeProcess(request: ProcessRequest): ProcessOutcome {
     val launch =
         launchOf(request.command)
@@ -84,6 +76,11 @@ actual fun spawnDetached(command: List<String>, environment: Map<String, String>
     builder.redirectOutput(ProcessBuilder.Redirect.appendTo(File(logFile)))
     builder.redirectErrorStream(true)
     return runCatching { builder.start() }.isSuccess
+}
+
+actual fun isExecutableFile(path: String): Boolean {
+    val file = File(path)
+    return file.isFile && (isWindowsHost || file.canExecute())
 }
 
 actual fun currentProcessId(): Long {

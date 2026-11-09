@@ -189,6 +189,25 @@ class ProcessTest {
     }
 
     @Test
+    fun aFolderOrAMissingFileIsNoExecutableFile() {
+        assertFalse(isExecutableFile(tempDirectory()))
+        assertFalse(isExecutableFile("${tempDirectory()}/gekko-no-such-file"))
+    }
+
+    @Test
+    fun aPlainFileCanBeExecutedOnWindowsOnly() {
+        val directory = createPrivateDirectory("gekko-exec-test")
+        try {
+            val file = "$directory/plain.txt"
+            writeTextFile(file, "text")
+
+            assertEquals(isWindowsHost, isExecutableFile(file))
+        } finally {
+            removeRecursively(directory)
+        }
+    }
+
+    @Test
     fun theTemporaryDirectoryAndTheHomeAreUsablePaths() {
         assertTrue(tempDirectory().isNotEmpty())
         assertFalse(tempDirectory().endsWith("/"))

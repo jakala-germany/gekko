@@ -7,6 +7,7 @@ import com.jakala.gekko.host.gekko_getcwd
 import com.jakala.gekko.host.gekko_getenv
 import com.jakala.gekko.host.gekko_init_host
 import com.jakala.gekko.host.gekko_is_alive
+import com.jakala.gekko.host.gekko_is_executable_file
 import com.jakala.gekko.host.gekko_pid
 import com.jakala.gekko.host.gekko_random_bytes
 import com.jakala.gekko.host.gekko_restrict_to_owner
@@ -22,6 +23,7 @@ import kotlinx.cinterop.CPointer
 import kotlinx.cinterop.CPointerVar
 import kotlinx.cinterop.IntVar
 import kotlinx.cinterop.LongVar
+import kotlinx.cinterop.MemScope
 import kotlinx.cinterop.addressOf
 import kotlinx.cinterop.alloc
 import kotlinx.cinterop.allocArray
@@ -101,6 +103,10 @@ actual fun restrictToOwner(path: String) {
     }
 }
 
+actual fun isExecutableFile(path: String): Boolean {
+    return gekko_is_executable_file(native(path)) != 0
+}
+
 actual fun currentProcessId(): Long {
     return gekko_pid()
 }
@@ -113,27 +119,22 @@ private fun notFound(program: String): ProcessOutcome {
     return ProcessOutcome(127, "cannot run '$program': No such file or directory".encodeToByteArray(), false)
 }
 
-private fun launchOf(command: List<String>): Launch? {
-    return try {
-        planLaunch(command, isWindowsHost, ::env, ::fileExists)
-    } catch (error: IllegalArgumentException) {
-        throw InfrastructureException(error.message ?: "cannot start ${command.first()}")
-    }
+/** A NULL-terminated `char **` for the C functions. */
+private fun MemScope.argv(values: List<String>): CPointer<CPointerVar<ByteVar>> {
+    val array = allocArray<CPointerVar<ByteVar>>(values.size + 1)
+    values.forEachIndexed { index, value -> array[index] = value.cstr.getPointer(this) }
+    array[values.size] = null
+    return array
+}
+
+/** The environment of a call as NULL-terminated name, value, name, value, ... */
+private fun MemScope.environmentPairs(environment: Map<String, String>): CPointer<CPointerVar<ByteVar>> {
+    return argv(environment.flatMap { (name, value) -> listOf(name, value) })
 }
 
 actual fun executeProcess(request: ProcessRequest): ProcessOutcome {
     val launch = launchOf(request.command) ?: return notFound(request.command.first())
     return memScoped {
-        val argv = allocArray<CPointerVar<ByteVar>>(launch.argv.size + 1)
-        launch.argv.forEachIndexed { index, value -> argv[index] = value.cstr.getPointer(this) }
-        argv[launch.argv.size] = null
-        val pairs = allocArray<CPointerVar<ByteVar>>(request.environment.size * 2 + 1)
-        var next = 0
-        for ((name, value) in request.environment) {
-            pairs[next++] = name.cstr.getPointer(this)
-            pairs[next++] = value.cstr.getPointer(this)
-        }
-        pairs[next] = null
         val output = alloc<CPointerVar<ByteVar>>()
         val length = alloc<LongVar>()
         val exitCode = alloc<IntVar>()
@@ -141,9 +142,9 @@ actual fun executeProcess(request: ProcessRequest): ProcessOutcome {
         val status =
             gekko_run(
                 native(launch.application),
-                argv,
+                argv(launch.argv),
                 launch.commandLine,
-                pairs,
+                environmentPairs(request.environment),
                 request.workingDirectory?.let { native(it) },
                 input?.refTo(0),
                 input?.size?.toLong() ?: 0L,
@@ -166,16 +167,12 @@ actual fun executeProcess(request: ProcessRequest): ProcessOutcome {
 actual fun spawnDetached(command: List<String>, environment: Map<String, String>, logFile: String): Boolean {
     val launch = launchOf(command) ?: return false
     return memScoped {
-        val argv = allocArray<CPointerVar<ByteVar>>(launch.argv.size + 1)
-        launch.argv.forEachIndexed { index, value -> argv[index] = value.cstr.getPointer(this) }
-        argv[launch.argv.size] = null
-        val pairs = allocArray<CPointerVar<ByteVar>>(environment.size * 2 + 1)
-        var next = 0
-        for ((name, value) in environment) {
-            pairs[next++] = name.cstr.getPointer(this)
-            pairs[next++] = value.cstr.getPointer(this)
-        }
-        pairs[next] = null
-        gekko_spawn_detached(native(launch.application), argv, launch.commandLine, pairs, native(logFile)) == 0
+        gekko_spawn_detached(
+            native(launch.application),
+            argv(launch.argv),
+            launch.commandLine,
+            environmentPairs(environment),
+            native(logFile),
+        ) == 0
     }
 }

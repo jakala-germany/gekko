@@ -1032,12 +1032,14 @@ private fun String.relativeTo(root: String): String {
 }
 
 /**
- * Whether a path starts at the root: `/x` (also `\x`), `C:/x` and `C:\x`, `//server/share`. `C:x` is a path on a drive
- * (relative to a directory of that drive), which no project folder may use either, so it counts as absolute here.
+ * Whether a path starts at the root: `/x` (also `\x`), `C:/x` and `C:\x`, `//server/share`. On Windows `C:x` is a path
+ * on a drive (relative to a directory of that drive), which no project folder may use either, so it counts as absolute
+ * there; on the other hosts it is a file name like any other.
  */
 fun isAbsolutePath(path: String): Boolean {
     if (path.startsWith("/") || path.startsWith("\\")) return true
-    return path.length >= 2 && path[1] == ':' && path[0].isLetter()
+    val onDrive = path.length >= 2 && path[1] == ':' && path[0].isLetter()
+    return onDrive && (isWindowsHost || (path.length >= 3 && (path[2] == '/' || path[2] == '\\')))
 }
 
 /** Paths handed to other processes (e.g. DYLD_INSERT_LIBRARIES) must not depend on that process's working directory. */

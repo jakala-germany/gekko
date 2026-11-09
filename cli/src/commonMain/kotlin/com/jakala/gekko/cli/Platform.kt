@@ -31,6 +31,9 @@ expect fun executeProcess(request: ProcessRequest): ProcessOutcome
  */
 expect fun spawnDetached(command: List<String>, environment: Map<String, String>, logFile: String): Boolean
 
+/** A regular file that can be started: on POSIX with the execute permission, on Windows any file that is no folder. */
+expect fun isExecutableFile(path: String): Boolean
+
 /** The id of this process. */
 expect fun currentProcessId(): Long
 

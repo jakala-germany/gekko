@@ -18,8 +18,9 @@ class PathsTest {
     }
 
     @Test
-    fun aPathOnADriveWithoutASlashIsNotInsideAProjectFolderEither() {
-        assertTrue(isAbsolutePath("C:x"))
+    fun aPathOnADriveWithoutASlashIsAbsoluteOnWindowsOnly() {
+        assertEquals(isWindowsHost, isAbsolutePath("C:x"))
+        assertEquals(isWindowsHost, isAbsolutePath("a:b.json"))
     }
 
     @Test
