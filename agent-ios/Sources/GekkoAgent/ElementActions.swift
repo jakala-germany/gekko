@@ -151,14 +151,11 @@ enum ElementActions {
         return false
     }
 
-    /// The content follows the finger: swiping up (or left) reveals what is below (or to the right). Both axes count,
-    /// the longer finger movement decides; false when no scroll view under the start point could move.
-    static func swipe(from: CGPoint, to: CGPoint) -> Bool {
-        let dx = from.x - to.x
-        let dy = from.y - to.y
-        let horizontal = abs(dx) > abs(dy)
+    /// The content follows the finger: dragging up (or left) reveals what is below (or to the right), by exactly the
+    /// distance of the finger, on both axes; false when no scroll view under the start point could move.
+    static func drag(from: CGPoint, to: CGPoint) -> Bool {
         for scrollView in scrollViews(containing: from) {
-            if scrollBy(scrollView, dx: horizontal ? dx : 0, dy: horizontal ? 0 : dy) { return true }
+            if scrollBy(scrollView, dx: from.x - to.x, dy: from.y - to.y) { return true }
         }
         return false
     }
