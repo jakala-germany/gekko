@@ -12,9 +12,7 @@ object UserToken {
 
     private fun load(): String {
         val directory =
-            env("GEKKO_HOME")
-                ?: env("HOME")?.let { "$it/.gekko" }
-                ?: error("HOME is not set; gekko keeps its token in ~/.gekko/token")
+            gekkoHome() ?: error("HOME (USERPROFILE on Windows) is not set; gekko keeps its token in ~/.gekko/token")
         val path = "$directory/token"
         if (fileExists(path)) {
             val existing = readTextFile(path).trim()
