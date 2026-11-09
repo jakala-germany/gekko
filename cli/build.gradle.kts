@@ -38,12 +38,14 @@ kotlin {
             implementation(libs.ktor.client.cio)
             implementation(libs.clikt)
             implementation(libs.kaml)
+            implementation(libs.okio)
         }
-        nativeMain.dependencies { implementation(libs.okio) }
         commonTest.dependencies {
             implementation(kotlin("test"))
             implementation(libs.kotlinx.coroutines.test)
         }
+        // The servers of the Android agent and runner: the client is tested against the real thing, not a copy of it
+        jvmTest.dependencies { implementation(project(":transport-jvm")) }
     }
 }
 

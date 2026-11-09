@@ -1,16 +1,13 @@
 package com.jakala.gekko.cli
 
 import com.jakala.gekko.protocol.Command
+import com.jakala.gekko.protocol.ErrorKind
 import com.jakala.gekko.protocol.MockRules
 import com.jakala.gekko.protocol.Protocol
 import com.jakala.gekko.protocol.Response
 import io.ktor.client.HttpClient
 import io.ktor.client.engine.cio.CIO
 import io.ktor.client.plugins.HttpTimeout
-import io.ktor.client.request.header
-import io.ktor.client.request.post
-import io.ktor.client.request.setBody
-import io.ktor.client.statement.bodyAsText
 import kotlin.coroutines.cancellation.CancellationException
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.withTimeoutOrNull
@@ -44,32 +41,58 @@ interface CommandClient {
 }
 
 /**
- * Talks to one server on the device. [role] says which one ([Protocol.ROLE_AGENT] or [Protocol.ROLE_RUNNER]); [token]
- * is sent with every request where the server wants one (iOS).
+ * Talks to one server on the device. [role] says which one ([Protocol.ROLE_AGENT] or [Protocol.ROLE_RUNNER]). Every
+ * request is signed and every answer is checked with [auth], so an answer that does not come from the server of this
+ * user (see [Protocol]) is an [UntrustedServerException] instead of a result.
  */
-class GekkoClient(private val port: Int, private val role: String, private val token: String? = null) : CommandClient {
+class GekkoClient(private val port: Int, private val role: String, auth: ClientAuth) : CommandClient {
     private companion object {
         const val REACHABLE_TIMEOUT_MS = 3_000L
+        val HELLO_BODY = encodeCommand(Command.Hello).encodeToByteArray()
+        const val ANDROID_HINT =
+            " On Android the agent only answers in a debuggable build, because it gets its key through run-as."
     }
 
     private val http = HttpClient(CIO) { install(HttpTimeout) { requestTimeoutMillis = 60_000 } }
+    private val peer =
+        SignedPeer(
+            http,
+            port,
+            auth,
+            Compatibility.describe(role),
+            Compatibility.fix(role, olderPeer = true, peerVersion = null) +
+                ANDROID_HINT.takeIf { role == Protocol.ROLE_AGENT }.orEmpty(),
+        )
 
     override suspend fun send(command: Command): Response {
-        val body = protocolJson.encodeToString(Command.serializer(), command)
-        val text =
-            http
-                .post("http://127.0.0.1:$port/") {
-                    token?.let { header(Protocol.TOKEN_HEADER, it) }
-                    setBody(body)
-                }
-                .bodyAsText()
-        return protocolJson.decodeFromString(Response.serializer(), text)
+        val body = encodeCommand(command).encodeToByteArray()
+        val reply = peer.send(body, command is Command.Hello, HELLO_BODY) { isStale(it) }
+        return decode(reply)
     }
 
-    /** True when the server answers `hello`; throws [IncompatibleVersionException] when it speaks another protocol. */
+    private fun decode(reply: SignedPeer.Reply): Response {
+        return protocolJson.decodeFromString(Response.serializer(), reply.body.decodeToString())
+    }
+
+    /** A signed refusal that names another session: the app was restarted since the last hello. */
+    private fun isStale(reply: SignedPeer.Reply): Boolean {
+        val answer = runCatching { decode(reply) }.getOrNull()
+        return answer is Response.Error && answer.kind == ErrorKind.SESSION
+    }
+
+    /**
+     * True when the server answers `hello`; throws [IncompatibleVersionException] when it speaks another protocol and
+     * [UntrustedServerException] when something else answers in its place.
+     */
     override suspend fun isReachable(): Boolean {
         val answer =
-            runCatching { withTimeoutOrNull(REACHABLE_TIMEOUT_MS) { send(Command.Hello) } }.getOrNull() ?: return false
+            try {
+                withTimeoutOrNull(REACHABLE_TIMEOUT_MS) { send(Command.Hello) }
+            } catch (error: UntrustedServerException) {
+                throw error
+            } catch (error: Exception) {
+                null
+            } ?: return false
         Compatibility.check(answer, role)
         return true
     }
@@ -116,22 +139,22 @@ interface Device {
      * The client for the in-app agent; unless a device has another way, it speaks the gekko protocol to [agentPort].
      */
     fun agentClient(config: GekkoConfig): CommandClient {
-        return GekkoClient(agentPort(config), Protocol.ROLE_AGENT, token)
+        return GekkoClient(agentPort(config), Protocol.ROLE_AGENT, agentAuth(config))
     }
 
     /** The client for the system runner; unless a device has another way, it speaks the gekko protocol. */
     fun systemClient(config: GekkoConfig): CommandClient {
-        return GekkoClient(systemPort(), Protocol.ROLE_RUNNER, token)
+        return GekkoClient(systemPort(), Protocol.ROLE_RUNNER, systemAuth())
     }
 
     /** Host port (on 127.0.0.1) that reaches the system runner of this device. */
     fun systemPort(): Int
 
-    /**
-     * The secret the servers on this device want in the header of every request; null when they need none (Android).
-     */
-    val token: String?
-        get() = null
+    /** What the CLI signs its requests to the in-app agent with and checks its answers against; see [Protocol]. */
+    fun agentAuth(config: GekkoConfig): ClientAuth
+
+    /** The same for the system runner. */
+    fun systemAuth(): ClientAuth
 
     /**
      * True when the agent and the system runner answer [Command.WaitFor] and the agent reports by itself that the app
@@ -330,6 +353,33 @@ class AdbDevice(val serial: String?) : Device {
         return hostPort(SYSTEM_RUNNER_SOCKET)
     }
 
+    override fun agentAuth(config: GekkoConfig): ClientAuth {
+        return ClientAuth.ofAndroid(agentSocketName(androidAppId(config)))
+    }
+
+    override fun systemAuth(): ClientAuth {
+        return ClientAuth.ofAndroid(SYSTEM_RUNNER_SOCKET)
+    }
+
+    override fun agentClient(config: GekkoConfig): CommandClient {
+        // An app that gekko did not start (by hand, or by an earlier run that cleared its data) needs the key as well
+        runCatching { writeAgentKey(androidAppId(config)) }
+        return super.agentClient(config)
+    }
+
+    /**
+     * Leaves the key of the agent in the private directory of the app, where the agent reads it with every request. A
+     * debuggable build only lets `run-as` in, and that is the point: no other app on the device can read the key, so
+     * none can pass for the agent. Returns what `run-as` said when it failed, null when the key is in place. The file
+     * is renamed into place, so the agent, which reads it with every request, never sees it half written.
+     */
+    private fun writeAgentKey(appId: String): String? {
+        val key = ClientAuth.androidKey(UserToken.value, agentSocketName(appId))
+        val file = Protocol.AGENT_KEY_FILE
+        val result = shell("run-as", appId, "sh", "-c", "umask 077; printf %s $key > $file.tmp && mv $file.tmp $file")
+        return if (result.exitCode == 0) null else result.text.trim()
+    }
+
     /**
      * The agent and the runner listen on an abstract socket inside each device; adb maps it to a free host port that is
      * unique per device.
@@ -449,6 +499,12 @@ class AdbDevice(val serial: String?) : Device {
                 "$appId is not installed on ${serial ?: "the device"}; install it (gekko install, --app)"
             )
         }
+        writeAgentKey(appId)?.let { failure ->
+            throw ConfigurationException(
+                "The gekko agent needs a debuggable build of $appId: gekko hands it its key with run-as, which refuses " +
+                    "any other build ($failure). Build a debug variant, and list only debug variants in gekko { variants }."
+            )
+        }
         val activity = config.app.androidActivity
         if (activity != null) {
             shell("am", "start", "-n", "$appId/$activity", *extras(arguments))
@@ -545,6 +601,8 @@ class AdbDevice(val serial: String?) : Device {
         val appId = androidAppId(config)
         shell("am", "force-stop", appId)
         shell("pm", "clear", appId)
+        // The clear took the key with it; an app that something else starts (a link) would not find it
+        runCatching { writeAgentKey(appId) }
         config.android.permissions.forEach { shell("pm", "grant", appId, it) }
     }
 
@@ -615,8 +673,9 @@ class AdbDevice(val serial: String?) : Device {
         val result = adb("install", "-r", apk)
         check(result.text.contains("Success")) { "Installing the system runner failed: ${result.text}" }
         shellScript(
-            "nohup am instrument -w -e class ${Drivers.RUNNER_CLASS} ${Drivers.RUNNER_PACKAGE}/androidx.test.runner.AndroidJUnitRunner " +
-                ">/dev/null 2>&1 &"
+            "nohup am instrument -w -e class ${Drivers.RUNNER_CLASS} " +
+                "-e ${Protocol.RUNNER_KEY_ARGUMENT} ${ClientAuth.androidKey(UserToken.value, SYSTEM_RUNNER_SOCKET)} " +
+                "${Drivers.RUNNER_PACKAGE}/androidx.test.runner.AndroidJUnitRunner >/dev/null 2>&1 &"
         )
     }
 
@@ -754,13 +813,19 @@ class Drivers(
         return askAgent(command)
     }
 
-    /** Null when nothing listens (app crashed or not started): the system runner then shows what is on screen. */
+    /**
+     * Null when nothing listens (app crashed or not started): the system runner then shows what is on screen. Something
+     * that listens but does not prove that it is the agent is not "nothing": the run stops instead of asking the system
+     * runner as if the agent were not there.
+     */
     private suspend fun askAgent(command: Command): Response? {
         val budgetMs = command.budgetMs() + AGENT_ANSWER_MARGIN_MS
         return try {
             withTimeoutOrNull(budgetMs) { agent.send(command) }
                 ?: Response.Error("The app did not answer within ${budgetMs}ms; is it hung?")
         } catch (error: CancellationException) {
+            throw error
+        } catch (error: UntrustedServerException) {
             throw error
         } catch (error: Exception) {
             null
@@ -828,10 +893,7 @@ class Drivers(
     suspend fun waitForForeground(timeoutMs: Long): Boolean {
         val deadline = nowMillis() + timeoutMs
         while (nowMillis() < deadline) {
-            val response = runCatching {
-                withTimeoutOrNull(FOREGROUND_TIMEOUT_MS) { agent.send(Command.Foreground) }
-            }
-                .getOrNull()
+            val response = askForeground()
             if (response is Response.ForegroundResult && response.appInForeground) {
                 return true
             }
@@ -840,11 +902,22 @@ class Drivers(
         return false
     }
 
-    private suspend fun pick(): CommandClient {
-        val foreground = runCatching {
+    /**
+     * The answer of the agent to "is the app in front", null while it does not answer. A server that answers without
+     * proving that it is the agent is no reason to fall back to the system runner: the run stops.
+     */
+    private suspend fun askForeground(): Response? {
+        return try {
             withTimeoutOrNull(FOREGROUND_TIMEOUT_MS) { agent.send(Command.Foreground) }
+        } catch (error: UntrustedServerException) {
+            throw error
+        } catch (error: Exception) {
+            null
         }
-            .getOrNull()
+    }
+
+    private suspend fun pick(): CommandClient {
+        val foreground = askForeground()
         if (foreground is Response.ForegroundResult && foreground.appInForeground) {
             return agent
         }
@@ -857,8 +930,9 @@ class Drivers(
             try {
                 system.isReachable()
             } catch (error: IncompatibleVersionException) {
-                // A runner of another gekko release is still running: startSystemRunner replaces it
-                log("Replacing the system runner: ${error.message}")
+                // A runner of another gekko release is still running (or one that cannot sign): startSystemRunner
+                // replaces it; whatever else holds the socket is reported when the new one does not come up
+                log("The system runner does not answer as expected, starting it again: ${error.message}")
                 false
             }
         if (reachable) {
@@ -868,14 +942,20 @@ class Drivers(
         systemStarted = false
         device.startSystemRunner(config, log)
         val deadline = nowMillis() + device.runnerStartTimeoutMs
+        // The runner that was just replaced can still hold the socket for a moment; whatever keeps it is reported
+        var untrusted: IncompatibleVersionException? = null
         while (nowMillis() < deadline) {
-            if (system.isReachable()) {
-                systemStarted = true
-                return
+            try {
+                if (system.isReachable()) {
+                    systemStarted = true
+                    return
+                }
+            } catch (error: IncompatibleVersionException) {
+                untrusted = error
             }
             delay(POLL_MS)
         }
-        throw InfrastructureException("System runner did not start")
+        throw untrusted ?: InfrastructureException("System runner did not start")
     }
 
     fun close() {

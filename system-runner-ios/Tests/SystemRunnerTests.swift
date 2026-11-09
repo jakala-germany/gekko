@@ -7,7 +7,7 @@ import XCTest
 /// GEKKO_TOKEN.
 final class SystemRunnerTests: XCTestCase {
     /// Keep in sync with Protocol.VERSION of the shared protocol.
-    private static let protocolVersion = 1
+    private static let protocolVersion = 2
     private static let maxTimeoutSeconds = 600.0
     private static let pollSeconds = 0.1
     private static let maxResolved = 8

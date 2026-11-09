@@ -2,8 +2,13 @@
 //
 // It offers a fixed set of operations (below) and nothing else: no JavaScript, no file paths and no URLs of its own come
 // from the wire except what an operation names (the page to open, the folder of the app to serve, where a video goes).
-// Every request needs the token of the user (GEKKO_BRIDGE_TOKEN), a loopback Host and no Origin header, so a web page
-// open in any browser on this machine cannot talk to it.
+// Every request needs a loopback Host and no Origin header, so a web page open in any browser on this machine cannot talk
+// to it, and a signature that only the CLI of this user can make (HMAC-SHA256 with GEKKO_BRIDGE_TOKEN, see Protocol in the
+// shared protocol): the request carries a nonce and the MAC of its endpoint (the port), the session of this bridge, the
+// nonce and the body, and every answer carries the MAC of the same nonce, the status and its body. The token never goes
+// over the connection, so a program that listens on the port first learns nothing and cannot pass for the bridge. The
+// session is picked at start and told in the answer to `hello`; every other operation has to name it, so a recorded
+// request is worthless once the bridge restarted.
 import crypto from 'node:crypto'
 import fs from 'node:fs'
 import http from 'node:http'
@@ -19,6 +24,9 @@ const VERSION = options.version || ''
 const IDLE_MS = Number(options['idle-minutes'] || 30) * 60_000
 const TOKEN = process.env.GEKKO_BRIDGE_TOKEN || ''
 delete process.env.GEKKO_BRIDGE_TOKEN
+const KEY = Buffer.from(TOKEN)
+const SESSION = crypto.randomBytes(16).toString('hex')
+const MAX_NONCE = 128
 const HERE = path.dirname(fileURLToPath(import.meta.url))
 const PAGE_SCRIPT = fs.readFileSync(path.join(HERE, 'page.js'), 'utf8')
 const MAX_BODY = 4_000_000
@@ -686,10 +694,33 @@ function firstLine(error) {
 function allowed(req) {
   if (req.headers.origin !== undefined) return false
   const host = String(req.headers.host || '')
-  if (host !== `127.0.0.1:${PORT}` && host !== `localhost:${PORT}`) return false
-  const given = Buffer.from(String(req.headers['x-gekko-token'] || ''))
-  const wanted = Buffer.from(TOKEN)
-  return given.length === wanted.length && crypto.timingSafeEqual(given, wanted)
+  return host === `127.0.0.1:${PORT}` || host === `localhost:${PORT}`
+}
+
+// Keep in sync with Protocol.requestMessage / responseMessage and the servers of the other platforms. Known answer: key
+// "0123456789abcdef" x 4 and the request message for endpoint "20412", no session, nonce
+// "00112233445566778899aabbccddeeff" and body {"type":"hello"} give
+// 4ee5a8b1b169ea84d0a350b84270a987f8ff285a9087ce3bf17d75a0943631a0.
+function mac(message) {
+  return crypto.createHmac('sha256', KEY).update(message).digest('hex')
+}
+
+function requestMessage(session, nonce, body) {
+  return Buffer.concat([Buffer.from(`gekko-req\n${PORT}\n${session}\n${nonce}\n`), body])
+}
+
+function responseMessage(nonce, status, body) {
+  return Buffer.concat([Buffer.from(`gekko-res\n${PORT}\n${SESSION}\n${nonce}\n${status}\n`), body])
+}
+
+// True when the request is signed with the key of this user; every header has to be there exactly once.
+function isSigned(req, nonce, body) {
+  const given = req.headers['x-gekko-auth']
+  if (typeof given !== 'string') return false
+  const session = typeof req.headers['x-gekko-session'] === 'string' ? req.headers['x-gekko-session'] : ''
+  const wanted = Buffer.from(mac(requestMessage(session, nonce, body)))
+  const offered = Buffer.from(given)
+  return offered.length === wanted.length && crypto.timingSafeEqual(offered, wanted)
 }
 
 // Requests that touch the page one after the other; a dialog or a hello must get through while one of them waits
@@ -704,10 +735,15 @@ function run(operation, body) {
 }
 
 const server = http.createServer((req, res) => {
-  state.lastRequest = Date.now()
-  const reply = (status, payload) => {
+  // [nonce] is the one of the request that is answered; without one the answer is not signed (a refusal of a stranger)
+  const reply = (status, payload, nonce) => {
     const text = JSON.stringify(payload)
-    res.writeHead(status, { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(text) })
+    const headers = { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(text) }
+    if (nonce) {
+      headers['X-Gekko-Session'] = SESSION
+      headers['X-Gekko-Auth'] = mac(responseMessage(nonce, status, Buffer.from(text)))
+    }
+    res.writeHead(status, headers)
     res.end(text)
   }
   if (req.method !== 'POST' || req.url !== '/') return reply(404, { error: 'not found' })
@@ -725,18 +761,29 @@ const server = http.createServer((req, res) => {
   })
   req.on('end', async () => {
     if (size > MAX_BODY) return
+    const raw = Buffer.concat(chunks)
+    const nonce = req.headers['x-gekko-nonce']
+    if (typeof nonce !== 'string' || nonce.length === 0 || nonce.length > MAX_NONCE || !isSigned(req, nonce, raw)) {
+      return reply(401, { ok: false, error: 'The request is not signed with the key of this bridge', kind: 'unauthorized' })
+    }
+    // Only a request that is signed counts as use: a stranger must not keep the bridge alive
+    state.lastRequest = Date.now()
     let body
     try {
-      body = JSON.parse(Buffer.concat(chunks).toString('utf8') || '{}')
+      body = JSON.parse(raw.toString('utf8') || '{}')
     } catch (error) {
-      return reply(400, { error: 'invalid JSON' })
+      return reply(400, { error: 'invalid JSON' }, nonce)
     }
     const operation = body.op
-    if (typeof operation !== 'string' || !Object.hasOwn(operations, operation)) return reply(400, { error: `unknown operation ${operation}` })
+    if (typeof operation !== 'string' || !Object.hasOwn(operations, operation)) return reply(400, { error: `unknown operation ${operation}` }, nonce)
+    // Only `hello` may come without a session: it is how the client learns the one of this bridge
+    if (operation !== 'hello' && req.headers['x-gekko-session'] !== SESSION) {
+      return reply(401, { ok: false, error: 'The bridge was restarted since the last hello', kind: 'session' }, nonce)
+    }
     try {
-      reply(200, { ok: true, ...(await run(operation, body)) })
+      reply(200, { ok: true, ...(await run(operation, body)) }, nonce)
     } catch (error) {
-      reply(200, { ok: false, error: firstLine(error), kind: error.kind || null, transient: TRANSIENT.test(String(error.message)) })
+      reply(200, { ok: false, error: firstLine(error), kind: error.kind || null, transient: TRANSIENT.test(String(error.message)) }, nonce)
     }
   })
 })

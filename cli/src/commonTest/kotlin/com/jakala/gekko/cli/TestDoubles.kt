@@ -90,6 +90,14 @@ internal class FakeDevice(
         return 2
     }
 
+    override fun agentAuth(config: GekkoConfig): ClientAuth {
+        return ClientAuth("test key".encodeToByteArray(), "1")
+    }
+
+    override fun systemAuth(): ClientAuth {
+        return ClientAuth("test key".encodeToByteArray(), "2")
+    }
+
     override fun clearData(config: GekkoConfig) {}
 
     override fun install(config: GekkoConfig, path: String?) {}

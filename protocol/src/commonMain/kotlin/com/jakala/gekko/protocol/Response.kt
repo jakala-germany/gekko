@@ -59,4 +59,13 @@ object ErrorKind {
 
     /** The wait for an expected state ran out. */
     const val TIMEOUT = "timeout"
+
+    /** The request is not signed with the key of this server (the answer is not signed either). */
+    const val UNAUTHORIZED = "unauthorized"
+
+    /** The server has no key yet, so it cannot tell friend from foe (the answer is not signed). */
+    const val NO_KEY = "noKey"
+
+    /** The request names another session than the one of this server, e.g. because the app was restarted. */
+    const val SESSION = "session"
 }

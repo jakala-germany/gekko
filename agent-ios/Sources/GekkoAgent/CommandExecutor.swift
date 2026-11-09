@@ -7,7 +7,7 @@ final class CommandExecutor {
     private static let verifySeconds = 0.3
     private static let verifyPollSeconds = 0.05
     /// Keep in sync with Protocol.VERSION of the shared protocol.
-    private static let protocolVersion = 1
+    private static let protocolVersion = 2
     /// Set to 0 to skip checking that a tap changed anything.
     private static let verifyTaps = ProcessInfo.processInfo.environment["GEKKO_TAP_VERIFY"] != "0"
 

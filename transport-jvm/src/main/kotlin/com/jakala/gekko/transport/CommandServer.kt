@@ -2,6 +2,7 @@ package com.jakala.gekko.transport
 
 import com.jakala.gekko.protocol.Command
 import com.jakala.gekko.protocol.ErrorKind
+import com.jakala.gekko.protocol.Protocol
 import com.jakala.gekko.protocol.Response
 import java.io.BufferedInputStream
 import java.io.ByteArrayOutputStream
@@ -96,19 +97,24 @@ class TcpListener(port: Int) : Listener {
  * A small HTTP/1.1 server for [Command] posts. It is reachable by every process that can connect to its socket, so it
  * keeps requests small, bounded in time and in number, and refuses browsers: a page the tester opens must not be able
  * to drive the app through a loopback port (cross-site requests carry an `Origin`, DNS rebinding a foreign `Host`).
+ *
+ * Every request has to be signed with the key of [auth] and every answer is signed with it, so that a process that
+ * connects cannot drive the app and a process that listens in its place cannot pass for it (see [Protocol]).
  */
 class CommandServer(
     private val listener: Listener,
+    private val auth: ServerAuth,
     private val maxConnections: Int = MAX_CONNECTIONS,
     private val readTimeoutMs: Long = READ_TIMEOUT_MS,
     private val handler: (Command) -> Response,
 ) {
     constructor(
         listener: Listener,
+        auth: ServerAuth,
         handler: (Command) -> Response,
-    ) : this(listener, MAX_CONNECTIONS, READ_TIMEOUT_MS, handler)
+    ) : this(listener, auth, MAX_CONNECTIONS, READ_TIMEOUT_MS, handler)
 
-    constructor(port: Int, handler: (Command) -> Response) : this(TcpListener(port), handler)
+    constructor(port: Int, auth: ServerAuth, handler: (Command) -> Response) : this(TcpListener(port), auth, handler)
 
     private val json = Json {
         classDiscriminator = "type"
@@ -167,23 +173,79 @@ class CommandServer(
                     }
                     return
                 }
-            val response = json.encodeToString<Response>(answer(request.body))
-            writeResponse(connection.output, STATUS_OK, response, request.keepAlive)
+            val reply = reply(request)
+            val signing = reply.key?.let { key -> request.nonce?.let { Signing(key, it) } }
+            writeResponse(connection.output, reply.status, reply.body, request.keepAlive, signing)
             if (!request.keepAlive) {
                 return
             }
         }
     }
 
-    private fun answer(body: String): Response {
+    /**
+     * What to answer; the checks come in the order that gives a stranger the least: key, signature, command, session.
+     */
+    private fun reply(request: Request): Reply {
+        if (!auth.enforced) {
+            return Reply(STATUS_OK, encode(answer(request.body)), key = null)
+        }
+        val key =
+            auth.key()
+                ?: return Reply(
+                    STATUS_UNAUTHORIZED,
+                    encode(Response.Error("The gekko server has no key yet", ErrorKind.NO_KEY)),
+                    key = null,
+                )
+        if (!isSigned(key, request)) {
+            return Reply(
+                STATUS_UNAUTHORIZED,
+                encode(Response.Error("The request is not signed with the key of this server", ErrorKind.UNAUTHORIZED)),
+                key = null,
+            )
+        }
         val command =
             try {
-                json.decodeFromString<Command>(body)
+                decode(request.body)
             } catch (error: IllegalArgumentException) {
                 // Unknown type, missing field or no JSON at all (a SerializationException is one of these)
+                val unsupported = Response.Error(error.message ?: error.toString(), ErrorKind.UNSUPPORTED)
+                return Reply(STATUS_OK, encode(unsupported), key = key)
+            }
+        if (command !is Command.Hello && request.session != auth.session) {
+            val stale = Response.Error("The server was restarted since the last hello", ErrorKind.SESSION)
+            return Reply(STATUS_UNAUTHORIZED, encode(stale), key = key)
+        }
+        return Reply(STATUS_OK, encode(execute(command)), key = key)
+    }
+
+    private fun isSigned(key: ByteArray, request: Request): Boolean {
+        val nonce = request.nonce ?: return false
+        val given = request.mac ?: return false
+        val expected =
+            GekkoAuth.hmacHex(key, Protocol.requestMessage(auth.endpoint, request.session, nonce, request.body))
+        return GekkoAuth.matches(expected, given)
+    }
+
+    private fun answer(body: ByteArray): Response {
+        val command =
+            try {
+                decode(body)
+            } catch (error: IllegalArgumentException) {
                 return Response.Error(error.message ?: error.toString(), ErrorKind.UNSUPPORTED)
             }
+        return execute(command)
+    }
+
+    private fun decode(body: ByteArray): Command {
+        return json.decodeFromString<Command>(String(body, Charsets.UTF_8))
+    }
+
+    private fun execute(command: Command): Response {
         return runCatching { handler(command) }.getOrElse { Response.Error(it.message ?: it.toString()) }
+    }
+
+    private fun encode(response: Response): ByteArray {
+        return json.encodeToString<Response>(response).toByteArray(Charsets.UTF_8)
     }
 
     /** Null when the client closed the connection before it started a request. */
@@ -210,7 +272,13 @@ class CommandServer(
         val length = contentLength(headers["content-length"])
         val body = readBody(input, length)
         val keepAlive = headers["connection"].none { it.equals("close", ignoreCase = true) }
-        return Request(body, keepAlive)
+        return Request(
+            body = body,
+            keepAlive = keepAlive,
+            nonce = headers["x-gekko-nonce"].singleOrNull()?.takeIf { it.isNotEmpty() && it.length <= MAX_NONCE_CHARS },
+            session = headers["x-gekko-session"].singleOrNull().orEmpty(),
+            mac = headers["x-gekko-auth"].singleOrNull(),
+        )
     }
 
     /** The request line and the headers; stops reading once [MAX_HEAD_BYTES] are exceeded. */
@@ -277,7 +345,7 @@ class CommandServer(
     }
 
     /** Reads in chunks, so a client that announces a large body and never sends it costs no memory. */
-    private fun readBody(input: BufferedInputStream, length: Int): String {
+    private fun readBody(input: BufferedInputStream, length: Int): ByteArray {
         val bytes = ByteArrayOutputStream()
         val chunk = ByteArray(CHUNK_BYTES)
         while (bytes.size() < length) {
@@ -287,22 +355,36 @@ class CommandServer(
             }
             bytes.write(chunk, 0, count)
         }
-        return String(bytes.toByteArray(), Charsets.UTF_8)
+        return bytes.toByteArray()
     }
 
     private fun writeError(output: OutputStream, rejection: HttpRejection) {
-        val body = json.encodeToString<Response>(Response.Error(rejection.message, rejection.kind))
-        runCatching { writeResponse(output, rejection.status, body, keepAlive = false) }
+        val body = encode(Response.Error(rejection.message, rejection.kind))
+        runCatching { writeResponse(output, rejection.status, body, keepAlive = false, signing = null) }
     }
 
-    private fun writeResponse(output: OutputStream, status: Int, body: String, keepAlive: Boolean) {
-        val bytes = body.toByteArray(Charsets.UTF_8)
+    /** A null [signing] leaves the answer unsigned. */
+    private fun writeResponse(
+        output: OutputStream,
+        status: Int,
+        body: ByteArray,
+        keepAlive: Boolean,
+        signing: Signing?,
+    ) {
         val connection = if (keepAlive) "keep-alive" else "close"
+        val signature =
+            if (signing == null) {
+                ""
+            } else {
+                val message = Protocol.responseMessage(auth.endpoint, auth.session, signing.nonce, status, body)
+                "${Protocol.SESSION_HEADER}: ${auth.session}\r\n" +
+                    "${Protocol.AUTH_HEADER}: ${GekkoAuth.hmacHex(signing.key, message)}\r\n"
+            }
         val header =
             "HTTP/1.1 $status ${reason(status)}\r\nContent-Type: application/json\r\n" +
-                "Content-Length: ${bytes.size}\r\nConnection: $connection\r\n\r\n"
+                "Content-Length: ${body.size}\r\nConnection: $connection\r\n$signature\r\n"
         output.write(header.toByteArray(Charsets.UTF_8))
-        output.write(bytes)
+        output.write(body)
         output.flush()
     }
 
@@ -310,6 +392,7 @@ class CommandServer(
         return when (status) {
             STATUS_OK -> "OK"
             STATUS_BAD_REQUEST -> "Bad Request"
+            STATUS_UNAUTHORIZED -> "Unauthorized"
             STATUS_FORBIDDEN -> "Forbidden"
             STATUS_TIMEOUT -> "Request Timeout"
             STATUS_TOO_LARGE -> "Payload Too Large"
@@ -318,7 +401,19 @@ class CommandServer(
         }
     }
 
-    private class Request(val body: String, val keepAlive: Boolean)
+    private class Request(
+        val body: ByteArray,
+        val keepAlive: Boolean,
+        val nonce: String?,
+        val session: String,
+        val mac: String?,
+    )
+
+    /** An answer; it is signed with [key], the key the request was checked with, unless that is null. */
+    private class Reply(val status: Int, val body: ByteArray, val key: ByteArray?)
+
+    /** What it takes to sign an answer: the key and the nonce of the request that is answered. */
+    private class Signing(val key: ByteArray, val nonce: String)
 
     private class HttpRejection(val status: Int, override val message: String, val kind: String? = null) :
         Exception(message)
@@ -371,11 +466,13 @@ class CommandServer(
         const val READ_TIMEOUT_MS = 30_000L
         const val MAX_HEAD_BYTES = 16 * 1024
         const val MAX_BODY_BYTES = 4 * 1024 * 1024
+        const val MAX_NONCE_CHARS = 128
 
         private const val CHUNK_BYTES = 8 * 1024
         private const val NANOS_PER_MS = 1_000_000L
         private const val STATUS_OK = 200
         private const val STATUS_BAD_REQUEST = 400
+        private const val STATUS_UNAUTHORIZED = 401
         private const val STATUS_FORBIDDEN = 403
         private const val STATUS_TIMEOUT = 408
         private const val STATUS_TOO_LARGE = 413

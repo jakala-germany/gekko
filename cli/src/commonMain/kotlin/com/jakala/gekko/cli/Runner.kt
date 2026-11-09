@@ -1472,7 +1472,7 @@ class TestRunner(
         val dir = "$outputDir/$safe"
         makeDirs(dir)
         val artifacts = mutableListOf<String>()
-        writeTextFile(
+        writeReportFile(
             "$dir/failure.json",
             Masker.mask(
                 FailureInfo.encode(
@@ -1486,7 +1486,7 @@ class TestRunner(
         }
         runCatching {
             val tree = drivers.send(Command.Tree)
-            writeTextFile(
+            writeReportFile(
                 "$dir/tree.txt",
                 Masker.mask(TreePrinter.print((tree as? Response.TreeResult)?.windows.orEmpty())),
             )
@@ -1495,7 +1495,7 @@ class TestRunner(
         runCatching {
             val console = device.consoleLog()
             if (!console.isNullOrBlank()) {
-                writeTextFile("$dir/console.txt", Masker.mask(console))
+                writeReportFile("$dir/console.txt", Masker.mask(console))
                 artifacts += "$dir/console.txt"
             }
         }
@@ -1703,14 +1703,20 @@ object TreePrinter {
                 node.actions.isNotEmpty()
         val nextDepth =
             if (interesting) {
+                // Everything here comes from the app: a value must not be able to end its line or start an escape
+                // sequence
                 builder.append("  ".repeat(depth))
-                builder.append(node.role ?: "node")
-                node.id?.let { builder.append(" id=").append(it) }
-                node.text?.takeIf { it.isNotEmpty() }?.let { builder.append(" text=\"").append(it).append('"') }
+                builder.append(Terminal.inline(node.role ?: "node"))
+                node.id?.let { builder.append(" id=").append(Terminal.inline(it)) }
+                node.text
+                    ?.takeIf { it.isNotEmpty() }
+                    ?.let { builder.append(" text=\"").append(Terminal.inline(it)).append('"') }
                 node.description
                     ?.takeIf { it.isNotEmpty() && it != node.text }
-                    ?.let { builder.append(" desc=\"").append(it).append('"') }
-                if (node.actions.isNotEmpty()) builder.append(" actions=").append(node.actions.joinToString(","))
+                    ?.let { builder.append(" desc=\"").append(Terminal.inline(it)).append('"') }
+                if (node.actions.isNotEmpty()) {
+                    builder.append(" actions=").append(Terminal.inline(node.actions.joinToString(",")))
+                }
                 if (!node.enabled) builder.append(" disabled")
                 label(node)?.let { builder.append("  <- ").append(it) }
                 builder.append('\n')

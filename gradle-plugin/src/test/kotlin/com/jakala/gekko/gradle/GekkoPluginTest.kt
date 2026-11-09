@@ -14,6 +14,15 @@ class GekkoPluginTest {
     }
 
     @Test
+    fun aVariantThatIsNotDebuggableIsWarnedAboutBecauseTheAgentCannotGetItsKeyThere() {
+        val warning = GekkoPlugin.notDebuggableWarning("staging")
+
+        assertTrue(warning.contains("'staging'"))
+        assertTrue(warning.contains("run-as"))
+        assertTrue(warning.contains("gekko { variants }"))
+    }
+
+    @Test
     fun theVersionOfThePluginIsABuildVersion() {
         assertTrue(Regex("\\d+\\.\\d+\\.\\d+(-.+)?").matches(PluginVersion.NAME), PluginVersion.NAME)
     }

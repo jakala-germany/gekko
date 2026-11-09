@@ -22,6 +22,7 @@ import com.jakala.gekko.protocol.Response
 import com.jakala.gekko.protocol.Selector
 import com.jakala.gekko.protocol.UiNode
 import com.jakala.gekko.transport.CommandServer
+import com.jakala.gekko.transport.ServerAuth
 import java.util.IdentityHashMap
 import java.util.concurrent.CountDownLatch
 import org.junit.Test
@@ -39,7 +40,10 @@ class SystemRunnerTest {
     @Test
     fun serve() {
         configureAccessibility()
-        CommandServer(AbstractSocketListener(SOCKET_NAME), ::execute).start()
+        // The CLI hands the key over as an argument of `am instrument`; a runner started by hand has none and refuses
+        // all
+        val key = InstrumentationRegistry.getArguments().getString(Protocol.RUNNER_KEY_ARGUMENT)?.toByteArray()
+        CommandServer(AbstractSocketListener(SOCKET_NAME), ServerAuth(SOCKET_NAME) { key }, ::execute).start()
         CountDownLatch(1).await()
     }
 

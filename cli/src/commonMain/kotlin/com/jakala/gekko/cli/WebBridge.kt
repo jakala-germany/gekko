@@ -1,14 +1,10 @@
 package com.jakala.gekko.cli
 
+import com.jakala.gekko.protocol.ErrorKind
 import com.jakala.gekko.protocol.GekkoVersion
-import com.jakala.gekko.protocol.Protocol
 import io.ktor.client.HttpClient
 import io.ktor.client.engine.cio.CIO
 import io.ktor.client.plugins.HttpTimeout
-import io.ktor.client.request.header
-import io.ktor.client.request.post
-import io.ktor.client.request.setBody
-import io.ktor.client.statement.bodyAsText
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.serialization.json.Json
@@ -189,19 +185,24 @@ class WebBridge(
     private val http = HttpClient(CIO) { install(HttpTimeout) { requestTimeoutMillis = REQUEST_TIMEOUT_MS } }
     private val json = Json { ignoreUnknownKeys = true }
 
+    // Whatever listens on the port of the session can answer; only a bridge that holds the key of this user is believed
+    private val peer =
+        SignedPeer(
+            http,
+            port,
+            ClientAuth.ofUser(port.toString()),
+            "gekko web bridge",
+            "A bridge of an older gekko is replaced by itself; for another program, stop it or name this web session " +
+                "differently (for example $name-2).",
+        )
+
     override suspend fun call(operation: String, fields: JsonObject): JsonObject {
         val body = buildJsonObject {
             put("op", JsonPrimitive(operation))
             fields.forEach { (key, value) -> put(key, value) }
         }
-        val text =
-            http
-                .post("http://127.0.0.1:$port/") {
-                    header(Protocol.TOKEN_HEADER, UserToken.value)
-                    setBody(body.toString())
-                }
-                .bodyAsText()
-        val answer = json.parseToJsonElement(text).jsonObject
+        val reply = peer.send(body.toString().encodeToByteArray(), operation == "hello", HELLO_BODY) { isStale(it) }
+        val answer = json.parseToJsonElement(reply.body.decodeToString()).jsonObject
         if (answer["ok"]?.jsonPrimitive?.boolean != true) {
             throw WebBridgeException(
                 answer["error"]?.jsonPrimitive?.contentOrNull ?: "the web bridge failed",
@@ -216,14 +217,36 @@ class WebBridge(
         return hello() != null
     }
 
+    /** A signed refusal that names another session: the bridge was restarted since the last hello. */
+    private fun isStale(reply: SignedPeer.Reply): Boolean {
+        val answer = runCatching { json.parseToJsonElement(reply.body.decodeToString()).jsonObject }.getOrNull()
+        return answer?.get("kind")?.jsonPrimitive?.contentOrNull == ErrorKind.SESSION
+    }
+
+    /**
+     * The answer of the bridge, null when nothing answers. Something that answers without proving that it is the bridge
+     * of this user is not null but an [UntrustedServerException].
+     */
     private suspend fun hello(): JsonObject? {
-        return runCatching { withTimeoutOrNull(HELLO_TIMEOUT_MS) { call("hello") } }.getOrNull()
+        return try {
+            withTimeoutOrNull(HELLO_TIMEOUT_MS) { call("hello") }
+        } catch (error: UntrustedServerException) {
+            throw error
+        } catch (error: Exception) {
+            null
+        }
     }
 
     /** Starts the bridge and the browser unless they run already; replaces a bridge of another gekko release. */
     suspend fun ensureRunning() {
         val engine = WebSessions.engineOf(name)
-        var answer = hello()
+        var answer =
+            try {
+                hello()
+            } catch (error: UntrustedServerException) {
+                replaceUnsignedBridge(error)
+                null
+            }
         if (answer != null && answer["version"]?.jsonPrimitive?.contentOrNull != version) {
             log("Replacing the web session $name: it belongs to another gekko build")
             stop()
@@ -249,6 +272,42 @@ class WebBridge(
                 config.web.device?.let { put("device", JsonPrimitive(it)) }
             },
         )
+    }
+
+    /**
+     * A bridge of a gekko from before the signed protocol cannot prove who it is, and gekko does not tell it to quit
+     * (nothing is sent to something that is not known to be the bridge). It is ended through the process that its own
+     * session file names, which only this user can have written; anything else that holds the port stays and fails the
+     * start with [untrusted].
+     */
+    private suspend fun replaceUnsignedBridge(untrusted: UntrustedServerException) {
+        val pid = ownBridgePid() ?: throw untrusted
+        log("Replacing the web session $name: its bridge does not sign its answers (an older gekko)")
+        runProcess(listOf("kill", pid))
+        val deadline = nowMillis() + STOP_TIMEOUT_MS
+        while (nowMillis() < deadline) {
+            val held =
+                try {
+                    hello() != null
+                } catch (error: UntrustedServerException) {
+                    true
+                }
+            if (!held) return
+            delay(POLL_MS)
+        }
+        throw untrusted
+    }
+
+    /** The process of this session's bridge when its session file names one that really runs a bridge on [port]. */
+    private fun ownBridgePid(): String? {
+        val file = WebSessions.sessionFile(name)
+        if (!fileExists(file)) return null
+        val pid =
+            runCatching { Json.parseToJsonElement(readTextFile(file)).jsonObject["pid"]?.jsonPrimitive?.content }
+                .getOrNull()
+                ?.takeIf { candidate -> candidate.isNotEmpty() && candidate.all { it in '0'..'9' } } ?: return null
+        val command = runProcess(listOf("ps", "-p", pid, "-o", "command=")).text
+        return pid.takeIf { command.contains("bridge.mjs") && command.contains("--port $port") }
     }
 
     private suspend fun launchProcess() {
@@ -306,7 +365,17 @@ class WebBridge(
 
     /** Closes the browser and ends the bridge; true when there was one. */
     suspend fun stop(): Boolean {
-        if (hello() == null) return false
+        val running =
+            try {
+                hello() != null
+            } catch (error: UntrustedServerException) {
+                // A bridge of an older gekko cannot sign, so it is not asked to quit but ended through its session
+                // file;
+                // anything else that holds the port is reported
+                replaceUnsignedBridge(error)
+                return true
+            }
+        if (!running) return false
         runCatching { call("shutdown") }
         val deadline = nowMillis() + STOP_TIMEOUT_MS
         while (nowMillis() < deadline && hello() != null) {
@@ -325,6 +394,7 @@ class WebBridge(
         const val START_TIMEOUT_MS = 20_000L
         const val STOP_TIMEOUT_MS = 10_000L
         const val POLL_MS = 100L
+        val HELLO_BODY = """{"op":"hello"}""".encodeToByteArray()
     }
 }
 

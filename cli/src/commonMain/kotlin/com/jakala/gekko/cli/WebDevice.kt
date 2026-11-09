@@ -50,8 +50,13 @@ class WebDevice(private val name: String, private val config: GekkoConfig, priva
             return mode == WEB_SESSION_SHARED
         }
 
-    override val token: String
-        get() = UserToken.value
+    override fun agentAuth(config: GekkoConfig): ClientAuth {
+        return ClientAuth.ofUser(bridge.port.toString())
+    }
+
+    override fun systemAuth(): ClientAuth {
+        return ClientAuth.ofUser(bridge.port.toString())
+    }
 
     override val supportsWaitFor: Boolean
         get() = true
