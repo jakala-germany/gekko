@@ -349,6 +349,8 @@ data class SwipeSpec(
     val end: String? = null,
     /** How long the finger takes; sliders that confirm a purchase need a slower swipe than a list. */
     val durationMs: Long? = null,
+    /** Always use the system runner (a real touch, also on top of system UI) instead of the in-app agent. */
+    val system: Boolean = false,
 ) {
     init {
         val byPoints = start != null || end != null
@@ -361,6 +363,26 @@ data class SwipeSpec(
         }
         require(start == null || Points.parse(start) != null) { "swipe.start must be like '50%,80%', was '$start'" }
         require(end == null || Points.parse(end) != null) { "swipe.end must be like '50%,20%', was '$end'" }
+    }
+}
+
+/**
+ * Moves the content under a spot to another and lets go without momentum, so nothing keeps scrolling: scroll by an
+ * exact distance, move a slider, reorder a list. The finger starts at [start] (`x%,y%` of the screen) or in the center
+ * of the element [from] and ends at [end]. [system] sends it to the system runner (a real touch) instead of the in-app
+ * agent, which on iOS scrolls the scroll view under the start instead of touching it.
+ */
+@Serializable
+data class DragSpec(
+    @Serializable(with = SelectorSpecSerializer::class) val from: SelectorSpec? = null,
+    val start: String? = null,
+    val end: String,
+    val system: Boolean = false,
+) {
+    init {
+        require((from == null) != (start == null)) { "drag needs either start or from, and an end" }
+        require(start == null || Points.parse(start) != null) { "drag.start must be like '50%,80%', was '$start'" }
+        require(Points.parse(end) != null) { "drag.end must be like '50%,20%', was '$end'" }
     }
 }
 
@@ -411,7 +433,10 @@ data class ScrollUntilSpec(
     }
 }
 
-/** A long press: the element is held for [holdMs]. [system] sends it to the system runner like `tap`. */
+/**
+ * A long press: the element is held for [holdMs], or the spot [point] (`x%,y%` of the screen) for a map, a chart or a
+ * canvas that has no element. [system] sends it to the system runner like `tap`.
+ */
 @Serializable
 data class LongPressSpec(
     val id: PlatformId? = null,
@@ -428,9 +453,18 @@ data class LongPressSpec(
     val system: Boolean = false,
     /** A pane element the selector starts from, see [SelectorSpec.element]. */
     val element: String? = null,
+    /** Holds a spot given as `x%,y%` of the screen instead of an element. */
+    val point: String? = null,
 ) {
     init {
-        requireSelectorCriterion(id, text, textContains, textMatches, action, element)
+        if (point == null) {
+            requireSelectorCriterion(id, text, textContains, textMatches, action, element)
+        } else {
+            require(Points.parse(point) != null) { "longPress.point must be like '50%,50%', was '$point'" }
+            require(listOfNotNull(id, text, textContains, textMatches, action, within, element).isEmpty()) {
+                "longPress takes either an element or a point, not both"
+            }
+        }
         require(holdMs > 0) { "longPress.holdMs must be positive, was $holdMs" }
     }
 
@@ -571,6 +605,8 @@ data class Action(
     val type: TypeSpec? = null,
     @Serializable(with = ScrollSpecSerializer::class) val scroll: ScrollSpec? = null,
     val swipe: SwipeSpec? = null,
+    /** Moves the content under a spot to another without a fling. */
+    val drag: DragSpec? = null,
     @Serializable(with = SelectorSpecSerializer::class) val assertVisible: SelectorSpec? = null,
     @Serializable(with = SelectorSpecSerializer::class) val assertNotVisible: SelectorSpec? = null,
     val wait: Long? = null,
@@ -657,6 +693,7 @@ data class Action(
             "type".takeIf { type != null },
             "scroll".takeIf { scroll != null },
             "swipe".takeIf { swipe != null },
+            "drag".takeIf { drag != null },
             "assertVisible".takeIf { assertVisible != null },
             "assertNotVisible".takeIf { assertNotVisible != null },
             "wait".takeIf { wait != null },
@@ -697,6 +734,7 @@ data class Action(
                 type?.let { listOfNotNull(it.id, it.within) },
                 scroll?.let { listOfNotNull(it.id, it.within) },
                 swipe?.from?.let { listOfNotNull(it.id, it.within) },
+                drag?.from?.let { listOfNotNull(it.id, it.within) },
                 assertVisible?.let { listOfNotNull(it.id, it.within) },
                 assertNotVisible?.let { listOfNotNull(it.id, it.within) },
                 doubleTap?.let { listOfNotNull(it.id, it.within) },

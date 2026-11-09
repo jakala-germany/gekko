@@ -363,6 +363,46 @@ class ModelTest {
     }
 
     @Test
+    fun parsesDragsAndLongPressesOnASpot() {
+        val points = Yamls.parse(Step.serializer(), "do: { drag: { start: '50%,80%', end: '50%,30%' } }").action.drag
+        val element =
+            Yamls.parse(Step.serializer(), "do: { drag: { from: { id: Thumb }, end: '90%,50%', system: true } }")
+                .action
+                .drag
+        val long =
+            Yamls.parse(Step.serializer(), "do: { longPress: { point: '50%,50%', holdMs: 900 } }").action.longPress
+        val swipe = Yamls.parse(Step.serializer(), "do: { swipe: { direction: up, system: true } }").action.swipe
+
+        assertEquals("50%,80%", points?.start)
+        assertEquals("50%,30%", points?.end)
+        assertEquals("Thumb", element?.from?.id?.shared)
+        assertTrue(element?.system == true)
+        assertEquals("50%,50%", long?.point)
+        assertEquals(900L, long?.holdMs)
+        assertTrue(swipe?.system == true)
+        assertEquals(
+            listOf("drag"),
+            Yamls.parse(Step.serializer(), "do: { drag: { start: '1%,1%', end: '2%,2%' } }").action.names(),
+        )
+    }
+
+    @Test
+    fun rejectsIncompleteDragsAndLongPressesOnASpot() {
+        // Neither a start nor an element, or both
+        assertFailsWith<Exception> { Yamls.parse(Step.serializer(), "do: { drag: { end: '50%,30%' } }") }
+        assertFailsWith<Exception> {
+            Yamls.parse(Step.serializer(), "do: { drag: { start: '10%,10%', from: { id: a }, end: '50%,30%' } }")
+        }
+        // No end, or spots that are not points
+        assertFailsWith<Exception> { Yamls.parse(Step.serializer(), "do: { drag: { start: '50%,80%' } }") }
+        assertFailsWith<Exception> { Yamls.parse(Step.serializer(), "do: { drag: { start: 'top', end: '50%,30%' } }") }
+        assertFailsWith<Exception> { Yamls.parse(Step.serializer(), "do: { drag: { start: '50%,80%', end: 'x' } }") }
+        assertFailsWith<Exception> { Yamls.parse(Step.serializer(), "do: { longPress: { point: 'middle' } }") }
+        // A spot or an element, not both
+        assertFailsWith<Exception> { Yamls.parse(Step.serializer(), "do: { longPress: { point: '50%,50%', id: a } }") }
+    }
+
+    @Test
     fun runtimeVariablesSurviveLoading() {
         assertEquals(
             "tap \${var.first} \${date(-1, 'd')}",

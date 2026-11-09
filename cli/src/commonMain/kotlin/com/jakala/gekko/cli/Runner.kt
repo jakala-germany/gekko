@@ -2,6 +2,7 @@ package com.jakala.gekko.cli
 
 import com.jakala.gekko.protocol.Bounds
 import com.jakala.gekko.protocol.Command
+import com.jakala.gekko.protocol.ErrorKind
 import com.jakala.gekko.protocol.Response
 import com.jakala.gekko.protocol.ScrollDirection
 import com.jakala.gekko.protocol.Selector
@@ -737,7 +738,7 @@ class TestRunner(
             return it.selector(platform)
         }
         action.longPress?.let {
-            return it.toSelector(platform)
+            return if (it.point == null) it.toSelector(platform) else null
         }
         action.doubleTap?.let {
             return it.toSelector(platform)
@@ -967,6 +968,7 @@ class TestRunner(
                     )
                 )
             action.swipe != null -> swipe(action.swipe, timeout)
+            action.drag != null -> drag(action.drag, timeout)
             action.assertVisible != null ->
                 assertVisible(action.assertVisible.toSelector(platform), timeout, true, settle)
             action.assertNotVisible != null ->
@@ -978,16 +980,7 @@ class TestRunner(
                     Command.DoubleTap(action.doubleTap.toSelector(platform), timeout, settleMs),
                     action.doubleTap.system,
                 )
-            action.longPress != null ->
-                touchGesture(
-                    Command.LongPress(
-                        action.longPress.toSelector(platform),
-                        action.longPress.holdMs,
-                        timeout,
-                        settleMs,
-                    ),
-                    action.longPress.system,
-                )
+            action.longPress != null -> longPress(action.longPress, timeout)
             action.back == true -> onDevice { device.pressKey("back") }
             action.openLink != null -> onDevice { device.openLink(action.openLink) }
             action.scrollUntilVisible != null -> scrollUntilVisible(action.scrollUntilVisible, timeout)
@@ -1266,15 +1259,16 @@ class TestRunner(
             expectOk(drivers.send(wheel))
             return
         }
+        // A drag moves the content by exactly the distance and lets it rest: a fling would carry it past the element
         val command =
             when (finger) {
-                "up" -> Command.Swipe(cx, cy + dy, cx, cy - dy)
-                "down" -> Command.Swipe(cx, cy - dy, cx, cy + dy)
-                "left" -> Command.Swipe(cx + dx, cy, cx - dx, cy)
-                "right" -> Command.Swipe(cx - dx, cy, cx + dx, cy)
+                "up" -> Command.Drag(cx, cy + dy, cx, cy - dy)
+                "down" -> Command.Drag(cx, cy - dy, cx, cy + dy)
+                "left" -> Command.Drag(cx + dx, cy, cx - dx, cy)
+                "right" -> Command.Drag(cx - dx, cy, cx + dx, cy)
                 else -> throw StepFailure("Unknown swipe direction '$finger'")
             }
-        expectOk(drivers.send(command))
+        sendDrag(command, forceSystem = false)
     }
 
     private suspend fun treeWindows(): List<UiNode> {
@@ -1366,15 +1360,7 @@ class TestRunner(
                     Command.Swipe(sx, sy, ex, ey)
                 }
                 from != null && direction != null -> {
-                    val selector = from.toSelector(platform)
-                    assertVisible(selector, timeout, true)
-                    val windows = (drivers.send(Command.Tree) as? Response.TreeResult)?.windows.orEmpty()
-                    val node =
-                        windows
-                            .flatMap { window -> window.findAll(selector).filter { it.isOnScreen(window.bounds) } }
-                            .getOrNull(selector.index) ?: throw StepFailure("Element not found: $selector")
-                    val cx = node.bounds.centerX
-                    val cy = node.bounds.centerY
+                    val (cx, cy) = centerOf(from, timeout)
                     // The finger leaves the element and goes on to the screen's edge
                     when (direction.lowercase()) {
                         "right" -> Command.Swipe(cx, cy, screen.right - 1, cy)
@@ -1399,7 +1385,61 @@ class TestRunner(
                 }
                 else -> throw StepFailure("swipe needs a direction or start and end")
             }
-        expectOk(drivers.send(if (duration != null) command.copy(durationMs = duration) else command))
+        // The iOS agent works through accessibility and cannot make a fling: a swipe is a real touch of the runner
+        val forceSystem = spec.system || platform == Platform.Ios
+        expectOk(drivers.send(if (duration != null) command.copy(durationMs = duration) else command, forceSystem))
+    }
+
+    /** Moves the content under the start to the end, see [DragSpec]. */
+    private suspend fun drag(spec: DragSpec, timeout: Long) {
+        val screen = screenBounds()
+        val from = spec.from
+        val start = spec.start
+        val (sx, sy) =
+            when {
+                start != null -> pointOf(screen, start)
+                from != null -> centerOf(from, timeout)
+                else -> throw StepFailure("drag needs a start or an element to start from")
+            }
+        val (ex, ey) = pointOf(screen, spec.end)
+        sendDrag(Command.Drag(sx, sy, ex, ey), spec.system)
+    }
+
+    /**
+     * The iOS agent drags by moving the offset of the scroll view under the start, and answers `unsupported` when there
+     * is none (a slider, a reorder handle): the system runner then makes a real touch.
+     */
+    private suspend fun sendDrag(command: Command.Drag, forceSystem: Boolean) {
+        val response = drivers.send(command, forceSystem)
+        val refused = response is Response.Error && response.kind == ErrorKind.UNSUPPORTED
+        if (refused && !forceSystem && platform == Platform.Ios) {
+            expectOk(drivers.send(command, forceSystem = true))
+            return
+        }
+        expectOk(response)
+    }
+
+    /** Where the element is on screen, once it is visible: the center of the first one the selector means. */
+    private suspend fun centerOf(from: SelectorSpec, timeout: Long): Pair<Int, Int> {
+        val selector = from.toSelector(platform)
+        assertVisible(selector, timeout, true)
+        val windows = (drivers.send(Command.Tree) as? Response.TreeResult)?.windows.orEmpty()
+        val node =
+            windows
+                .flatMap { window -> window.findAll(selector).filter { it.isOnScreen(window.bounds) } }
+                .getOrNull(selector.index) ?: throw StepFailure("Element not found: $selector")
+        return node.bounds.centerX to node.bounds.centerY
+    }
+
+    /** A long press of an element, or of a spot of the screen. */
+    private suspend fun longPress(spec: LongPressSpec, timeout: Long) {
+        val point = spec.point
+        if (point == null) {
+            touchGesture(Command.LongPress(spec.toSelector(platform), spec.holdMs, timeout, settleMs), spec.system)
+            return
+        }
+        val (x, y) = pointOf(screenBounds(), point)
+        touchGesture(Command.LongPressAt(x, y, spec.holdMs), spec.system)
     }
 
     /** Keeps the text of an element (or the part of it that matches) in a variable for later steps. */
@@ -1634,6 +1674,7 @@ class TestRunner(
             action.type != null -> "type into ${action.type.element ?: action.type.id ?: action.type.text}"
             action.scroll != null -> "scroll"
             action.swipe != null -> "swipe ${action.swipe.direction ?: "between points"}"
+            action.drag != null -> "drag to ${action.drag.end}"
             action.assertVisible != null ->
                 "assert visible ${action.assertVisible.element ?: action.assertVisible.toSelector(platform)}"
             action.assertNotVisible != null ->
@@ -1645,8 +1686,10 @@ class TestRunner(
             action.use != null -> "use ${action.use}"
             action.doubleTap != null ->
                 "double tap ${action.doubleTap.element ?: action.doubleTap.id ?: action.doubleTap.text}"
-            action.longPress != null ->
-                "long press ${action.longPress.element ?: action.longPress.id ?: action.longPress.text}"
+            action.longPress != null -> {
+                val target = action.longPress
+                "long press ${target.point?.let { "point $it" } ?: target.element ?: target.id ?: target.text}"
+            }
             action.scrollUntilVisible != null -> "scroll until visible"
             action.eraseText != null -> "erase text"
             action.back == true -> "press back"
