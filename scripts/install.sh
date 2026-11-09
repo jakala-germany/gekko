@@ -9,7 +9,9 @@
 # Remote (pin the version in the URL and in the argument):
 #   curl -fsSL https://raw.githubusercontent.com/jakala-germany/gekko/1.0.0/scripts/install.sh | bash -s -- 1.0.0
 #
-# The CLI goes to $GEKKO_BIN_DIR (default ~/.local/bin), the runners to $GEKKO_HOME/runners (default ~/.gekko/runners);
+# On Windows (Git Bash) this script hands over to scripts/install.ps1, the one installer for Windows: the CLI goes to
+# ~\.gekko\bin and that folder is added to the PATH of the user. Elsewhere the CLI goes to $GEKKO_BIN_DIR (default
+# ~/.local/bin), the runners to $GEKKO_HOME/runners (default ~/.gekko/runners);
 # gekko finds them there without any setting; Playwright for web tests goes to $GEKKO_HOME/web (the browsers it downloads
 # live in the Playwright cache of the user). Every download is checked against the SHA256SUMS of the release. With
 # GEKKO_VERIFY_ATTESTATION=1 and the GitHub CLI installed the build provenance is verified as well.
@@ -43,6 +45,34 @@ for argument in "$@"; do
     *) version="$argument" ;;
   esac
 done
+
+case "$(uname -s)" in
+  MINGW* | MSYS* | CYGWIN*)
+    ref="${version#v}"
+    if [ "$ref" = "latest" ] && [ "$uninstall" = true ]; then
+      ref="main"
+    elif [ "$ref" = "latest" ]; then
+      ref="$(curl -fsSLI -o /dev/null -w '%{url_effective}' "$BASE_URL/latest")" || die "could not look up the latest release"
+      ref="${ref##*/}"
+    fi
+    # Next to this file when it is a checkout; never a file that happens to lie in the current directory of a pipe
+    script=""
+    if [ -f "$0" ] && [ "$(basename "$0")" = "install.sh" ] && [ -f "$(dirname "$0")/install.ps1" ]; then
+      script="$(dirname "$0")/install.ps1"
+    else
+      work="$(mktemp -d)"
+      trap 'rm -rf "$work"' EXIT
+      script="$work/install.ps1"
+      curl -fsSL -o "$script" "${GEKKO_SCRIPT_BASE_URL:-https://raw.githubusercontent.com/jakala-germany/gekko/$ref/scripts}/install.ps1" ||
+        die "could not download install.ps1 of $ref"
+    fi
+    arguments=(-Version "$version")
+    [ -z "$web" ] || arguments+=(-Web "$web")
+    [ "$uninstall" != true ] || arguments+=(-Uninstall)
+    powershell.exe -NoProfile -ExecutionPolicy Bypass -File "$(cygpath -w "$script")" "${arguments[@]}"
+    exit $?
+    ;;
+esac
 
 if [ "$uninstall" = true ]; then
   # Browsers of web sessions that still run are closed first

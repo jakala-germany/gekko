@@ -298,6 +298,10 @@ jobs:
         run: ./gradlew :cli:linkReleaseExecutableMingwX64
         shell: bash
 
+      - name: 'The install script installs and removes the binary it is given'
+        run: ./scripts/test-install.ps1
+        shell: pwsh
+
       - name: 'Run the sample tests in Chromium, Firefox and WebKit'
         run: ./scripts/e2e-web.sh
         shell: bash
