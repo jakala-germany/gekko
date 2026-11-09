@@ -22,12 +22,14 @@ class SecurityTest {
 
     @Test
     fun aTestReadsOnlyTheVariablesGekkoYamlDeclares() {
-        val access = EnvAccess(setOf("HOME"), emptyMap())
-        assertTrue(Yamls.substitute("user: \"\${env.HOME}\"", emptyMap(), access).startsWith("user: \""))
+        // A variable that every host has (and that is not a secret): the home of the user
+        val home = if (isWindowsHost) "USERPROFILE" else "HOME"
+        val access = EnvAccess(setOf(home), emptyMap())
+        assertTrue(Yamls.substitute("user: \"\${env.$home}\"", emptyMap(), access).startsWith("user: \""))
         val error =
             assertFailsWith<IllegalArgumentException> { Yamls.substitute("x: \"\${env.PATH}\"", emptyMap(), access) }
         assertTrue(error.message.orEmpty().contains("declare PATH"))
-        assertFailsWith<IllegalArgumentException> { Yamls.substitute("x: \"\${env.HOME}\"", emptyMap()) }
+        assertFailsWith<IllegalArgumentException> { Yamls.substitute("x: \"\${env.$home}\"", emptyMap()) }
     }
 
     @Test
@@ -39,7 +41,7 @@ class SecurityTest {
             assertTrue(first.startsWith("${tempDirectory()}/gekko-test-"))
             if (isWindowsHost) {
                 // The DACL names the current user and nobody else: no SYSTEM, no administrators, no group of users
-                val acl = runProcess(listOf("icacls", first)).text
+                val acl = runProcess(listOf("icacls", first.replace('/', '\\'))).text
                 assertTrue(acl.contains("(F)"), acl)
                 for (other in listOf("BUILTIN\\Administrators", "NT AUTHORITY\\SYSTEM", "BUILTIN\\Users", "Everyone")) {
                     assertFalse(acl.contains(other), acl)
