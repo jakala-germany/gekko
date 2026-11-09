@@ -23,9 +23,10 @@ function Write-Sums([string]$Override) {
     Set-Content -LiteralPath (Join-Path $release 'SHA256SUMS') -Value $lines
 }
 
+# Only the exit code is returned: what the installer prints goes to the log, not into the result of the function
 function Run-Installer([string[]]$Arguments) {
-    & powershell.exe -NoProfile -ExecutionPolicy Bypass -File $script @Arguments
-    return $LASTEXITCODE
+    & powershell.exe -NoProfile -ExecutionPolicy Bypass -File $script @Arguments | Out-Host
+    return [int]$LASTEXITCODE
 }
 
 function Expect([bool]$Condition, [string]$Message) {
