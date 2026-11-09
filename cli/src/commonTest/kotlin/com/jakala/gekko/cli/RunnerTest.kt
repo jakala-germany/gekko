@@ -790,6 +790,29 @@ class RunnerTest {
     }
 
     @Test
+    fun aLongPressSpotLiesInTheElementThatIsNamed() {
+        runTest {
+            // The element covers x 0..100, y 100..140 of the 100 x 200 screen
+            val agent = agent(Response.Ok)
+
+            val failure =
+                runStep(
+                    Platform.Android,
+                    "name: s\nsteps:\n  - do: { longPress: { id: Search.Button.Large, point: \"25%,50%\", holdMs: 800 } }",
+                    agent,
+                    FakeClient { Response.Ok },
+                )
+
+            assertNull(failure)
+            assertEquals(
+                listOf(Command.LongPressAt(25, 120, 800)),
+                agent.received.filterIsInstance<Command.LongPressAt>(),
+            )
+            assertTrue(agent.received.none { it is Command.LongPress })
+        }
+    }
+
+    @Test
     fun aLongPressOnASpotOnIosIsATouchOfTheSystemRunner() {
         runTest {
             val agent = agent(Response.Ok)

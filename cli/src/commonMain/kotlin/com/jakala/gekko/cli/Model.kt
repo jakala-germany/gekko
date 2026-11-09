@@ -434,8 +434,9 @@ data class ScrollUntilSpec(
 }
 
 /**
- * A long press: the element is held for [holdMs], or the spot [point] (`x%,y%` of the screen) for a map, a chart or a
- * canvas that has no element. [system] sends it to the system runner like `tap`.
+ * A long press: the element is held for [holdMs]. With a [point] (`x%,y%`) a spot of the element is held (`50%,50%` is
+ * its center, `90%,10%` its upper right corner), or a spot of the screen when no element is named: for a map, a chart
+ * or a canvas that has nothing to select inside. [system] sends it to the system runner like `tap`.
  */
 @Serializable
 data class LongPressSpec(
@@ -453,7 +454,7 @@ data class LongPressSpec(
     val system: Boolean = false,
     /** A pane element the selector starts from, see [SelectorSpec.element]. */
     val element: String? = null,
-    /** Holds a spot given as `x%,y%` of the screen instead of an element. */
+    /** Holds a spot given as `x%,y%` of the element, or of the screen when no element is named. */
     val point: String? = null,
 ) {
     init {
@@ -461,11 +462,13 @@ data class LongPressSpec(
             requireSelectorCriterion(id, text, textContains, textMatches, action, element)
         } else {
             require(Points.parse(point) != null) { "longPress.point must be like '50%,50%', was '$point'" }
-            require(listOfNotNull(id, text, textContains, textMatches, action, within, element).isEmpty()) {
-                "longPress takes either an element or a point, not both"
-            }
         }
         require(holdMs > 0) { "longPress.holdMs must be positive, was $holdMs" }
+    }
+
+    /** Whether an element is named: with a [point] it is the element the spot lies in, else the screen is meant. */
+    fun namesElement(): Boolean {
+        return listOfNotNull(id, text, textContains, textMatches, action, element).isNotEmpty()
     }
 
     fun toSelector(platform: Platform): Selector {
