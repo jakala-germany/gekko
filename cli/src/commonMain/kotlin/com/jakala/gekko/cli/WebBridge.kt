@@ -312,6 +312,8 @@ class WebBridge(
 
     /** The process of this session's bridge when its session file names one that really runs a bridge on [port]. */
     private fun ownBridgePid(): String? {
+        // There is no gekko from before the signed protocol on Windows, and no `ps` or `kill` there either
+        if (isWindowsHost) return null
         val file = WebSessions.sessionFile(name)
         if (!fileExists(file)) return null
         val pid =
