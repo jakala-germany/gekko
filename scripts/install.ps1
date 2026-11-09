@@ -45,6 +45,20 @@ $RunnersDir = Join-Path $GekkoDir 'runners'
 $Asset = 'gekko-windows-x64.exe'
 $RunnerAsset = 'gekko-system-runner.apk'
 
+# Runs a native program and returns its exit code, whatever it writes to the error stream: Windows PowerShell 5.1 turns
+# such text into a terminating error under $ErrorActionPreference = 'Stop' as soon as the stream is redirected
+function Invoke-Native([scriptblock]$Command) {
+    $previous = $ErrorActionPreference
+    $ErrorActionPreference = 'Continue'
+    try {
+        & $Command 2>&1 | Out-Null
+        return [int]$LASTEXITCODE
+    }
+    finally {
+        $ErrorActionPreference = $previous
+    }
+}
+
 function Same-Directory([string]$Left, [string]$Right) {
     return $Left.TrimEnd('\', '/') -ieq $Right.TrimEnd('\', '/')
 }
@@ -84,7 +98,13 @@ if ($Uninstall) {
         foreach ($session in Get-ChildItem -LiteralPath $sessions -Filter '*.json') {
             $text = Get-Content -LiteralPath $session.FullName -Raw
             if ($text -match '"pid"\s*:\s*(\d+)') {
-                & taskkill.exe /PID $Matches[1] /T /F 2>&1 | Out-Null
+                $bridgeId = [int]$Matches[1]
+                # A bridge that was killed leaves its file behind and Windows reuses process ids: only a Node.js process
+                # (what runs the bridge) is stopped, never whatever has that id now
+                $running = Get-Process -Id $bridgeId -ErrorAction SilentlyContinue
+                if ($running -and $running.ProcessName -like 'node*') {
+                    [void](Invoke-Native { & taskkill.exe /PID $bridgeId /T /F })
+                }
             }
         }
     }
@@ -168,8 +188,8 @@ try {
             Fail 'GEKKO_VERIFY_ATTESTATION=1 needs the GitHub CLI (gh)'
         }
         foreach ($name in @($Asset, $RunnerAsset)) {
-            & gh attestation verify (Join-Path $work $name) --repo jakala-germany/gekko 2>&1 | Out-Null
-            if ($LASTEXITCODE -ne 0) {
+            $verified = Invoke-Native { & gh attestation verify (Join-Path $work $name) --repo jakala-germany/gekko }
+            if ($verified -ne 0) {
                 Fail "provenance of $name could not be verified"
             }
         }
