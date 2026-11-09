@@ -31,6 +31,20 @@ adb install -r sample-android/build/outputs/apk/debug/sample-android-debug.apk
 "$GEKKO" run --project examples/sample-tests --exclude-tags broken,ios-only,web-only \
   --junit "$OUT/junit.xml" --output "$OUT/results"
 
+# The system runner keeps time: this test forces it to hold three long presses of 900 ms and to swipe and drag. It takes
+# a few seconds; while the runner stepped through UiDevice.swipe it took far more than the bound (#31)
+RUNNER_TIME="$(sed -n 's/.*<testcase name="The system runner keeps its time"[^>]* time="\([0-9.]*\)".*/\1/p' "$OUT/junit.xml")"
+RUNNER_TIME_LIMIT=15
+if [ -z "$RUNNER_TIME" ]; then
+  echo "the runner timing test did not run" >&2
+  exit 1
+fi
+echo "The system runner kept its time: ${RUNNER_TIME}s (limit ${RUNNER_TIME_LIMIT}s)"
+if ! awk -v time="$RUNNER_TIME" -v limit="$RUNNER_TIME_LIMIT" 'BEGIN { exit !(time <= limit) }'; then
+  echo "the system runner is too slow: ${RUNNER_TIME}s, expected at most ${RUNNER_TIME_LIMIT}s" >&2
+  exit 1
+fi
+
 # The location of a physical device comes from the system runner; GEKKO_MOCK_LOCATION=1 takes that way on the emulator
 GEKKO_MOCK_LOCATION=1 "$GEKKO" run --project examples/sample-tests --tags location --output "$OUT/mock-location"
 

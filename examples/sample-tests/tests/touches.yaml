@@ -1,0 +1,15 @@
+name: A drag moves the list by the finger and lets go
+tags: [touches, list]
+steps:
+  - say: The first row is on screen
+    platform: [android, ios]
+    do: { assertVisible: { id: sample.row.1 } }
+  - say: Drag the list up by 60 percent of the screen
+    platform: [android, ios]
+    do: { drag: { start: "11%,90%", end: "11%,30%" } }
+  - say: The first row has scrolled away
+    platform: [android, ios]
+    do: { assertNotVisible: { id: sample.row.1 } }
+  - say: A row further down is on screen, the list did not fling to its end
+    platform: [android, ios]
+    do: { assertVisible: { id: sample.row.35 } }
