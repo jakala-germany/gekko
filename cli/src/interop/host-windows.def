@@ -315,7 +315,8 @@ static HANDLE gekko_open_nul(int for_write) {
 /* An anonymous pipe whose end for the child is inheritable and whose end for this process is not. */
 static int gekko_make_pipe(HANDLE *read_end, HANDLE *write_end, int child_reads) {
     SECURITY_ATTRIBUTES attributes = {sizeof(SECURITY_ATTRIBUTES), NULL, TRUE};
-    if (!CreatePipe(read_end, write_end, &attributes, 0)) {
+    /* A big buffer: the default of 4 KB makes a program that prints a screenshot wait for this loop every 4 KB */
+    if (!CreatePipe(read_end, write_end, &attributes, 1024 * 1024)) {
         return 0;
     }
     SetHandleInformation(child_reads ? *write_end : *read_end, HANDLE_FLAG_INHERIT, 0);
@@ -569,6 +570,7 @@ static int gekko_run(const char *program, char *const *argv, const char *command
     int exited = 0;
     int timed_out = 0;
     while (!exited) {
+        size_t before = length;
         if (output_open && !gekko_read_available(parent_out, &buffer, &length, &capacity)) {
             output_open = 0;
         }
@@ -577,8 +579,9 @@ static int gekko_run(const char *program, char *const *argv, const char *command
             timed_out = 1;
             break;
         }
-        DWORD wait = WaitForSingleObject(info.hProcess, output_open ? (remaining < 5 ? (DWORD) remaining : 5)
-                                                                    : (remaining < 50 ? (DWORD) remaining : 50));
+        /* Data just came in: look again at once. Otherwise wait a moment for the program to exit or to print. */
+        DWORD pause = length != before ? 0 : (output_open ? 5 : 50);
+        DWORD wait = WaitForSingleObject(info.hProcess, remaining < (long long) pause ? (DWORD) remaining : pause);
         if (wait == WAIT_OBJECT_0) {
             exited = 1;
         } else if (wait != WAIT_TIMEOUT) {
