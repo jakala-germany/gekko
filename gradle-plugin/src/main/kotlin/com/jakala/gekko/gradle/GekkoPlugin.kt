@@ -41,6 +41,10 @@ class GekkoPlugin : Plugin<Project> {
                 val selected = extension.variants.get()
                 val matches = variant.name in selected || variant.buildType in selected
                 if (matches) {
+                    // An AGP that does not know `debuggable` yet cannot tell, so it is not warned about
+                    if (runCatching { variant.debuggable }.getOrNull() == false) {
+                        project.logger.warn(notDebuggableWarning(variant.name))
+                    }
                     val notation = extension.agent.orNull ?: agentNotation(extension.version.get())
                     project.dependencies.add("${variant.name}Implementation", notation)
                     if (extension.networkMocks.get()) {
@@ -61,6 +65,16 @@ class GekkoPlugin : Plugin<Project> {
         /** The dependency that puts the in-app agent into a variant. */
         fun agentNotation(version: String): String {
             return "io.github.jakala-germany:gekko-agent-android:$version"
+        }
+
+        /**
+         * The agent only answers a CLI that holds its key, and the CLI hands the key over with `run-as`, which only a
+         * debuggable build allows. In any other build the agent is in the app and refuses every command.
+         */
+        fun notDebuggableWarning(variant: String): String {
+            return "gekko: the variant '$variant' is not debuggable, so the gekko agent in it cannot get its key " +
+                "(the CLI hands it over with run-as) and refuses every command. List only debuggable variants in " +
+                "gekko { variants }; a build for users must never contain the agent."
         }
     }
 }

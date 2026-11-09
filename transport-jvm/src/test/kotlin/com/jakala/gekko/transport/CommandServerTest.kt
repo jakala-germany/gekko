@@ -76,7 +76,7 @@ class CommandServerTest {
     private fun serveOnce(request: String): Pair<String, List<Command>> {
         val seen = mutableListOf<Command>()
         val connection = RecordedConnection(request)
-        CommandServer(OneShotListener(connection)) {
+        CommandServer(OneShotListener(connection), ServerAuth.open()) {
                 seen += it
                 Response.Ok
             }
@@ -93,7 +93,7 @@ class CommandServerTest {
     fun servesAnyListenerAndClosesTheConnectionAfterTheLastRequest() {
         val connection = RecordedConnection(post("{\"type\":\"foreground\"}"))
 
-        CommandServer(OneShotListener(connection)) { Response.ForegroundResult(true) }.start()
+        CommandServer(OneShotListener(connection), ServerAuth.open()) { Response.ForegroundResult(true) }.start()
 
         val answer = connection.answer()
         assertTrue(answer.startsWith("HTTP/1.1 200 OK"))
@@ -114,7 +114,7 @@ class CommandServerTest {
     fun answersAFailingHandlerWithAnErrorWithoutKind() {
         val connection = RecordedConnection(post("{\"type\":\"tree\"}"))
 
-        CommandServer(OneShotListener(connection)) { error("main thread did not respond") }.start()
+        CommandServer(OneShotListener(connection), ServerAuth.open()) { error("main thread did not respond") }.start()
 
         val answer = connection.answer()
         assertTrue(answer.contains("main thread did not respond"))
@@ -125,7 +125,7 @@ class CommandServerTest {
     fun servesSeveralRequestsOnOneLoopbackConnection() {
         val listener = TcpListener(0)
         val seen = mutableListOf<Command>()
-        CommandServer(listener) { command ->
+        CommandServer(listener, ServerAuth.open()) { command ->
                 seen += command
                 Response.Ok
             }
@@ -280,7 +280,7 @@ class CommandServerTest {
             }
         val connection = RecordedConnection(endless)
 
-        CommandServer(OneShotListener(connection)) { Response.Ok }.start()
+        CommandServer(OneShotListener(connection), ServerAuth.open()) { Response.Ok }.start()
 
         assertTrue(connection.answer().startsWith("HTTP/1.1 413"))
     }
@@ -290,7 +290,7 @@ class CommandServerTest {
         val connection =
             RecordedConnection(ByteArrayInputStream(ByteArray(CommandServer.MAX_HEAD_BYTES * 4) { 'G'.code.toByte() }))
 
-        CommandServer(OneShotListener(connection)) { Response.Ok }.start()
+        CommandServer(OneShotListener(connection), ServerAuth.open()) { Response.Ok }.start()
 
         assertTrue(connection.answer().startsWith("HTTP/1.1 413"))
     }
@@ -300,7 +300,7 @@ class CommandServerTest {
         val listener = TcpListener(0)
         val entered = CountDownLatch(1)
         val release = CountDownLatch(1)
-        CommandServer(listener, maxConnections = 1) {
+        CommandServer(listener, ServerAuth.open(), maxConnections = 1) {
                 entered.countDown()
                 release.await(5, TimeUnit.SECONDS)
                 Response.Ok
@@ -324,7 +324,7 @@ class CommandServerTest {
     @Test
     fun givesTheSlotBackWhenAConnectionEnds() {
         val listener = TcpListener(0)
-        CommandServer(listener, maxConnections = 1) { Response.Ok }.start()
+        CommandServer(listener, ServerAuth.open(), maxConnections = 1) { Response.Ok }.start()
 
         repeat(3) {
             Socket("127.0.0.1", listener.port).use { socket ->
@@ -341,7 +341,7 @@ class CommandServerTest {
     @Test
     fun answersARequestThatStallsWithATimeout() {
         val listener = TcpListener(0)
-        CommandServer(listener, readTimeoutMs = 300) { Response.Ok }.start()
+        CommandServer(listener, ServerAuth.open(), readTimeoutMs = 300) { Response.Ok }.start()
 
         val status =
             Socket("127.0.0.1", listener.port).use { socket ->
@@ -357,7 +357,7 @@ class CommandServerTest {
     @Test
     fun answersARequestThatArrivesByTheByteWithATimeout() {
         val listener = TcpListener(0)
-        CommandServer(listener, readTimeoutMs = 400) { Response.Ok }.start()
+        CommandServer(listener, ServerAuth.open(), readTimeoutMs = 400) { Response.Ok }.start()
 
         val status =
             Socket("127.0.0.1", listener.port).use { socket ->
@@ -383,7 +383,7 @@ class CommandServerTest {
     @Test
     fun closesAnIdleConnectionAfterTheTimeoutWithoutAnAnswer() {
         val listener = TcpListener(0)
-        CommandServer(listener, readTimeoutMs = 300) { Response.Ok }.start()
+        CommandServer(listener, ServerAuth.open(), readTimeoutMs = 300) { Response.Ok }.start()
 
         val read =
             Socket("127.0.0.1", listener.port).use { socket ->

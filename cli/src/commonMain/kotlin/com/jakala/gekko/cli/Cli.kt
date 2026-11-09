@@ -57,7 +57,7 @@ fun runCli(args: List<String>) {
     try {
         command.main(args)
     } catch (error: Throwable) {
-        command.echo(error.message ?: error.toString(), err = true)
+        command.say(error.message ?: error.toString(), err = true)
         exitProcess(ExitCode.of(error))
     }
 }
@@ -125,7 +125,7 @@ private abstract class DeviceCommand(name: String) : CliktCommand(name = name) {
         val config = webConfig()
         val name = serial ?: config.web.browser
         if (!WebSessions.isWebId(name)) fail("'$name' is not a browser; use chromium, firefox or webkit with -s")
-        return WebDevice(name, config) { echo(it, err = true) }
+        return WebDevice(name, config) { say(it, err = true) }
     }
 
     /** True for a command that can do its work for the web without gekko.yaml, like installing the browsers. */
@@ -151,7 +151,7 @@ private abstract class DeviceCommand(name: String) : CliktCommand(name = name) {
     protected fun <T> withDrivers(block: suspend (Drivers, Device, Project) -> T): T {
         val device = device()
         val project = Project.load(root)
-        val drivers = Drivers(device, project.config) { echo(it, err = true) }
+        val drivers = Drivers(device, project.config) { say(it, err = true) }
         return runBlocking {
             try {
                 block(drivers, device, project)
@@ -171,12 +171,12 @@ private abstract class DeviceCommand(name: String) : CliktCommand(name = name) {
             } catch (error: IllegalStateException) {
                 failWith(error)
             }
-        removed.forEach { echo("removed $it") }
+        removed.forEach { say("removed $it") }
         return removed.isNotEmpty()
     }
 
     protected fun fail(message: String, code: Int = ExitCode.USAGE): Nothing {
-        echo(message, err = true)
+        say(message, err = true)
         exitProcess(code)
     }
 
@@ -217,7 +217,7 @@ private abstract class SelectorCommand(name: String) : DeviceCommand(name) {
         if (response is Response.Error) {
             fail(response.message, ExitCode.FAILED)
         }
-        echo("ok")
+        say("ok")
     }
 }
 
@@ -227,9 +227,9 @@ private class DevicesCommand : CliktCommand(name = "devices") {
     }
 
     override fun run() {
-        AdbDevice.listSerials().forEach { echo("android $it") }
-        SimctlDevice.bootedUdids().forEach { echo("ios $it") }
-        WebSessions.running().forEach { echo("web $it") }
+        AdbDevice.listSerials().forEach { say("android $it") }
+        SimctlDevice.bootedUdids().forEach { say("ios $it") }
+        WebSessions.running().forEach { say("web $it") }
     }
 }
 
@@ -246,7 +246,7 @@ private class TreeCommand : DeviceCommand("tree") {
             val response = drivers.send(Command.Tree)
             if (response !is Response.TreeResult) fail("Unexpected response: $response", ExitCode.INFRASTRUCTURE)
             if (json) {
-                echo(treeJson.encodeToString(ListSerializer(UiNode.serializer()), response.windows))
+                say(treeJson.encodeToString(ListSerializer(UiNode.serializer()), response.windows))
                 return@withDrivers
             }
             // The elements of the panes that match a line are named, and so is the pane that is on screen
@@ -254,9 +254,9 @@ private class TreeCommand : DeviceCommand("tree") {
             val label = { node: UiNode ->
                 elements.filter { it.second.matches(node) }.joinToString(", ") { it.first.qualified }.ifEmpty { null }
             }
-            echo(TreePrinter.print(response.windows, label))
+            say(TreePrinter.print(response.windows, label))
             val current = project.panes.current(response.windows, platform)
-            if (current.isNotEmpty()) echo("current pane: ${current.joinToString(", ")}")
+            if (current.isNotEmpty()) say("current pane: ${current.joinToString(", ")}")
         }
     }
 }
@@ -330,7 +330,7 @@ private class AssertCommand : SelectorCommand("assert") {
                     tree?.windows?.any { window -> window.findAll(selector).any { it.isOnScreen(window.bounds) } } ==
                         true
                 if (found != gone) {
-                    echo("ok")
+                    say("ok")
                     return@withDrivers
                 }
                 if (nowMillis() > deadline) {
@@ -357,7 +357,7 @@ private class ScreenshotCommand : DeviceCommand("screenshot") {
     override fun run() {
         val bytes = device().screenshot()
         writeFile(output, bytes)
-        echo("saved $output")
+        say("saved $output")
     }
 }
 
@@ -393,7 +393,7 @@ private class InstallCommand : DeviceCommand("install") {
         } catch (error: IllegalStateException) {
             failWith(error)
         }
-        echo("installed")
+        say("installed")
     }
 }
 
@@ -405,7 +405,7 @@ private class UninstallCommand : DeviceCommand("uninstall") {
     override fun run() {
         val device = device()
         val project = Project.load(root)
-        if (!uninstallEverything(device, project)) echo("nothing to remove")
+        if (!uninstallEverything(device, project)) say("nothing to remove")
     }
 }
 
@@ -422,7 +422,7 @@ private class LaunchCommand : DeviceCommand("launch") {
             if (fresh) device.clearData(project.config)
             device.launch(project.config)
             if (!drivers.waitForAgent(AGENT_TIMEOUT_MS)) fail("Agent did not respond", ExitCode.INFRASTRUCTURE)
-            echo("ok")
+            say("ok")
         }
     }
 
@@ -520,7 +520,7 @@ private class RunCommand : DeviceCommand("run") {
                     device,
                     drivers,
                     output,
-                    { echo(Masker.mask(it)) },
+                    { say(Masker.mask(it)) },
                     healer,
                     suggestIds = healer == null,
                     record = record,
@@ -528,11 +528,11 @@ private class RunCommand : DeviceCommand("run") {
             val results = mutableListOf<TestResult>()
             try {
                 units.forEach { unit ->
-                    runner.runUnit(unit, started = { echo("RUN  $it") }) { result ->
+                    runner.runUnit(unit, started = { say("RUN  $it") }) { result ->
                         results += result
                         // The report is complete after every test, so a run that is killed still leaves one
-                        junit?.let { writeTextFile(it, Reporter.junit("gekko", results)) }
-                        echo(resultLine(result, ""))
+                        junit?.let { writeReportFile(it, Reporter.junit("gekko", results)) }
+                        say(resultLine(result, ""))
                     }
                 }
             } finally {
@@ -541,9 +541,9 @@ private class RunCommand : DeviceCommand("run") {
                 (device as? WebDevice)?.takeIf { it.startedHere && !uninstall }?.stopSession()
             }
             reportHeals(results)
-            junit?.let { writeTextFile(it, Reporter.junit("gekko", results)) }
-            junitHealed?.let { writeTextFile(it, Reporter.junitHealed("gekko-healed", results)) }
-            echo(summary(results))
+            junit?.let { writeReportFile(it, Reporter.junit("gekko", results)) }
+            junitHealed?.let { writeReportFile(it, Reporter.junitHealed("gekko-healed", results)) }
+            say(summary(results))
             if (uninstall) uninstallEverything(device, project)
             exitWith(results)
         }
@@ -620,7 +620,7 @@ private class RunCommand : DeviceCommand("run") {
             if (set == null) {
                 val key = "app.${ref.platform.key}"
                 if (!all) fail("$key is not set in gekko.yaml but ${ref.id} is a ${ref.platform.key} device")
-                echo("Skipping ${ref.platform.key} device ${ref.id}: $key is not set in gekko.yaml")
+                say("Skipping ${ref.platform.key} device ${ref.id}: $key is not set in gekko.yaml")
             }
             set != null
         }
@@ -631,9 +631,9 @@ private class RunCommand : DeviceCommand("run") {
     private fun reportHeals(results: List<TestResult>) {
         val records = results.flatMap { it.healed }.distinct()
         if (records.isEmpty()) return
-        echo(HealReport.warnings(records))
-        writeTextFile("$output/gekko-heal-report.md", HealReport.markdown(records))
-        echo("Heal report: $output/gekko-heal-report.md")
+        say(HealReport.warnings(records))
+        writeReportFile("$output/gekko-heal-report.md", HealReport.markdown(records))
+        say("Heal report: $output/gekko-heal-report.md")
     }
 
     private fun runOnDevices(ids: List<String>, wanted: List<String>) {
@@ -662,7 +662,7 @@ private class RunCommand : DeviceCommand("run") {
                         // A group limited to other platforms is not part of this platform's run
                         val mine = RunUnits.forPlatform(units, platform)
                         if (mine.isEmpty()) {
-                            echo("No selected tests for ${platform.key}; ${group.joinToString { it.id }} is left out")
+                            say("No selected tests for ${platform.key}; ${group.joinToString { it.id }} is left out")
                             return@forEach
                         }
                         launch {
@@ -671,7 +671,7 @@ private class RunCommand : DeviceCommand("run") {
                                 (device as? WebDevice)?.recordVideo = record != RecordMode.None
                                 installIfAsked(device, project, platform, strict = false)
                                 val prefix = "[${ref.id}]"
-                                val drivers = Drivers(device, project.config) { echo("$prefix $it") }
+                                val drivers = Drivers(device, project.config) { say("$prefix $it") }
                                 Session(
                                     ref,
                                     TestRunner(
@@ -680,7 +680,7 @@ private class RunCommand : DeviceCommand("run") {
                                         device,
                                         drivers,
                                         "$output/${ref.id}",
-                                        { echo(Masker.mask("$prefix $it")) },
+                                        { say(Masker.mask("$prefix $it")) },
                                         healer,
                                         suggestIds = healer == null,
                                         record = record,
@@ -693,9 +693,9 @@ private class RunCommand : DeviceCommand("run") {
                                 // The tests of a group stay together: one unit goes to one device
                                 val work: suspend (Int, RunUnit) -> Unit = { worker, unit ->
                                     val ref = sessions[worker].ref
-                                    sessions[worker].runner.runUnit(unit, started = { echo("[${ref.id}] RUN  $it") }) {
+                                    sessions[worker].runner.runUnit(unit, started = { say("[${ref.id}] RUN  $it") }) {
                                         val result = it.copy(device = ref.id)
-                                        echo(resultLine(result, "[${ref.id}] "))
+                                        say(resultLine(result, "[${ref.id}] "))
                                         lock.withLock { results += result }
                                     }
                                 }
@@ -719,12 +719,12 @@ private class RunCommand : DeviceCommand("run") {
             }
         }
         reportHeals(results)
-        junit?.let { writeTextFile(it, Reporter.junit("gekko", results)) }
-        junitHealed?.let { writeTextFile(it, Reporter.junitHealed("gekko-healed", results)) }
+        junit?.let { writeReportFile(it, Reporter.junit("gekko", results)) }
+        junitHealed?.let { writeReportFile(it, Reporter.junitHealed("gekko-healed", results)) }
         if (everyDevice) {
-            refs.forEach { ref -> echo("[${ref.id}] " + summary(results.filter { it.device == ref.id })) }
+            refs.forEach { ref -> say("[${ref.id}] " + summary(results.filter { it.device == ref.id })) }
         }
-        echo(summary(results, " on ${refs.size} device(s)"))
+        say(summary(results, " on ${refs.size} device(s)"))
         if (uninstall) refs.forEach { uninstallEverything(it.create(project.config), project) }
         exitWith(results)
     }
@@ -748,7 +748,7 @@ private class RunCommand : DeviceCommand("run") {
     private fun selectTests(project: Project, wanted: List<String>): List<RunUnit>? {
         val problems = Checker.check(project, paths)
         if (problems.isNotEmpty()) {
-            problems.forEach { echo(it, err = true) }
+            problems.forEach { say(it, err = true) }
             fail("${problems.size} problem(s) in the tests; fix them or run gekko check", ExitCode.USAGE)
         }
         val selected =
@@ -762,9 +762,9 @@ private class RunCommand : DeviceCommand("run") {
         val units = RunUnits.of(project, selected)
         val mine = shardOf(units)
         if (mine.isEmpty()) {
-            echo("Shard $shard has no tests (${selected.size} tests in total); nothing to run")
-            junit?.let { writeTextFile(it, Reporter.junit("gekko", emptyList())) }
-            junitHealed?.let { writeTextFile(it, Reporter.junitHealed("gekko-healed", emptyList())) }
+            say("Shard $shard has no tests (${selected.size} tests in total); nothing to run")
+            junit?.let { writeReportFile(it, Reporter.junit("gekko", emptyList())) }
+            junitHealed?.let { writeReportFile(it, Reporter.junitHealed("gekko-healed", emptyList())) }
             return null
         }
         return mine
@@ -802,12 +802,12 @@ private class LlmCheckCommand : CliktCommand(name = "llm-check") {
             try {
                 LlmClients.create(source)
             } catch (error: IllegalStateException) {
-                echo("--heal ${source.key}: ${error.message}", err = true)
+                say("--heal ${source.key}: ${error.message}", err = true)
                 exitProcess(ExitCode.USAGE)
             }
         val answer = runBlocking { client.complete("Connectivity check. Answer with the single word: pong", "ping") }
         check(answer.isNotBlank()) { "the model answered with nothing" }
-        echo("${source.key}: ok, the model answered: ${answer.trim().take(200)}")
+        say("${source.key}: ok, the model answered: ${answer.trim().take(200)}")
     }
 }
 
@@ -823,12 +823,12 @@ private class CheckCommand : CliktCommand(name = "check") {
         val project = Project.load(root)
         val report = Checker.report(project, files)
         if (report.problems.isEmpty()) {
-            echo("${project.testFiles(files).size} tests ok")
-            report.warnings.forEach { echo("warning: $it", err = true) }
+            say("${project.testFiles(files).size} tests ok")
+            report.warnings.forEach { say("warning: $it", err = true) }
             return
         }
-        report.problems.forEach { echo(it, err = true) }
-        report.warnings.forEach { echo("warning: $it", err = true) }
+        report.problems.forEach { say(it, err = true) }
+        report.warnings.forEach { say("warning: $it", err = true) }
         exitProcess(ExitCode.USAGE)
     }
 }

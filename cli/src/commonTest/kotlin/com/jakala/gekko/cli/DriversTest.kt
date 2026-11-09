@@ -5,6 +5,7 @@ import com.jakala.gekko.protocol.Response
 import com.jakala.gekko.protocol.Selector
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFailsWith
 import kotlin.test.assertTrue
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.test.runTest
@@ -26,6 +27,32 @@ class DriversTest {
 
             assertEquals(Response.Ok, response)
             assertEquals(listOf<Command>(tap), agent.received)
+            assertTrue(system.received.isEmpty())
+        }
+    }
+
+    @Test
+    fun androidStopsWhenSomethingAnswersInPlaceOfTheAgentInsteadOfAskingTheSystemRunner() {
+        runTest {
+            val agent = FakeClient { throw UntrustedServerException("not the agent") }
+            val system = FakeClient { Response.Ok }
+
+            assertFailsWith<UntrustedServerException> {
+                drivers(FakeDevice(supportsWaitFor = true), agent, system).send(tap)
+            }
+            assertTrue(system.received.isEmpty())
+        }
+    }
+
+    @Test
+    fun iosStopsWhenSomethingAnswersInPlaceOfTheAgentInsteadOfAskingTheSystemRunner() {
+        runTest {
+            val agent = FakeClient { throw UntrustedServerException("not the agent") }
+            val system = FakeClient { Response.Ok }
+
+            assertFailsWith<UntrustedServerException> {
+                drivers(FakeDevice(supportsWaitFor = false), agent, system).send(tap)
+            }
             assertTrue(system.received.isEmpty())
         }
     }

@@ -50,6 +50,16 @@ Nothing goes into the app under test: gekko starts the browser through Playwrigh
 
 A web "device" is a named browser session (`chromium`, `firefox`, `webkit`; `chromium-2` for more of one) that outlives a CLI call, so `gekko launch`, `gekko tree` and `gekko tap` work step by step like on a device.
 
+## Who may answer
+
+A server on a port or a socket can be taken by whoever binds it first: another app on the phone, another process or user on the machine. gekko does not trust the connection, it trusts a key. Every request carries a fresh nonce and an HMAC of its endpoint, the session of the server, the nonce and the body, and every answer carries an HMAC of the same nonce, its status and its body. The key itself never goes over the connection. The CLI does not believe an answer that is not signed for its request, so a program that sits on the port cannot fail a test, return a fake tree or collect the token: the run stops with an error that names the port.
+
+The session is a random id that a server picks when it starts and names in its signed answer to `hello`. Every other command carries it, so a request recorded against a fake server is worthless against the real one, and one from before an app restart is worthless afterwards.
+
+- **iOS simulators and web:** the key is the per-user token in `~/.gekko/token`, handed to the agent, the runner and the bridge when the CLI starts them.
+- **Android:** every socket has a key of its own, derived from the token. The agent reads it from a file in the private directory of the app, which the CLI writes with `run-as` (so the agent needs a debuggable build); the system runner gets it as an argument of `am instrument`. No other app can read either.
+- **Text from the app:** ids, texts and error messages come from the app under test and can hold escape sequences that a terminal acts on. The CLI turns every control character into a visible escape (`\u001b`) before it prints it or writes `tree.txt`, `failure.json` and the other artifacts, so `cat tree.txt` after a failed run is safe.
+
 ## Waiting for a settled screen
 
 The default timeout (`defaultTimeoutMs`) only covers a screen that is still loading. Once the screen is *done* (nothing changed for `settleMs` and no progress indicator is shown) a missing element fails, or heals, immediately.

@@ -8,8 +8,16 @@
 
 - Upcoming additions go here
 
+**Security**
+
+- The CLI and the servers it talks to authenticate each other (protocol 2). Until now the servers checked the CLI (the iOS servers and the web bridge with a token that the CLI sent in clear text, Android by the uid of the caller) but the CLI believed any answer, so a program that listened on the port or the socket first (an app on the device, another process or user of the machine) could fail tests, return a fake tree or collect the token. Now every request and every answer is signed with HMAC-SHA256 over a nonce, the endpoint, the session of the server and the body, the key never goes over the connection, and an answer that is not signed for its request stops the run with an error that names the port. Android servers get their own key, derived from the token: the agent reads it from the private directory of the app (written with `run-as`) and the runner gets it as an argument of `am instrument`
+- Text from the app under test (ids, texts, error messages, the console of a page) can no longer carry escape sequences into your terminal: the CLI turns every control character into a visible escape (`\u001b`) before it prints it or writes `tree.txt`, `console.txt`, `failure.json`, the heal report or the JUnit files, so `cat tree.txt` after a failed run is safe
+- The Gradle plugin warns about a listed variant that is not debuggable: the agent only gets its key through `run-as`
+
 **Changed**
 
+- **Breaking:** the wire protocol is version 2. Update the CLI, the gekko Gradle plugin (or the agent dependency) and the iOS agent together; the Android and iOS system runners and the web bridge are replaced by the CLI itself, a bridge that is still running from an older gekko is ended and restarted. A CLI and a server of different protocols refuse each other with an error that says what to update
+- Android: the agent only answers in a debuggable build (it gets its key through `run-as`); `gekko launch` and `gekko run` fail with a clear message for a build that is not debuggable
 - A test whose app process is gone right after its start (on Android the late end of the `pm clear` before it killed the new process, so the agent never answered) starts the app once more instead of failing with "In-process agent did not respond"
 - iOS simulators: `simctl terminate` gets 30 seconds and one more try instead of 300 seconds, so a call that hangs on a freshly booted simulator no longer fails the first test of a run
 - Upcoming changes go here

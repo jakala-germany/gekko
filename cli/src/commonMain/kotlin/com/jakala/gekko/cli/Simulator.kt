@@ -13,8 +13,14 @@ class SimctlDevice(private val requestedUdid: String?) : Device {
         return SimulatorPorts.agent(udid)
     }
 
-    override val token: String
-        get() = UserToken.value
+    // The servers know their port; it is part of what they sign, so an answer of a server on another port is refused
+    override fun agentAuth(config: GekkoConfig): ClientAuth {
+        return ClientAuth.ofUser(agentPort().toString())
+    }
+
+    override fun systemAuth(): ClientAuth {
+        return ClientAuth.ofUser(systemPort().toString())
+    }
 
     override fun systemPort(): Int {
         return SimulatorPorts.agent(udid) + 1

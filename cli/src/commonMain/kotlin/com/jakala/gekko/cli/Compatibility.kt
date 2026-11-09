@@ -5,7 +5,7 @@ import com.jakala.gekko.protocol.Protocol
 import com.jakala.gekko.protocol.Response
 
 /** The agent in the app or the system runner on the device does not speak the protocol of this CLI. */
-class IncompatibleVersionException(message: String) : ConfigurationException(message)
+open class IncompatibleVersionException(message: String) : ConfigurationException(message)
 
 /** Checks the answer to `hello`: the CLI refuses a peer with another protocol number and says what to update. */
 object Compatibility {
@@ -32,11 +32,11 @@ object Compatibility {
         )
     }
 
-    private fun describe(role: String): String {
+    internal fun describe(role: String): String {
         return if (role == Protocol.ROLE_AGENT) "gekko agent in the app" else "gekko system runner"
     }
 
-    private fun fix(role: String, olderPeer: Boolean, peerVersion: String?): String {
+    internal fun fix(role: String, olderPeer: Boolean, peerVersion: String?): String {
         return when {
             !olderPeer -> "Update the gekko CLI to ${peerVersion ?: "the release of the agent"} or newer."
             role == Protocol.ROLE_AGENT ->

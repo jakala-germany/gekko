@@ -6,8 +6,11 @@ import android.os.Build
 import android.util.Log
 import androidx.startup.Initializer
 import com.jakala.gekko.protocol.MockRules
+import com.jakala.gekko.protocol.Protocol
 import com.jakala.gekko.transport.CommandServer
+import com.jakala.gekko.transport.ServerAuth
 import java.io.File
+import java.io.IOException
 
 class GekkoInitializer : Initializer<Unit> {
     override fun create(context: Context) {
@@ -21,8 +24,11 @@ class GekkoInitializer : Initializer<Unit> {
         application.registerActivityLifecycleCallbacks(tracker)
         val executor = CommandExecutor(application, tracker)
         val socketName = socketName(context.packageName)
+        // The CLI writes the key with `run-as` (a debuggable build only), so it can arrive after the app has started
+        val keyFile = File(context.applicationInfo.dataDir, Protocol.AGENT_KEY_FILE)
+        val auth = ServerAuth(socketName) { readKey(keyFile) }
         // A test agent must never take the app down, e.g. when the socket name is already taken.
-        runCatching { CommandServer(AbstractSocketListener(socketName)) { executor.execute(it) }.start() }
+        runCatching { CommandServer(AbstractSocketListener(socketName), auth) { executor.execute(it) }.start() }
             .onFailure { Log.w(TAG, "Gekko agent could not listen on $socketName: ${it.message}") }
     }
 
@@ -43,6 +49,15 @@ class GekkoInitializer : Initializer<Unit> {
             return try {
                 File("/proc/self/cmdline").readText().substringBefore(Char(0)).trim().ifEmpty { null }
             } catch (error: Exception) {
+                null
+            }
+        }
+
+        /** The key the CLI left in [file]; null while there is none, which makes the agent refuse every request. */
+        internal fun readKey(file: File): ByteArray? {
+            return try {
+                file.readText().trim().takeIf { it.isNotEmpty() }?.toByteArray(Charsets.UTF_8)
+            } catch (error: IOException) {
                 null
             }
         }

@@ -257,7 +257,7 @@ class Healer(private val client: LlmClient) {
 
     suspend fun proposeAction(say: String, failedAction: String, tree: String): HealProposal? {
         env("GEKKO_HEAL_DEBUG")?.let {
-            writeTextFile("$it/heal-${nowMillis()}.txt", Masker.mask("say: $say\nfailed: $failedAction\n\n$tree"))
+            writeReportFile("$it/heal-${nowMillis()}.txt", Masker.mask("say: $say\nfailed: $failedAction\n\n$tree"))
         }
         val answer = parse(client.complete(ACTION_SYSTEM, userPrompt(say, failedAction, tree))) ?: return null
         val kind = answer["action"]?.jsonPrimitive?.contentOrNull ?: return null
