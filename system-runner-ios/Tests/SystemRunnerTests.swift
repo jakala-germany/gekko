@@ -308,7 +308,10 @@ final class SystemRunnerTests: XCTestCase {
         return ok()
     }
 
-    /// Moves the content under the start to the end and lets it rest there, so nothing flings on past it.
+    /// Moves the content under the start to the end and lets it rest there, so nothing flings on past it. Measured on
+    /// the simulator (iOS 27): exact for a distance up to about 90 points; a longer drag can still fling the content on
+    /// (a scroll view keeps the speed of the last movement of a touch that rests), however fast or slow it is made. The
+    /// agent moves the offset of a scroll view by exactly the distance and is the better choice for lists.
     private func drag(_ command: [String: Any]) -> [String: Any] {
         guard let from = points(command, "fromX", "fromY"), let to = points(command, "toX", "toY") else {
             return error("drag needs numeric fromX, fromY, toX and toY", ErrorKind.unsupported)

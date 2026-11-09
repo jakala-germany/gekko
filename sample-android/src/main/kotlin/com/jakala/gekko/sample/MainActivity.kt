@@ -16,13 +16,16 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material3.Button
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
@@ -107,8 +110,21 @@ private fun SampleApp() {
                     )
                     .padding(8.dp),
         )
-        Text("Gesture: $gesture", modifier = Modifier.testTag("sample.gesture.result"))
-        LazyColumn(Modifier.testTag("sample.list")) {
+        val listState = rememberLazyListState()
+        // How far the list is scrolled, in pixels: the end-to-end tests compare what a drag and a swipe moved
+        val scrolled by remember {
+            derivedStateOf {
+                listState.layoutInfo.visibleItemsInfo.firstOrNull()?.let {
+                    it.index * it.size + listState.firstVisibleItemScrollOffset
+                } ?: 0
+            }
+        }
+        // Next to the gesture result, so the list keeps its place
+        Row {
+            Text("Gesture: $gesture", modifier = Modifier.testTag("sample.gesture.result"))
+            Text("Scroll: $scrolled", modifier = Modifier.padding(start = 16.dp).testTag("sample.list.offset"))
+        }
+        LazyColumn(Modifier.testTag("sample.list"), state = listState) {
             items((1..60).toList()) { index -> Text("Row $index", modifier = Modifier.testTag("sample.row.$index")) }
         }
     }

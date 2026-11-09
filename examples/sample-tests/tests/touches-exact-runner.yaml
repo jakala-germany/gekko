@@ -1,0 +1,20 @@
+name: The system runner drags the list exactly as far as the finger
+tags: [touches, exactness]
+# The same as "A drag moves the list exactly as far as the finger", with a real touch of the system runner
+steps:
+  - say: Drag by 10 percent of the screen
+    platform: [android, ios]
+    do: { drag: { start: "11%,90%", end: "11%,80%", system: true } }
+  - platform: [android, ios]
+    do: { wait: 500 }
+  - say: Read how far the list is scrolled
+    platform: [android, ios]
+    do: { copyText: { from: { id: sample.list.offset }, match: "\\d+", as: runnerTen } }
+  - say: Drag by 20 percent of the screen
+    platform: [android, ios]
+    do: { drag: { start: "11%,90%", end: "11%,70%", system: true } }
+  - platform: [android, ios]
+    do: { wait: 500 }
+  - say: Read how far the list is scrolled now
+    platform: [android, ios]
+    do: { copyText: { from: { id: sample.list.offset }, match: "\\d+", as: runnerThirty } }

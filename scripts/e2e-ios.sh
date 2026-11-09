@@ -21,7 +21,10 @@ xcrun simctl bootstatus "$UDID" -b
 "$GEKKO" --version
 "$GEKKO" install sample-ios/build/Sample.app --project examples/sample-tests --platform ios -s "$UDID"
 "$GEKKO" run --project examples/sample-tests --platform ios -s "$UDID" --exclude-tags broken,android-only,web-only,location \
-  --junit "$OUT/junit.xml" --output "$OUT/results"
+  --junit "$OUT/junit.xml" --output "$OUT/results" 2>&1 | tee "$OUT/run.log"
+
+# A drag moves the list exactly as far as the finger, a fast swipe flings it, a slow one does not
+./scripts/check-touches.sh "$OUT/run.log" --no-runner-drag
 
 status=0
 "$GEKKO" run --project examples/sample-tests --platform ios -s "$UDID" --tags broken --output "$OUT/failing" || status=$?
