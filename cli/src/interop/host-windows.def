@@ -65,7 +65,8 @@ static char *gekko_getenv(const char *name) {
     DWORD written = GetEnvironmentVariableW(wide_name, value, size);
     free(wide_name);
     char *result = NULL;
-    if (written > 0 && written < size) {
+    /* A variable with an empty value needs a buffer of 1 and writes 0 characters: it is set, like on POSIX */
+    if (written < size && (written > 0 || size == 1)) {
         result = gekko_narrow(value);
     }
     free(value);
@@ -99,9 +100,27 @@ static char *gekko_temp_dir(void) {
     return gekko_narrow(buffer);
 }
 
+static UINT gekko_old_output_code_page = 0;
+static UINT gekko_old_input_code_page = 0;
+
+/* The code page belongs to the console, which outlives this program: give it back as it was */
+static void gekko_restore_console(void) {
+    if (gekko_old_output_code_page != 0) {
+        SetConsoleOutputCP(gekko_old_output_code_page);
+    }
+    if (gekko_old_input_code_page != 0) {
+        SetConsoleCP(gekko_old_input_code_page);
+    }
+}
+
 static void gekko_init_host(void) {
-    SetConsoleOutputCP(CP_UTF8);
-    SetConsoleCP(CP_UTF8);
+    gekko_old_output_code_page = GetConsoleOutputCP();
+    gekko_old_input_code_page = GetConsoleCP();
+    BOOL output = SetConsoleOutputCP(CP_UTF8);
+    BOOL input = SetConsoleCP(CP_UTF8);
+    if (output || input) {
+        atexit(gekko_restore_console);
+    }
 }
 
 static int gekko_utc_offset_minutes(void) {
@@ -171,6 +190,17 @@ static int gekko_restrict_to_owner(const char *path, int is_directory) {
     return (int) error;
 }
 
+/* A regular file that can be started: on Windows every file that is not a folder (the extension decides). */
+static int gekko_is_executable_file(const char *path) {
+    wchar_t *wide = gekko_widen(path);
+    if (wide == NULL) {
+        return 0;
+    }
+    DWORD attributes = GetFileAttributesW(wide);
+    free(wide);
+    return attributes != INVALID_FILE_ATTRIBUTES && (attributes & FILE_ATTRIBUTE_DIRECTORY) == 0;
+}
+
 static int gekko_is_alive(long long pid) {
     if (pid <= 0) {
         return 0;
@@ -208,8 +238,23 @@ static int gekko_start_failure(const char *program, DWORD error, char **out, lon
     return -1;
 }
 
+/* The name of an entry ends at the first = after its first character (the entries "=C:=C:\dir" start with one). */
+static size_t gekko_env_name_length(const wchar_t *entry) {
+    const wchar_t *equals = wcschr(entry + 1, L'=');
+    return equals == NULL ? wcslen(entry) : (size_t) (equals - entry);
+}
+
+/* The block is sorted by variable name, without regard to case; ProgramFiles(x86) comes after ProgramFiles. */
 static int gekko_compare_env(const void *left, const void *right) {
-    return _wcsicmp(*(wchar_t *const *) left, *(wchar_t *const *) right);
+    const wchar_t *first = *(wchar_t *const *) left;
+    const wchar_t *second = *(wchar_t *const *) right;
+    size_t first_length = gekko_env_name_length(first);
+    size_t second_length = gekko_env_name_length(second);
+    int result = _wcsnicmp(first, second, first_length < second_length ? first_length : second_length);
+    if (result != 0) {
+        return result;
+    }
+    return first_length < second_length ? -1 : (first_length > second_length ? 1 : 0);
 }
 
 /*
@@ -502,6 +547,7 @@ static int gekko_run(const char *program, char *const *argv, const char *command
     PROCESS_INFORMATION info;
     ZeroMemory(&info, sizeof info);
     HANDLE job = NULL;
+    BOOL assigned = FALSE;
     DWORD error = ready ? ERROR_SUCCESS : GetLastError();
     if (ready) {
         job = CreateJobObjectW(NULL, NULL);
@@ -538,7 +584,8 @@ static int gekko_run(const char *program, char *const *argv, const char *command
         ZeroMemory(&limits, sizeof limits);
         limits.BasicLimitInformation.LimitFlags = JOB_OBJECT_LIMIT_BREAKAWAY_OK;
         SetInformationJobObject(job, JobObjectExtendedLimitInformation, &limits, sizeof limits);
-        AssignProcessToJobObject(job, info.hProcess);
+        /* It can fail (a job that does not nest, an old system); then only the program itself is killed on a time out */
+        assigned = AssignProcessToJobObject(job, info.hProcess);
     }
     ResumeThread(info.hThread);
 
@@ -589,9 +636,10 @@ static int gekko_run(const char *program, char *const *argv, const char *command
         }
     }
     if (!exited) {
-        if (job == NULL || !TerminateJobObject(job, 1)) {
-            TerminateProcess(info.hProcess, 1);
+        if (assigned) {
+            TerminateJobObject(job, 1);
         }
+        TerminateProcess(info.hProcess, 1);
         WaitForSingleObject(info.hProcess, 5000);
     }
     if (output_open) {
