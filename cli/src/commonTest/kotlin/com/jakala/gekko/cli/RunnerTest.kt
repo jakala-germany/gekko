@@ -2,6 +2,7 @@ package com.jakala.gekko.cli
 
 import com.jakala.gekko.protocol.Bounds
 import com.jakala.gekko.protocol.Command
+import com.jakala.gekko.protocol.ErrorKind
 import com.jakala.gekko.protocol.Response
 import com.jakala.gekko.protocol.UiNode
 import kotlin.test.Test
@@ -508,7 +509,7 @@ class RunnerTest {
                     Command.Foreground -> Response.ForegroundResult(true)
                     Command.Metrics -> Response.MetricsResult(1f, rtl)
                     Command.Tree -> Response.TreeResult(listOf(window()))
-                    is Command.Swipe -> {
+                    is Command.Drag -> {
                         offset = (offset + (command.fromY - command.toY)).coerceIn(0, maxOffset)
                         Response.Ok
                     }
@@ -560,8 +561,9 @@ class RunnerTest {
                     .run(test("name: s\nsteps:\n  - do: { scrollUntilVisible: { id: Row.8 } }"), "tests/s.yaml")
 
             assertNull(result.failure)
-            val swipes = world.seen.filterIsInstance<Command.Swipe>()
+            val swipes = world.seen.filterIsInstance<Command.Drag>()
             assertTrue(swipes.isNotEmpty())
+            assertTrue(world.seen.none { it is Command.Swipe }, "a fling would carry the list past the row")
             assertTrue(swipes.all { it.fromY > it.toY }, "the finger moves up to show content below")
             val top = ScrollWorld.TOP + 8 * ScrollWorld.ROW - world.offset
             assertTrue(top >= ScrollWorld.TOP && top + ScrollWorld.ROW <= ScrollWorld.TOP + ScrollWorld.VIEWPORT_HEIGHT)
@@ -580,7 +582,7 @@ class RunnerTest {
                     )
 
             assertTrue(result.failure.orEmpty().contains("end of the list reached"), result.failure)
-            assertTrue(world.seen.filterIsInstance<Command.Swipe>().size < 20)
+            assertTrue(world.seen.filterIsInstance<Command.Drag>().size < 20)
         }
     }
 
@@ -596,7 +598,7 @@ class RunnerTest {
                     "tests/s.yaml",
                 )
 
-            val swipes = world.seen.filterIsInstance<Command.Swipe>()
+            val swipes = world.seen.filterIsInstance<Command.Drag>()
             assertTrue(swipes.isNotEmpty())
             assertTrue(swipes.all { it.fromY in ScrollWorld.TOP..(ScrollWorld.TOP + ScrollWorld.VIEWPORT_HEIGHT) })
         }
@@ -615,7 +617,7 @@ class RunnerTest {
                         "tests/s.yaml",
                     )
 
-                val swipe = world.seen.filterIsInstance<Command.Swipe>().first()
+                val swipe = world.seen.filterIsInstance<Command.Drag>().first()
                 assertEquals(expectedRight, swipe.toX > swipe.fromX, "rtl=$rtl")
             }
         }
@@ -634,6 +636,176 @@ class RunnerTest {
             val scroll = world.seen.filterIsInstance<Command.Scroll>().single()
             assertEquals("end", scroll.direction)
             assertEquals(250, scroll.distanceDp)
+        }
+    }
+
+    private suspend fun runStep(platform: Platform, yaml: String, agent: FakeClient, system: FakeClient): String? {
+        val result = runner(platform, agent, suggestIds = false, system = system).run(test(yaml), "tests/s.yaml")
+        return result.failure
+    }
+
+    @Test
+    fun aDragBetweenTwoSpotsMovesTheContentThroughTheAgent() {
+        runTest {
+            val agent = agent(Response.Ok)
+            val system = FakeClient { Response.Ok }
+
+            val failure =
+                runStep(
+                    Platform.Android,
+                    "name: s\nsteps:\n  - do: { drag: { start: \"50%,80%\", end: \"50%,30%\" } }",
+                    agent,
+                    system,
+                )
+
+            assertNull(failure)
+            assertEquals(listOf(Command.Drag(50, 160, 50, 60)), agent.received.filterIsInstance<Command.Drag>())
+            assertTrue(system.received.isEmpty())
+        }
+    }
+
+    @Test
+    fun aDragFromAnElementStartsInItsCenter() {
+        runTest {
+            val agent = agent(Response.Ok)
+
+            val failure =
+                runStep(
+                    Platform.Android,
+                    "name: s\nsteps:\n  - do: { drag: { from: { id: Search.Button.Large }, end: \"50%,30%\" } }",
+                    agent,
+                    FakeClient { Response.Ok },
+                )
+
+            assertNull(failure)
+            assertEquals(listOf(Command.Drag(50, 120, 50, 60)), agent.received.filterIsInstance<Command.Drag>())
+        }
+    }
+
+    @Test
+    fun aDragCanBeForcedToTheSystemRunner() {
+        runTest {
+            val agent = agent(Response.Ok)
+            val system = FakeClient { Response.Ok }
+
+            val failure =
+                runStep(
+                    Platform.Android,
+                    "name: s\nsteps:\n  - do: { drag: { start: \"50%,80%\", end: \"50%,30%\", system: true } }",
+                    agent,
+                    system,
+                )
+
+            assertNull(failure)
+            assertEquals(1, system.received.filterIsInstance<Command.Drag>().size)
+            assertTrue(agent.received.none { it is Command.Drag })
+        }
+    }
+
+    @Test
+    fun aDragThatTheIosAgentCannotMakeIsTriedOnTheSystemRunner() {
+        runTest {
+            val agent = FakeClient { command ->
+                when (command) {
+                    Command.Foreground -> Response.ForegroundResult(true)
+                    Command.Tree -> Response.TreeResult(screen)
+                    is Command.Drag -> Response.Error("No scroll view moved", ErrorKind.UNSUPPORTED)
+                    else -> Response.Ok
+                }
+            }
+            val system = FakeClient { Response.Ok }
+
+            val failure =
+                runStep(
+                    Platform.Ios,
+                    "name: s\nsteps:\n  - do: { drag: { start: \"50%,80%\", end: \"50%,30%\" } }",
+                    agent,
+                    system,
+                )
+
+            assertNull(failure)
+            assertEquals(1, agent.received.filterIsInstance<Command.Drag>().size)
+            assertEquals(1, system.received.filterIsInstance<Command.Drag>().size)
+        }
+    }
+
+    @Test
+    fun aSwipeOnIosIsARealTouchOfTheSystemRunner() {
+        runTest {
+            val agent = agent(Response.Ok)
+            val system = FakeClient { Response.Ok }
+
+            val failure =
+                runStep(
+                    Platform.Ios,
+                    "name: s\nsteps:\n  - do: { swipe: { direction: up, durationMs: 300 } }",
+                    agent,
+                    system,
+                )
+
+            assertNull(failure)
+            assertEquals(300L, system.received.filterIsInstance<Command.Swipe>().single().durationMs)
+            assertTrue(agent.received.none { it is Command.Swipe })
+        }
+    }
+
+    @Test
+    fun aSwipeOnAndroidGoesToTheAgentUnlessItIsForced() {
+        runTest {
+            val agent = agent(Response.Ok)
+            val system = FakeClient { Response.Ok }
+
+            runStep(Platform.Android, "name: s\nsteps:\n  - do: { swipe: { direction: up } }", agent, system)
+            runStep(
+                Platform.Android,
+                "name: s\nsteps:\n  - do: { swipe: { direction: up, system: true } }",
+                agent,
+                system,
+            )
+
+            assertEquals(1, agent.received.filterIsInstance<Command.Swipe>().size)
+            assertEquals(1, system.received.filterIsInstance<Command.Swipe>().size)
+        }
+    }
+
+    @Test
+    fun aLongPressOnASpotHoldsThatSpotOfTheScreen() {
+        runTest {
+            val agent = agent(Response.Ok)
+
+            val failure =
+                runStep(
+                    Platform.Android,
+                    "name: s\nsteps:\n  - do: { longPress: { point: \"50%,50%\", holdMs: 900 } }",
+                    agent,
+                    FakeClient { Response.Ok },
+                )
+
+            assertNull(failure)
+            assertEquals(
+                listOf(Command.LongPressAt(50, 100, 900)),
+                agent.received.filterIsInstance<Command.LongPressAt>(),
+            )
+        }
+    }
+
+    @Test
+    fun aLongPressOnASpotOnIosIsATouchOfTheSystemRunner() {
+        runTest {
+            val agent = agent(Response.Ok)
+            val system = FakeClient { Response.Ok }
+
+            val failure =
+                runStep(
+                    Platform.Ios,
+                    "name: s\nsteps:\n  - do: { longPress: { point: \"50%,50%\" } }",
+                    agent,
+                    system,
+                )
+
+            assertNull(failure)
+            assertEquals(1, system.received.filterIsInstance<Command.LongPressAt>().size)
+            assertTrue(agent.received.none { it is Command.LongPressAt })
         }
     }
 
