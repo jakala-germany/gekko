@@ -79,9 +79,29 @@ sealed interface Command {
     /** Rotates the device; only the system runner serves it. */
     @Serializable @SerialName("setOrientation") data class SetOrientation(val landscape: Boolean) : Command
 
+    /**
+     * Presses at screen coordinates in pixels (points on iOS), holds still for [holdMs] and releases: a context menu on
+     * a map, a chart or a canvas has no element to select.
+     */
+    @Serializable
+    @SerialName("longPressAt")
+    data class LongPressAt(val x: Int, val y: Int, val holdMs: Long = DEFAULT_HOLD_MS) : Command
+
+    /**
+     * A finger that goes from the start to the end in [durationMs]: a short one flings the content on, a long one
+     * barely. Every server honours the duration, from 1.4.0 on.
+     */
     @Serializable
     @SerialName("swipe")
     data class Swipe(val fromX: Int, val fromY: Int, val toX: Int, val toY: Int, val durationMs: Long = 200) : Command
+
+    /**
+     * Moves the content under the start to the end and lets go without momentum, so that nothing keeps scrolling:
+     * reorder a list, move a slider, scroll by an exact distance. The answer `ok` comes when the finger is up.
+     */
+    @Serializable
+    @SerialName("drag")
+    data class Drag(val fromX: Int, val fromY: Int, val toX: Int, val toY: Int) : Command
 
     /**
      * A mouse-wheel turn at screen coordinates by [dx], [dy] pixels (positive scrolls right and down); only web serves

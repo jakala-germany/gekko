@@ -2,6 +2,7 @@ package com.jakala.gekko.cli
 
 import com.jakala.gekko.device.ElementLookup
 import com.jakala.gekko.device.Frame
+import com.jakala.gekko.device.Gestures
 import com.jakala.gekko.device.Lookup
 import com.jakala.gekko.device.Scrolling
 import com.jakala.gekko.device.VisibilityWait
@@ -122,17 +123,22 @@ internal class WebAgentClient(
                 bridge.call("click", point(command.x, command.y))
                 Response.Ok
             }
+            is Command.LongPressAt -> {
+                bridge.call("click", point(command.x, command.y, "holdMs" to command.holdMs))
+                Response.Ok
+            }
             is Command.Swipe -> {
                 bridge.call(
                     "drag",
-                    buildJsonObject {
-                        put("fromX", JsonPrimitive(command.fromX))
-                        put("fromY", JsonPrimitive(command.fromY))
-                        put("toX", JsonPrimitive(command.toX))
-                        put("toY", JsonPrimitive(command.toY))
-                        put("durationMs", JsonPrimitive(command.durationMs))
-                    },
+                    dragOf(command.fromX, command.fromY, command.toX, command.toY, command.durationMs, 0),
                 )
+                Response.Ok
+            }
+            is Command.Drag -> {
+                // A mouse has no touch slop: the finger goes to the end and rests there before it lets go
+                val move = Gestures.DRAG_MOVE_MS
+                val rest = Gestures.DRAG_REST_MS
+                bridge.call("drag", dragOf(command.fromX, command.fromY, command.toX, command.toY, move, rest))
                 Response.Ok
             }
             is Command.Wheel -> {
@@ -175,10 +181,22 @@ internal class WebAgentClient(
         return Response.MockHitsResult(hits)
     }
 
-    private fun point(x: Int, y: Int): JsonObject {
+    private fun point(x: Int, y: Int, vararg more: Pair<String, Long>): JsonObject {
         return buildJsonObject {
             put("x", JsonPrimitive(x))
             put("y", JsonPrimitive(y))
+            more.forEach { (key, value) -> put(key, JsonPrimitive(value)) }
+        }
+    }
+
+    private fun dragOf(fromX: Int, fromY: Int, toX: Int, toY: Int, durationMs: Long, restMs: Long): JsonObject {
+        return buildJsonObject {
+            put("fromX", JsonPrimitive(fromX))
+            put("fromY", JsonPrimitive(fromY))
+            put("toX", JsonPrimitive(toX))
+            put("toY", JsonPrimitive(toY))
+            put("durationMs", JsonPrimitive(durationMs))
+            put("holdMs", JsonPrimitive(restMs))
         }
     }
 

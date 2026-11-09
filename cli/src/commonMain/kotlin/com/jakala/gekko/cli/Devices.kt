@@ -1,5 +1,6 @@
 package com.jakala.gekko.cli
 
+import com.jakala.gekko.device.Gestures
 import com.jakala.gekko.protocol.Command
 import com.jakala.gekko.protocol.ErrorKind
 import com.jakala.gekko.protocol.MockRules
@@ -848,7 +849,9 @@ class Drivers(
             is Command.Scroll -> timeoutMs
             is Command.WaitFor -> timeoutMs
             is Command.WaitIdle -> timeoutMs
+            is Command.LongPressAt -> holdMs
             is Command.Swipe -> durationMs
+            is Command.Drag -> Gestures.DRAG_MOVE_MS + Gestures.DRAG_REST_MS
             is Command.Wheel,
             is Command.TapAt,
             is Command.SetOrientation,
