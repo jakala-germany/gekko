@@ -196,6 +196,6 @@ class CheckTest {
     }
 
     private fun deleteIfThere(path: String) {
-        if (fileExists(path)) runProcess(listOf("rm", path))
+        removeRecursively(path)
     }
 }

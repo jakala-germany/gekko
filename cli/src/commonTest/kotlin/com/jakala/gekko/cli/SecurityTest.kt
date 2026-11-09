@@ -36,10 +36,20 @@ class SecurityTest {
         val second = createPrivateDirectory("gekko-test")
         try {
             assertNotEquals(first, second)
-            assertTrue(first.startsWith("/tmp/gekko-test-"))
-            assertTrue(runProcess(listOf("ls", "-ld", first)).text.startsWith("drwx------"))
+            assertTrue(first.startsWith("${tempDirectory()}/gekko-test-"))
+            if (isWindowsHost) {
+                // The DACL names the current user and nobody else: no SYSTEM, no administrators, no group of users
+                val acl = runProcess(listOf("icacls", first)).text
+                assertTrue(acl.contains("(F)"), acl)
+                for (other in listOf("BUILTIN\\Administrators", "NT AUTHORITY\\SYSTEM", "BUILTIN\\Users", "Everyone")) {
+                    assertFalse(acl.contains(other), acl)
+                }
+            } else {
+                assertTrue(runProcess(listOf("ls", "-ld", first)).text.startsWith("drwx------"))
+            }
         } finally {
-            runProcess(listOf("rm", "-rf", first, second))
+            removeRecursively(first)
+            removeRecursively(second)
         }
     }
 
