@@ -38,6 +38,7 @@ import kotlinx.serialization.json.Json
 private val treeJson = Json { prettyPrint = true }
 
 fun runCli(args: List<String>) {
+    initializeHost()
     val command =
         GekkoCommand()
             .subcommands(

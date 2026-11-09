@@ -1,0 +1,649 @@
+package = com.jakala.gekko.host
+headers = windows.h aclapi.h sddl.h bcrypt.h stdio.h stdlib.h string.h wchar.h
+compilerOpts = -DUNICODE -D_UNICODE -DWINVER=0x0601 -D_WIN32_WINNT=0x0601 -Wno-incompatible-pointer-types -Wno-deprecated-declarations
+linkerOpts = -ladvapi32 -lbcrypt -lkernel32
+---
+
+/*
+ * The host layer of gekko on Windows: the same functions as host-posix.def, with the same signatures, because the
+ * Kotlin side (HostNative.kt) is shared. Text crosses the boundary as UTF-8 and is widened for every Win32 call.
+ * Programs are started with CreateProcessW (no shell), the command line is built by Kotlin (command_line), and a Job
+ * Object lets a time limit kill the whole tree (cmd.exe -> node, for example).
+ */
+
+static void gekko_free(void *pointer) {
+    free(pointer);
+}
+
+static wchar_t *gekko_widen(const char *text) {
+    int count = MultiByteToWideChar(CP_UTF8, 0, text, -1, NULL, 0);
+    if (count <= 0) {
+        return NULL;
+    }
+    wchar_t *result = malloc(sizeof(wchar_t) * (size_t) count);
+    if (result == NULL) {
+        return NULL;
+    }
+    if (MultiByteToWideChar(CP_UTF8, 0, text, -1, result, count) <= 0) {
+        free(result);
+        return NULL;
+    }
+    return result;
+}
+
+static char *gekko_narrow(const wchar_t *text) {
+    int count = WideCharToMultiByte(CP_UTF8, 0, text, -1, NULL, 0, NULL, NULL);
+    if (count <= 0) {
+        return NULL;
+    }
+    char *result = malloc((size_t) count);
+    if (result == NULL) {
+        return NULL;
+    }
+    if (WideCharToMultiByte(CP_UTF8, 0, text, -1, result, count, NULL, NULL) <= 0) {
+        free(result);
+        return NULL;
+    }
+    return result;
+}
+
+static char *gekko_getenv(const char *name) {
+    wchar_t *wide_name = gekko_widen(name);
+    if (wide_name == NULL) {
+        return NULL;
+    }
+    DWORD size = GetEnvironmentVariableW(wide_name, NULL, 0);
+    if (size == 0) {
+        free(wide_name);
+        return NULL;
+    }
+    wchar_t *value = malloc(sizeof(wchar_t) * size);
+    if (value == NULL) {
+        free(wide_name);
+        return NULL;
+    }
+    DWORD written = GetEnvironmentVariableW(wide_name, value, size);
+    free(wide_name);
+    char *result = NULL;
+    if (written > 0 && written < size) {
+        result = gekko_narrow(value);
+    }
+    free(value);
+    return result;
+}
+
+static char *gekko_getcwd(void) {
+    DWORD size = GetCurrentDirectoryW(0, NULL);
+    if (size == 0) {
+        return NULL;
+    }
+    wchar_t *value = malloc(sizeof(wchar_t) * size);
+    if (value == NULL) {
+        return NULL;
+    }
+    char *result = NULL;
+    DWORD written = GetCurrentDirectoryW(size, value);
+    if (written > 0 && written < size) {
+        result = gekko_narrow(value);
+    }
+    free(value);
+    return result;
+}
+
+static char *gekko_temp_dir(void) {
+    wchar_t buffer[MAX_PATH + 2];
+    DWORD written = GetTempPathW(MAX_PATH + 1, buffer);
+    if (written == 0 || written > MAX_PATH) {
+        return NULL;
+    }
+    return gekko_narrow(buffer);
+}
+
+static void gekko_init_host(void) {
+    SetConsoleOutputCP(CP_UTF8);
+    SetConsoleCP(CP_UTF8);
+}
+
+static int gekko_utc_offset_minutes(void) {
+    TIME_ZONE_INFORMATION zone;
+    DWORD id = GetTimeZoneInformation(&zone);
+    if (id == TIME_ZONE_ID_INVALID) {
+        return 0;
+    }
+    LONG bias = zone.Bias + (id == TIME_ZONE_ID_DAYLIGHT ? zone.DaylightBias : zone.StandardBias);
+    return (int) -bias;
+}
+
+static int gekko_random_bytes(char *buffer, int count) {
+    return BCryptGenRandom(NULL, (PUCHAR) buffer, (ULONG) count, BCRYPT_USE_SYSTEM_PREFERRED_RNG) == 0 ? 0 : -1;
+}
+
+/*
+ * Only the current user may enter or read the path: a protected DACL (no inheritance from the parent) with a single
+ * entry for the user's SID. A directory passes the entry on to what is created in it. Returns 0 or a Win32 error.
+ */
+static int gekko_restrict_to_owner(const char *path, int is_directory) {
+    wchar_t *wide = gekko_widen(path);
+    if (wide == NULL) {
+        return (int) ERROR_INVALID_PARAMETER;
+    }
+    DWORD error = ERROR_SUCCESS;
+    HANDLE token = NULL;
+    TOKEN_USER *user = NULL;
+    PACL acl = NULL;
+    if (!OpenProcessToken(GetCurrentProcess(), TOKEN_QUERY, &token)) {
+        error = GetLastError();
+    }
+    if (error == ERROR_SUCCESS) {
+        DWORD needed = 0;
+        GetTokenInformation(token, TokenUser, NULL, 0, &needed);
+        user = malloc(needed == 0 ? 1 : needed);
+        if (user == NULL) {
+            error = ERROR_NOT_ENOUGH_MEMORY;
+        } else if (!GetTokenInformation(token, TokenUser, user, needed, &needed)) {
+            error = GetLastError();
+        }
+    }
+    if (error == ERROR_SUCCESS) {
+        EXPLICIT_ACCESS_W access;
+        ZeroMemory(&access, sizeof access);
+        access.grfAccessPermissions = GENERIC_ALL;
+        access.grfAccessMode = SET_ACCESS;
+        access.grfInheritance = is_directory ? SUB_CONTAINERS_AND_OBJECTS_INHERIT : NO_INHERITANCE;
+        access.Trustee.TrusteeForm = TRUSTEE_IS_SID;
+        access.Trustee.TrusteeType = TRUSTEE_IS_USER;
+        access.Trustee.ptstrName = (LPWSTR) user->User.Sid;
+        error = SetEntriesInAclW(1, &access, NULL, &acl);
+    }
+    if (error == ERROR_SUCCESS) {
+        error = SetNamedSecurityInfoW(wide, SE_FILE_OBJECT,
+                                      DACL_SECURITY_INFORMATION | PROTECTED_DACL_SECURITY_INFORMATION,
+                                      NULL, NULL, acl, NULL);
+    }
+    if (acl != NULL) {
+        LocalFree(acl);
+    }
+    free(user);
+    if (token != NULL) {
+        CloseHandle(token);
+    }
+    free(wide);
+    return (int) error;
+}
+
+static int gekko_is_alive(long long pid) {
+    if (pid <= 0) {
+        return 0;
+    }
+    HANDLE process = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, FALSE, (DWORD) pid);
+    if (process == NULL) {
+        return 0;
+    }
+    DWORD code = 0;
+    int alive = GetExitCodeProcess(process, &code) && code == STILL_ACTIVE;
+    CloseHandle(process);
+    return alive;
+}
+
+static long long gekko_pid(void) {
+    return (long long) GetCurrentProcessId();
+}
+
+static long long gekko_monotonic_ms(void) {
+    return (long long) GetTickCount64();
+}
+
+/* Reports a start failure as the "output" of the call, like a shell would print it. */
+static int gekko_start_failure(const char *program, DWORD error, char **out, long long *out_len) {
+    size_t size = strlen(program) + 64;
+    char *message = malloc(size);
+    if (message == NULL) {
+        *out = NULL;
+        *out_len = 0;
+        return -1;
+    }
+    int length = snprintf(message, size, "cannot run '%s': Windows error %lu", program, (unsigned long) error);
+    *out = message;
+    *out_len = length < 0 ? 0 : length;
+    return -1;
+}
+
+static int gekko_compare_env(const void *left, const void *right) {
+    return _wcsicmp(*(wchar_t *const *) left, *(wchar_t *const *) right);
+}
+
+/*
+ * The environment block of this process with the name=value pairs applied (names compare without case); NULL when
+ * there is nothing to change, which makes the program inherit the environment as it is.
+ */
+static wchar_t *gekko_build_env_block(const char *const *pairs, int *failed) {
+    *failed = 0;
+    if (pairs == NULL || pairs[0] == NULL) {
+        return NULL;
+    }
+    size_t extra = 0;
+    while (pairs[2 * extra] != NULL) {
+        extra++;
+    }
+    wchar_t *current = GetEnvironmentStringsW();
+    if (current == NULL) {
+        *failed = 1;
+        return NULL;
+    }
+    size_t base = 0;
+    for (const wchar_t *entry = current; *entry != L'\0'; entry += wcslen(entry) + 1) {
+        base++;
+    }
+    wchar_t **entries = calloc(base + extra + 1, sizeof(wchar_t *));
+    size_t count = 0;
+    if (entries == NULL) {
+        FreeEnvironmentStringsW(current);
+        *failed = 1;
+        return NULL;
+    }
+    for (const wchar_t *entry = current; *entry != L'\0'; entry += wcslen(entry) + 1) {
+        entries[count++] = _wcsdup(entry);
+    }
+    FreeEnvironmentStringsW(current);
+
+    for (size_t pair = 0; pair < extra; pair++) {
+        wchar_t *name = gekko_widen(pairs[2 * pair]);
+        wchar_t *value = gekko_widen(pairs[2 * pair + 1]);
+        if (name == NULL || value == NULL) {
+            free(name);
+            free(value);
+            *failed = 1;
+            continue;
+        }
+        size_t name_length = wcslen(name);
+        size_t size = name_length + wcslen(value) + 2;
+        wchar_t *entry = malloc(sizeof(wchar_t) * size);
+        if (entry != NULL) {
+            memcpy(entry, name, sizeof(wchar_t) * name_length);
+            entry[name_length] = L'=';
+            memcpy(entry + name_length + 1, value, sizeof(wchar_t) * (wcslen(value) + 1));
+            int replaced = 0;
+            for (size_t index = 0; index < count; index++) {
+                if (entries[index] != NULL && _wcsnicmp(entries[index], name, name_length) == 0 &&
+                    entries[index][name_length] == L'=') {
+                    free(entries[index]);
+                    entries[index] = entry;
+                    replaced = 1;
+                    break;
+                }
+            }
+            if (!replaced) {
+                entries[count++] = entry;
+            }
+        } else {
+            *failed = 1;
+        }
+        free(name);
+        free(value);
+    }
+
+    qsort(entries, count, sizeof(wchar_t *), gekko_compare_env);
+    size_t total = 1;
+    for (size_t index = 0; index < count; index++) {
+        total += wcslen(entries[index]) + 1;
+    }
+    wchar_t *block = malloc(sizeof(wchar_t) * total);
+    if (block != NULL) {
+        wchar_t *cursor = block;
+        for (size_t index = 0; index < count; index++) {
+            size_t length = wcslen(entries[index]) + 1;
+            memcpy(cursor, entries[index], sizeof(wchar_t) * length);
+            cursor += length;
+        }
+        *cursor = L'\0';
+    } else {
+        *failed = 1;
+    }
+    for (size_t index = 0; index < count; index++) {
+        free(entries[index]);
+    }
+    free(entries);
+    return block;
+}
+
+static HANDLE gekko_open_nul(int for_write) {
+    SECURITY_ATTRIBUTES attributes = {sizeof(SECURITY_ATTRIBUTES), NULL, TRUE};
+    return CreateFileW(L"NUL", for_write ? GENERIC_WRITE : GENERIC_READ, FILE_SHARE_READ | FILE_SHARE_WRITE,
+                       &attributes, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, NULL);
+}
+
+/* An anonymous pipe whose end for the child is inheritable and whose end for this process is not. */
+static int gekko_make_pipe(HANDLE *read_end, HANDLE *write_end, int child_reads) {
+    SECURITY_ATTRIBUTES attributes = {sizeof(SECURITY_ATTRIBUTES), NULL, TRUE};
+    if (!CreatePipe(read_end, write_end, &attributes, 0)) {
+        return 0;
+    }
+    SetHandleInformation(child_reads ? *write_end : *read_end, HANDLE_FLAG_INHERIT, 0);
+    return 1;
+}
+
+/*
+ * CreateProcessW with exactly the three standard handles inherited (a parallel run in another thread must not leak its
+ * pipes into this child). A failure is returned as a Win32 error code.
+ */
+static DWORD gekko_create_process(const char *program, const char *command_line, const char *const *env_pairs,
+                                  const char *cwd, HANDLE in, HANDLE out, HANDLE err, DWORD flags,
+                                  int retry_without_breakaway, PROCESS_INFORMATION *info) {
+    wchar_t *application = gekko_widen(program);
+    wchar_t *line = gekko_widen(command_line);
+    wchar_t *directory = cwd == NULL ? NULL : gekko_widen(cwd);
+    int env_failed = 0;
+    wchar_t *env_block = gekko_build_env_block(env_pairs, &env_failed);
+    DWORD error = ERROR_SUCCESS;
+    LPPROC_THREAD_ATTRIBUTE_LIST attributes = NULL;
+    int attributes_ready = 0;
+
+    if (application == NULL || line == NULL || (cwd != NULL && directory == NULL) || env_failed) {
+        error = ERROR_INVALID_PARAMETER;
+    }
+    HANDLE inherited[3];
+    DWORD inherited_count = 0;
+    inherited[inherited_count++] = in;
+    if (out != in) {
+        inherited[inherited_count++] = out;
+    }
+    if (err != in && err != out) {
+        inherited[inherited_count++] = err;
+    }
+    if (error == ERROR_SUCCESS) {
+        SIZE_T size = 0;
+        InitializeProcThreadAttributeList(NULL, 1, 0, &size);
+        attributes = malloc(size);
+        if (attributes == NULL) {
+            error = ERROR_NOT_ENOUGH_MEMORY;
+        } else if (!InitializeProcThreadAttributeList(attributes, 1, 0, &size)) {
+            error = GetLastError();
+        } else {
+            attributes_ready = 1;
+            if (!UpdateProcThreadAttribute(attributes, 0, PROC_THREAD_ATTRIBUTE_HANDLE_LIST, inherited,
+                                           inherited_count * sizeof(HANDLE), NULL, NULL)) {
+                error = GetLastError();
+            }
+        }
+    }
+    if (error == ERROR_SUCCESS) {
+        STARTUPINFOEXW startup;
+        ZeroMemory(&startup, sizeof startup);
+        startup.StartupInfo.cb = sizeof startup;
+        startup.StartupInfo.dwFlags = STARTF_USESTDHANDLES;
+        startup.StartupInfo.hStdInput = in;
+        startup.StartupInfo.hStdOutput = out;
+        startup.StartupInfo.hStdError = err;
+        startup.lpAttributeList = attributes;
+        DWORD creation = flags | EXTENDED_STARTUPINFO_PRESENT | CREATE_UNICODE_ENVIRONMENT;
+        BOOL created = CreateProcessW(application, line, NULL, NULL, TRUE, creation, env_block, directory,
+                                      &startup.StartupInfo, info);
+        if (!created && retry_without_breakaway && GetLastError() == ERROR_ACCESS_DENIED) {
+            created = CreateProcessW(application, line, NULL, NULL, TRUE, creation & ~CREATE_BREAKAWAY_FROM_JOB,
+                                     env_block, directory, &startup.StartupInfo, info);
+        }
+        if (!created) {
+            error = GetLastError();
+        }
+    }
+    if (attributes_ready) {
+        DeleteProcThreadAttributeList(attributes);
+    }
+    free(attributes);
+    free(env_block);
+    free(directory);
+    free(line);
+    free(application);
+    return error;
+}
+
+typedef struct {
+    HANDLE handle;
+    char *data;
+    long long length;
+} gekko_feed_context;
+
+/* Writes the input of a program from a thread of its own: a program that does not read must not block the caller. */
+static DWORD WINAPI gekko_feed(LPVOID parameter) {
+    gekko_feed_context *context = (gekko_feed_context *) parameter;
+    long long written = 0;
+    while (written < context->length) {
+        DWORD chunk = 0;
+        DWORD wanted = (DWORD) (context->length - written > 65536 ? 65536 : context->length - written);
+        if (!WriteFile(context->handle, context->data + written, wanted, &chunk, NULL) || chunk == 0) {
+            break;
+        }
+        written += chunk;
+    }
+    CloseHandle(context->handle);
+    free(context->data);
+    free(context);
+    return 0;
+}
+
+static void gekko_append(char **buffer, size_t *length, size_t *capacity, const char *data, size_t size) {
+    if (*buffer == NULL) {
+        return;
+    }
+    if (*length + size > *capacity) {
+        size_t wanted = *capacity;
+        while (*length + size > wanted) {
+            wanted *= 2;
+        }
+        char *grown = realloc(*buffer, wanted);
+        if (grown == NULL) {
+            return;
+        }
+        *buffer = grown;
+        *capacity = wanted;
+    }
+    memcpy(*buffer + *length, data, size);
+    *length += size;
+}
+
+/* Reads what is in the pipe without waiting; returns 0 once the pipe is at its end, 1 while it may still deliver. */
+static int gekko_read_available(HANDLE pipe, char **buffer, size_t *length, size_t *capacity) {
+    char chunk[16384];
+    for (;;) {
+        DWORD available = 0;
+        if (!PeekNamedPipe(pipe, NULL, 0, NULL, &available, NULL)) {
+            return 0;
+        }
+        if (available == 0) {
+            return 1;
+        }
+        DWORD got = 0;
+        DWORD wanted = available < sizeof chunk ? available : (DWORD) sizeof chunk;
+        if (!ReadFile(pipe, chunk, wanted, &got, NULL) || got == 0) {
+            return 0;
+        }
+        gekko_append(buffer, length, capacity, chunk, got);
+    }
+}
+
+/*
+ * Runs a program and collects what it prints. Returns 0 when it finished (exit_code is set), 1 when the time limit ran
+ * out (the program and everything it started are killed), -1 when it could not be started (out holds the reason). The
+ * output is malloc'ed; free it with gekko_free. argv is only used on POSIX; program is the full path of the
+ * executable and command_line what it gets.
+ */
+static int gekko_run(const char *program, char *const *argv, const char *command_line,
+                     const char *const *env_pairs, const char *cwd, const void *input, long long input_len,
+                     int merge_stderr, int timeout_seconds, char **out, long long *out_len, int *exit_code) {
+    *out = NULL;
+    *out_len = 0;
+    *exit_code = -1;
+
+    HANDLE child_in = NULL;
+    HANDLE parent_in = NULL;
+    HANDLE parent_out = NULL;
+    HANDLE child_out = NULL;
+    HANDLE child_err = NULL;
+    int ready = 1;
+    if (input_len > 0) {
+        ready = gekko_make_pipe(&child_in, &parent_in, 1);
+    } else {
+        child_in = gekko_open_nul(0);
+        ready = child_in != INVALID_HANDLE_VALUE;
+    }
+    if (ready) {
+        ready = gekko_make_pipe(&parent_out, &child_out, 0);
+    }
+    if (ready) {
+        if (merge_stderr) {
+            child_err = child_out;
+        } else {
+            child_err = gekko_open_nul(1);
+            ready = child_err != INVALID_HANDLE_VALUE;
+        }
+    }
+
+    PROCESS_INFORMATION info;
+    ZeroMemory(&info, sizeof info);
+    HANDLE job = NULL;
+    DWORD error = ready ? ERROR_SUCCESS : GetLastError();
+    if (ready) {
+        job = CreateJobObjectW(NULL, NULL);
+        error = gekko_create_process(program, command_line, env_pairs, cwd, child_in, child_out, child_err,
+                                     CREATE_NO_WINDOW | CREATE_SUSPENDED, 0, &info);
+    }
+    if (child_in != NULL && child_in != INVALID_HANDLE_VALUE) {
+        CloseHandle(child_in);
+    }
+    if (child_out != NULL) {
+        CloseHandle(child_out);
+    }
+    if (child_err != NULL && child_err != child_out && child_err != INVALID_HANDLE_VALUE) {
+        CloseHandle(child_err);
+    }
+
+    int result = 0;
+    if (!ready || error != ERROR_SUCCESS) {
+        if (parent_in != NULL) {
+            CloseHandle(parent_in);
+        }
+        if (parent_out != NULL) {
+            CloseHandle(parent_out);
+        }
+        if (job != NULL) {
+            CloseHandle(job);
+        }
+        return gekko_start_failure(program, error, out, out_len);
+    }
+
+    if (job != NULL) {
+        /* Children may break away on purpose (the adb server does); the others die with the job on a time out */
+        JOBOBJECT_EXTENDED_LIMIT_INFORMATION limits;
+        ZeroMemory(&limits, sizeof limits);
+        limits.BasicLimitInformation.LimitFlags = JOB_OBJECT_LIMIT_BREAKAWAY_OK;
+        SetInformationJobObject(job, JobObjectExtendedLimitInformation, &limits, sizeof limits);
+        AssignProcessToJobObject(job, info.hProcess);
+    }
+    ResumeThread(info.hThread);
+
+    if (input_len > 0) {
+        gekko_feed_context *context = malloc(sizeof(gekko_feed_context));
+        char *copy = malloc((size_t) input_len);
+        HANDLE thread = NULL;
+        if (context != NULL && copy != NULL) {
+            memcpy(copy, input, (size_t) input_len);
+            context->handle = parent_in;
+            context->data = copy;
+            context->length = input_len;
+            thread = CreateThread(NULL, 0, gekko_feed, context, 0, NULL);
+        }
+        if (thread != NULL) {
+            CloseHandle(thread);
+        } else {
+            free(context);
+            free(copy);
+            CloseHandle(parent_in);
+        }
+    }
+
+    size_t length = 0;
+    size_t capacity = 16384;
+    char *buffer = malloc(capacity);
+    long long deadline = gekko_monotonic_ms() + (long long) timeout_seconds * 1000;
+    int output_open = 1;
+    int exited = 0;
+    int timed_out = 0;
+    while (!exited) {
+        if (output_open && !gekko_read_available(parent_out, &buffer, &length, &capacity)) {
+            output_open = 0;
+        }
+        long long remaining = deadline - gekko_monotonic_ms();
+        if (remaining <= 0) {
+            timed_out = 1;
+            break;
+        }
+        DWORD wait = WaitForSingleObject(info.hProcess, output_open ? (remaining < 5 ? (DWORD) remaining : 5)
+                                                                    : (remaining < 50 ? (DWORD) remaining : 50));
+        if (wait == WAIT_OBJECT_0) {
+            exited = 1;
+        } else if (wait != WAIT_TIMEOUT) {
+            break;
+        }
+    }
+    if (!exited) {
+        if (job == NULL || !TerminateJobObject(job, 1)) {
+            TerminateProcess(info.hProcess, 1);
+        }
+        WaitForSingleObject(info.hProcess, 5000);
+    }
+    if (output_open) {
+        gekko_read_available(parent_out, &buffer, &length, &capacity);
+    }
+    DWORD code = 0;
+    if (exited && GetExitCodeProcess(info.hProcess, &code)) {
+        *exit_code = (int) code;
+    }
+    *out = buffer;
+    *out_len = (long long) length;
+    result = timed_out ? 1 : 0;
+
+    CloseHandle(parent_out);
+    CloseHandle(info.hThread);
+    CloseHandle(info.hProcess);
+    if (job != NULL) {
+        CloseHandle(job);
+    }
+    return result;
+}
+
+/*
+ * Starts a program that outlives this process: no console, no input, its output appended to log_path. Returns 0 once it
+ * was started, -1 when that was not possible.
+ */
+static int gekko_spawn_detached(const char *program, char *const *argv, const char *command_line,
+                                const char *const *env_pairs, const char *log_path) {
+    wchar_t *wide_log = gekko_widen(log_path);
+    if (wide_log == NULL) {
+        return -1;
+    }
+    SECURITY_ATTRIBUTES attributes = {sizeof(SECURITY_ATTRIBUTES), NULL, TRUE};
+    HANDLE log = CreateFileW(wide_log, FILE_APPEND_DATA, FILE_SHARE_READ | FILE_SHARE_WRITE, &attributes,
+                             OPEN_ALWAYS, FILE_ATTRIBUTE_NORMAL, NULL);
+    free(wide_log);
+    HANDLE input = gekko_open_nul(0);
+    int result = -1;
+    if (log != INVALID_HANDLE_VALUE && input != INVALID_HANDLE_VALUE) {
+        PROCESS_INFORMATION info;
+        ZeroMemory(&info, sizeof info);
+        DWORD error = gekko_create_process(program, command_line, env_pairs, NULL, input, log, log,
+                                           DETACHED_PROCESS | CREATE_NEW_PROCESS_GROUP | CREATE_BREAKAWAY_FROM_JOB,
+                                           1, &info);
+        if (error == ERROR_SUCCESS) {
+            CloseHandle(info.hThread);
+            CloseHandle(info.hProcess);
+            result = 0;
+        }
+    }
+    if (log != INVALID_HANDLE_VALUE) {
+        CloseHandle(log);
+    }
+    if (input != INVALID_HANDLE_VALUE) {
+        CloseHandle(input);
+    }
+    return result;
+}

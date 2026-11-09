@@ -15,6 +15,7 @@ kotlin {
     jvm()
     macosArm64()
     linuxX64()
+    mingwX64()
 
     targets.withType<KotlinNativeTarget>().configureEach {
         binaries.executable {
@@ -25,6 +26,12 @@ kotlin {
         // macOS linker does not care
         if (konanTarget.family == Family.LINUX) {
             binaries.all { linkerOpts("--allow-multiple-definition") }
+        }
+        // Running programs and the few operating system calls live in C, one definition file per kind of host; both
+        // files declare the same functions, so the Kotlin side (src/nativeHost) is shared by all native targets
+        val hostDefinition = if (konanTarget.family == Family.MINGW) "host-windows.def" else "host-posix.def"
+        compilations.getByName("main").cinterops.create("host") {
+            definitionFile.set(layout.projectDirectory.file("src/interop/$hostDefinition"))
         }
     }
 
@@ -41,6 +48,11 @@ kotlin {
             implementation(libs.clikt)
             implementation(libs.kaml)
             implementation(libs.okio)
+        }
+        // The code that uses the cinterop of the host layer is compiled once per native target: a shared source set
+        // would need that cinterop commonized
+        listOf("macosArm64Main", "linuxX64Main", "mingwX64Main").forEach { name ->
+            getByName(name).kotlin.srcDir("src/nativeHost/kotlin")
         }
         commonTest.dependencies {
             implementation(kotlin("test"))
