@@ -59,7 +59,12 @@ class SecurityTest {
     fun theSecretsOfGekkoAndCiCannotBeDeclared() {
         for (name in listOf("GEKKO_LLM_API_KEY", "GITHUB_TOKEN", "OP_SERVICE_ACCOUNT_TOKEN", "ACTIONS_RUNTIME_TOKEN")) {
             assertFailsWith<IllegalArgumentException>(name) { EnvAccess(setOf(name), emptyMap()) }
+            // Windows finds a variable whatever its case is, so a spelling in lower case is the same secret there
+            assertFailsWith<IllegalArgumentException>(name.lowercase()) {
+                EnvAccess(setOf(name.lowercase()), emptyMap())
+            }
         }
+        assertFailsWith<IllegalArgumentException> { EnvAccess(setOf("Gekko_Llm_Api_Key"), emptyMap()) }
         assertFailsWith<IllegalArgumentException> { EnvAccess(setOf("not a name"), emptyMap()) }
     }
 
