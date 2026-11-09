@@ -15,12 +15,14 @@ Thank you for your interest in gekko. Issues, pull requests and ideas are welcom
 | Android agent, system runner, sample app | Android SDK (`ANDROID_HOME`), an emulator for the end-to-end run |
 | iOS agent, system runner, sample app | macOS, Xcode, `brew install xcodegen` |
 | Web agent (`agent-web/`), web end-to-end run | Node.js 18 or newer; `./scripts/e2e-web.sh` installs Playwright and the browsers |
+| Windows binary (`mingwX64`) | Any host links it (Kotlin/Native cross-compiles); its tests run on Windows only (`./gradlew.bat :cli:mingwX64Test`, or `./gradlew` in Git Bash) |
 
 ```bash
 ./gradlew ktfmtCheck :protocol:jvmTest :cli:jvmTest :transport-jvm:test
 (cd gradle-plugin && ../gradlew test)
 ./gradlew :cli:linuxX64Test                    # Kotlin/Native tests of the shipped binary
-./gradlew :cli:linkReleaseExecutableMacosArm64 :cli:linkReleaseExecutableLinuxX64   # the CLI binaries
+./gradlew :cli:mingwX64Test                    # on Windows: the tests of the Windows binary
+./gradlew :cli:linkReleaseExecutableMacosArm64 :cli:linkReleaseExecutableLinuxX64 :cli:linkReleaseExecutableMingwX64   # the CLI binaries
 ./gradlew :sample-android:assembleDebug :system-runner-android:assembleDebug
 ./scripts/build-sample-ios.sh                  # sample-ios/build/Sample.app (macOS)
 ./scripts/build-ios-runner.sh                  # dist/gekko-ios-runner and dist/gekko-ios-agent (macOS)
@@ -30,6 +32,8 @@ Thank you for your interest in gekko. Issues, pull requests and ideas are welcom
 actionlint -config-file .github/actionlint.yml                                             # the workflows
 actionlint -config-file .github/actionlint.yml skills/gekko-setup/assets/workflows/*.yml   # and the templates
 ```
+
+Running programs and the operating system calls of the CLI are C code in `cli/src/interop/` (`host-posix.def` and `host-windows.def`, which declare the same functions); `cli/src/nativeHost/` is the Kotlin side that all native targets share. Git keeps text files with LF on every host (`.gitattributes`); the scripts run in Git Bash on Windows.
 
 `e2e-web.sh` installs Playwright and the browsers; on Linux `GEKKO_WEB_WITH_DEPS=1` adds the browsers' system libraries.
 

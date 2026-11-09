@@ -7,7 +7,7 @@ description: Write, run, debug and repair cross-platform (Android, iOS and web) 
 
 QA describes intent in plain language; you turn it into a deterministic YAML test by *driving the real app* with the `gekko` CLI, then prove it passes. CI replays the compiled steps; no model decides pass or fail (with `--heal` a model may only choose an existing element for a missing id, and says so in the report), so the file must be exact: you are the compiler. Ids and flows are chosen once, here, and then never guessed again.
 
-If `gekko` or `gekko.yaml` is missing, use the `gekko-setup` skill first (it installs the CLI with `scripts/install.sh` and wires up the test repository).
+If `gekko` or `gekko.yaml` is missing, use the `gekko-setup` skill first (it installs the CLI with `scripts/install.sh`, or `scripts/install.ps1` on Windows and wires up the test repository).
 
 ## The loop
 
