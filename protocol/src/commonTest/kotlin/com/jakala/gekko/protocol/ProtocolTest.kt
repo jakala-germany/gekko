@@ -43,6 +43,21 @@ class ProtocolTest {
     }
 
     @Test
+    fun touchesAtAPointRoundTripWithTheirWireNames() {
+        val long: Command = Command.LongPressAt(540, 1200, holdMs = 900)
+        val drag: Command = Command.Drag(540, 1600, 540, 600)
+
+        assertEquals(long, json.decodeFromString<Command>(json.encodeToString(long)))
+        assertEquals(drag, json.decodeFromString<Command>(json.encodeToString(drag)))
+        assertEquals(true, json.encodeToString(long).contains("\"type\":\"longPressAt\""))
+        assertEquals(true, json.encodeToString(drag).contains("\"type\":\"drag\""))
+        assertEquals(
+            Command.LongPressAt(1, 2, Command.DEFAULT_HOLD_MS),
+            json.decodeFromString<Command>("""{"type":"longPressAt","x":1,"y":2}"""),
+        )
+    }
+
+    @Test
     fun responseRoundTrips() {
         val response: Response = Response.TreeResult(listOf(tree))
 

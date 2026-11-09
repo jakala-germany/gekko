@@ -159,8 +159,11 @@ class SystemRunnerTest {
                 mockLocation.clear()
                 Response.Ok
             }
+            is Command.LongPressAt -> touched(touches.hold(command.x, command.y, command.holdMs))
             is Command.Swipe ->
                 touched(touches.swipe(command.fromX, command.fromY, command.toX, command.toY, command.durationMs))
+            is Command.Drag ->
+                touched(touches.drag(command.fromX, command.fromY, command.toX, command.toY, touchSlop()))
         }
     }
 
@@ -241,16 +244,20 @@ class SystemRunnerTest {
         // Content below comes into view when the finger moves up, content on the right when it moves left
         val moveX = -reveal.x * distance
         val moveY = -reveal.y * distance
-        val slop = ViewConfiguration.get(instrumentation.targetContext).scaledTouchSlop.toFloat()
         return touched(
             touches.drag(
                 visible.centerX - moveX / 2,
                 visible.centerY - moveY / 2,
                 visible.centerX + moveX / 2,
                 visible.centerY + moveY / 2,
-                slop,
+                touchSlop(),
             )
         )
+    }
+
+    /** How far a finger moves before a scroll container follows it. */
+    private fun touchSlop(): Float {
+        return ViewConfiguration.get(instrumentation.targetContext).scaledTouchSlop.toFloat()
     }
 
     private fun touched(injected: Boolean): Response {

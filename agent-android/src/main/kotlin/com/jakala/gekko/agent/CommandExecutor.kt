@@ -4,9 +4,12 @@ import android.app.Application
 import android.os.SystemClock
 import android.view.MotionEvent
 import android.view.View
+import android.view.ViewConfiguration
 import com.jakala.gekko.device.ElementLookup
 import com.jakala.gekko.device.Frame
+import com.jakala.gekko.device.Gestures
 import com.jakala.gekko.device.Scrolling
+import com.jakala.gekko.device.TouchPoint
 import com.jakala.gekko.device.Waiting
 import com.jakala.gekko.protocol.Command
 import com.jakala.gekko.protocol.ErrorKind
@@ -46,12 +49,14 @@ internal class CommandExecutor(private val application: Application, private val
             is Command.WaitIdle -> waitIdle(command.timeoutMs)
             is Command.WaitFor -> waitFor(command)
             is Command.Tap -> tap(command)
-            is Command.TapAt -> tapAt(command)
+            is Command.TapAt -> touchAt(command.x, command.y, TAP_MS)
+            is Command.LongPressAt -> touchAt(command.x, command.y, command.holdMs)
             is Command.DoubleTap -> doubleTap(command)
             is Command.LongPress -> longPress(command)
             is Command.Type -> type(command)
             is Command.Scroll -> scroll(command)
             is Command.Swipe -> swipe(command)
+            is Command.Drag -> drag(command)
         }
     }
 
@@ -128,18 +133,18 @@ internal class CommandExecutor(private val application: Application, private val
         return response
     }
 
-    /** A touch at screen coordinates, in the topmost window that contains them. */
-    private fun tapAt(command: Command.TapAt): Response {
+    /** A touch at screen coordinates, in the topmost window that contains them, released after [holdMs]. */
+    private fun touchAt(x: Int, y: Int, holdMs: Long): Response {
         pendingTouch = null
         MainThread.run {
-            val root = windowAt(command.x, command.y)
+            val root = windowAt(x, y)
             if (root != null) {
                 val location = IntArray(2).also { root.getLocationOnScreen(it) }
-                press(root, (command.x - location[0]).toFloat(), (command.y - location[1]).toFloat())
+                press(root, (x - location[0]).toFloat(), (y - location[1]).toFloat())
             }
         }
-        val touch = pendingTouch ?: return Response.Error("No window to tap at ${command.x},${command.y}")
-        Thread.sleep(TAP_MS)
+        val touch = pendingTouch ?: return Response.Error("No window to touch at $x,$y")
+        Thread.sleep(holdMs)
         MainThread.run { touchUp(touch) }
         pendingTouch = null
         return Response.Ok
@@ -237,9 +242,25 @@ internal class CommandExecutor(private val application: Application, private val
     }
 
     private fun swipe(command: Command.Swipe): Response {
-        val root = MainThread.run { reader.windows().lastOrNull() } ?: return Response.Error("No window")
-        MainThread.run { dispatchGesture(root, command) }
-        return Response.Ok
+        val moves = Gestures.path(command.fromX, command.fromY, command.toX, command.toY, command.durationMs)
+        return dispatchGesture(command.fromX, command.fromY, moves, liftAtMs = command.durationMs.coerceAtLeast(0))
+    }
+
+    /** The finger goes the touch slop beyond the end and rests there, so the content stops at the end. */
+    private fun drag(command: Command.Drag): Response {
+        val slop = MainThread.run {
+            windowAt(command.fromX, command.fromY)?.let { ViewConfiguration.get(it.context).scaledTouchSlop }
+        }
+        if (slop == null) {
+            return Response.Error("No window")
+        }
+        val moves = Gestures.dragPath(command.fromX, command.fromY, command.toX, command.toY, slop.toFloat())
+        return dispatchGesture(
+            command.fromX,
+            command.fromY,
+            moves,
+            liftAtMs = moves.last().atMs + Gestures.DRAG_REST_MS,
+        )
     }
 
     private class Attempt(val response: Response?, val missing: String)
@@ -319,24 +340,28 @@ internal class CommandExecutor(private val application: Application, private val
         up.recycle()
     }
 
-    private fun dispatchGesture(root: View, command: Command.Swipe) {
-        val location = IntArray(2).also { root.getLocationOnScreen(it) }
-        val start = SystemClock.uptimeMillis()
-        val steps = SWIPE_STEPS
-        fun event(action: Int, time: Long, x: Float, y: Float): MotionEvent {
-            return MotionEvent.obtain(start, time, action, x - location[0], y - location[1], 0)
+    /**
+     * One finger that goes down at the start, moves along [moves] and lifts [liftAtMs] after the touch down. The times
+     * of the events are made up, so the gesture is over at once, and a velocity tracker still sees the pace.
+     */
+    private fun dispatchGesture(startX: Int, startY: Int, moves: List<TouchPoint>, liftAtMs: Long): Response {
+        val root = MainThread.run { windowAt(startX, startY) } ?: return Response.Error("No window")
+        MainThread.run {
+            val location = IntArray(2).also { root.getLocationOnScreen(it) }
+            val start = SystemClock.uptimeMillis()
+            fun send(action: Int, time: Long, x: Float, y: Float) {
+                val event = MotionEvent.obtain(start, time, action, x - location[0], y - location[1], 0)
+                root.dispatchTouchEvent(event)
+                event.recycle()
+            }
+            send(MotionEvent.ACTION_DOWN, start, startX.toFloat(), startY.toFloat())
+            for (move in moves) {
+                send(MotionEvent.ACTION_MOVE, start + move.atMs, move.x, move.y)
+            }
+            val last = moves.last()
+            send(MotionEvent.ACTION_UP, start + liftAtMs, last.x, last.y)
         }
-        root.dispatchTouchEvent(event(MotionEvent.ACTION_DOWN, start, command.fromX.toFloat(), command.fromY.toFloat()))
-        for (step in 1..steps) {
-            val fraction = step / steps.toFloat()
-            val x = command.fromX + (command.toX - command.fromX) * fraction
-            val y = command.fromY + (command.toY - command.fromY) * fraction
-            val time = start + (command.durationMs * fraction).toLong()
-            root.dispatchTouchEvent(event(MotionEvent.ACTION_MOVE, time, x, y))
-        }
-        root.dispatchTouchEvent(
-            event(MotionEvent.ACTION_UP, start + command.durationMs, command.toX.toFloat(), command.toY.toFloat())
-        )
+        return Response.Ok
     }
 
     private companion object {
@@ -344,6 +369,5 @@ internal class CommandExecutor(private val application: Application, private val
         const val IDLE_WAIT_MS = 500L
         const val TAP_MS = 60L
         const val DOUBLE_TAP_GAP_MS = 80L
-        const val SWIPE_STEPS = 10
     }
 }

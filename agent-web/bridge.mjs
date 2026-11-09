@@ -468,7 +468,7 @@ const operations = {
     })
   },
 
-  async drag({ fromX, fromY, toX, toY, durationMs = 200 }) {
+  async drag({ fromX, fromY, toX, toY, durationMs = 200, holdMs = 0 }) {
     const page = currentPage()
     noDialog()
     return untilDialog(async () => {
@@ -478,6 +478,10 @@ const operations = {
       for (let step = 1; step <= steps; step++) {
         await page.mouse.move(fromX + ((toX - fromX) * step) / steps, fromY + ((toY - fromY) * step) / steps)
         await sleep(durationMs / steps)
+      }
+      // At rest at the end before the mouse goes up: nothing is left of the speed
+      if (holdMs > 0) {
+        await sleep(holdMs)
       }
       await page.mouse.up()
     })
