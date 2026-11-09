@@ -6,6 +6,9 @@
 
 **New**
 
+- Touches at a point and a drag, on Android, iOS and the web ([#34](https://github.com/jakala-germany/gekko/issues/34)): `longPress: { point: "50%,40%" }` holds a spot of the screen for a map, a chart or a canvas that has no element to name, and the new `drag` step (`{ drag: { start: "50%,80%", end: "50%,30%" } }`, or `from: <selector>` for the start) moves the content under the start to the end and lets go without momentum, so nothing keeps scrolling: scroll by an exact distance, move a slider, reorder a list. The finger goes the touch slop beyond the end and rests there, so the content ends where the finger does. The protocol gets the commands `longPressAt` and `drag` (no change of the protocol version: a server that does not know them answers `unsupported`, and a client reads a version from 1.4.0 on as "has them")
+- `system: true` on `swipe` and `drag` makes a real touch of the system runner instead of the in-app agent's, also on top of system UI ([#34](https://github.com/jakala-germany/gekko/issues/34))
+- `scripts/e2e-android.sh` fails when the system runner is slow: a sample test forces it to hold three long presses of 900 ms and to swipe and drag, and the script checks its time ([#31](https://github.com/jakala-germany/gekko/issues/31)). The end-to-end gesture tests only ever reached the agent before, which is how the slow runner went unnoticed
 - Upcoming additions go here
 
 **Security**
@@ -21,6 +24,8 @@
 - A test whose app process is gone right after its start (on Android the late end of the `pm clear` before it killed the new process, so the agent never answered) starts the app once more instead of failing with "In-process agent did not respond"
 - iOS simulators: `simctl terminate` gets 30 seconds and one more try instead of 300 seconds, so a call that hangs on a freshly booted simulator no longer fails the first test of a run
 - Android: the system runner holds a `longPress` for `holdMs` and makes `swipe` and `scroll` in a fraction of a second ([#31](https://github.com/jakala-germany/gekko/issues/31)). It stepped through `UiDevice.swipe`, which waits for a frame of the runner's own process (it draws nothing) after every step, so a step took far longer than the 5 ms it was meant to: a long press of 700 ms lasted several seconds (17.8 s on one emulator) and a swipe moved too slowly to fling. The runner now injects the touches with event times of its own, and a `scroll` through it moves the content by its distance and stops (the finger no longer loses the touch slop). A `swipe` through the runner now flings as it does through the agent, so a test that swiped through it may scroll further than before
+- `swipe` honours `durationMs` on every platform ([#34](https://github.com/jakala-germany/gekko/issues/34)): the Android agent moves once per frame over the duration, the Android runner (see above) and the iOS runner take as long as asked, and a short swipe flings while a long one barely moves the content past the finger. The iOS agent cannot make a fling (it set the scroll offset, whatever the duration), so on iOS a `swipe` is now a real touch of the system runner and takes about a second more
+- `scrollUntilVisible` drags instead of swiping ([#34](https://github.com/jakala-germany/gekko/issues/34)): it moves the list by half a viewport per step and lets go, so a fling can no longer carry it past the element, and its nudge near a sticky bar is exact. A fling used to cover more ground on Android, so a very long list may need a higher `maxScrolls`. The web still turns the mouse wheel
 - Upcoming changes go here
 
 ## [1.3.0]

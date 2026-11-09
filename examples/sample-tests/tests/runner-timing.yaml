@@ -1,0 +1,19 @@
+name: The system runner keeps its time
+tags: [android-only, runner-timing]
+# scripts/e2e-android.sh fails when this test takes longer than 15 seconds. The runner once stepped through
+# UiDevice.swipe, which waits for a frame of the runner's own process after every step: a long press of 900 ms took
+# 6 seconds on one emulator and 18 seconds on another (#31). The test takes about 5 seconds when the runner keeps time
+# (20 seconds for the long presses alone when it does not).
+steps:
+  - say: The first gesture starts the runner
+    do: { longPress: { id: sample.gesture, holdMs: 100, system: true } }
+  - say: Three long presses of 900 ms
+    do: { longPress: { id: sample.gesture, holdMs: 900, system: true } }
+  - do: { longPress: { id: sample.gesture, holdMs: 900, system: true } }
+  - do: { longPress: { id: sample.gesture, holdMs: 900, system: true } }
+  - say: The app saw a long press
+    do: { assertVisible: { id: sample.gesture.result, text: "Gesture: long press" } }
+  - say: A swipe of 300 ms
+    do: { swipe: { start: "11%,70%", end: "11%,45%", durationMs: 300, system: true } }
+  - say: A drag
+    do: { drag: { start: "11%,70%", end: "11%,60%", system: true } }

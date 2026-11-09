@@ -1,0 +1,14 @@
+name: A long press on a spot of the page
+tags: [web-only, touches]
+steps:
+  - say: Hold the gesture target by its position, there is no element to name
+    platform: web
+    do: { longPress: { point: "6%,15%", holdMs: 900 } }
+  - say: The page saw a long press
+    platform: web
+    do: { assertVisible: { id: sample.gesture.result, text: "Gesture: long press" } }
+  - say: Drag and swipe with the mouse
+    platform: web
+    do: { drag: { start: "20%,40%", end: "20%,60%" } }
+  - platform: web
+    do: { swipe: { start: "20%,40%", end: "20%,60%", durationMs: 400 } }
