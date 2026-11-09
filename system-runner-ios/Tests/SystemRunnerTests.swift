@@ -75,8 +75,10 @@ final class SystemRunnerTests: XCTestCase {
                 return self.ok()
             }
         case "tapAt": return tapAt(command)
+        case "longPressAt": return longPressAt(command)
         case "scroll": return scroll(command)
         case "swipe": return swipe(command)
+        case "drag": return drag(command)
         case "setOrientation":
             XCUIDevice.shared.orientation = (command["landscape"] as? Bool ?? false) ? .landscapeLeft : .portrait
             return ok()
@@ -243,6 +245,16 @@ final class SystemRunnerTests: XCTestCase {
         return ok()
     }
 
+    /// A touch at screen points, counted from the origin of the foremost application, held for holdMs.
+    private func longPressAt(_ command: [String: Any]) -> [String: Any] {
+        guard let x = finite(command["x"]), let y = finite(command["y"]), x >= 0, y >= 0 else {
+            return error("longPressAt needs non-negative numeric x and y", ErrorKind.unsupported)
+        }
+        let origin = foremost().app.coordinate(withNormalizedOffset: CGVector(dx: 0, dy: 0))
+        origin.withOffset(CGVector(dx: x, dy: y)).press(forDuration: seconds(command["holdMs"], fallback: 700))
+        return ok()
+    }
+
     /// Drags inside the scrollable area around the element, against the direction the content moves.
     private func scroll(_ command: [String: Any]) -> [String: Any] {
         var direction = "down"
@@ -278,26 +290,64 @@ final class SystemRunnerTests: XCTestCase {
             let center = CGPoint(x: area.midX, y: area.midY)
             let from = CGPoint(x: center.x - dx * length / 2, y: center.y - dy * length / 2)
             let to = CGPoint(x: center.x + dx * length / 2, y: center.y + dy * length / 2)
-            match.point(from).press(forDuration: 0.05, thenDragTo: match.point(to), withVelocity: .default, thenHoldForDuration: 0.1)
+            self.drag(from: from, to: to) { match.point($0) }
             return self.ok()
         }
     }
 
     private func swipe(_ command: [String: Any]) -> [String: Any] {
-        func number(_ key: String) -> CGFloat? {
-            return finite(command[key]).map { CGFloat($0) }
-        }
-        guard let fromX = number("fromX"), let fromY = number("fromY"), let toX = number("toX"), let toY = number("toY") else {
+        guard let from = points(command, "fromX", "fromY"), let to = points(command, "toX", "toY") else {
             return error("swipe needs numeric fromX, fromY, toX and toY", ErrorKind.unsupported)
         }
         let root = foremost().root
-        let size = root.frame.size
-        guard size.width > 0, size.height > 0 else { return error("No window", ErrorKind.rejected) }
-        let start = root.coordinate(withNormalizedOffset: CGVector(dx: fromX / size.width, dy: fromY / size.height))
-        let end = root.coordinate(withNormalizedOffset: CGVector(dx: toX / size.width, dy: toY / size.height))
-        start.press(forDuration: 0.05, thenDragTo: end)
+        guard root.frame.width > 0, root.frame.height > 0 else { return error("No window", ErrorKind.rejected) }
+        // The finger takes durationMs from start to end: a short swipe flings the content on, a long one barely does
+        let duration = max(seconds(command["durationMs"], fallback: 200), Self.minSwipeSeconds)
+        let velocity = XCUIGestureVelocity(rawValue: hypot(to.x - from.x, to.y - from.y) / CGFloat(duration))
+        screenPoint(root, from).press(forDuration: 0.05, thenDragTo: screenPoint(root, to), withVelocity: velocity, thenHoldForDuration: 0)
         return ok()
     }
+
+    /// Moves the content under the start to the end and lets it rest there, so nothing flings on past it.
+    private func drag(_ command: [String: Any]) -> [String: Any] {
+        guard let from = points(command, "fromX", "fromY"), let to = points(command, "toX", "toY") else {
+            return error("drag needs numeric fromX, fromY, toX and toY", ErrorKind.unsupported)
+        }
+        let root = foremost().root
+        guard root.frame.width > 0, root.frame.height > 0 else { return error("No window", ErrorKind.rejected) }
+        drag(from: from, to: to) { self.screenPoint(root, $0) }
+        return ok()
+    }
+
+    /// The content only follows the finger after it moved the touch slop, so the finger goes that far beyond the end,
+    /// slowly, and rests there before it lifts: a touch that lets go while it moves keeps that speed as a fling.
+    private func drag(from: CGPoint, to: CGPoint, coordinate: (CGPoint) -> XCUICoordinate) {
+        let dx = to.x - from.x
+        let dy = to.y - from.y
+        let length = hypot(dx, dy)
+        let beyond = length == 0 ? CGPoint.zero : CGPoint(x: dx / length * Self.dragSlop, y: dy / length * Self.dragSlop)
+        let end = CGPoint(x: to.x + beyond.x, y: to.y + beyond.y)
+        let velocity = XCUIGestureVelocity(rawValue: hypot(end.x - from.x, end.y - from.y) / CGFloat(Self.dragMoveSeconds))
+        coordinate(from).press(forDuration: 0.05, thenDragTo: coordinate(end), withVelocity: velocity, thenHoldForDuration: Self.dragRestSeconds)
+    }
+
+    /// Screen points, counted from the origin of the element that owns the screen.
+    private func screenPoint(_ root: XCUIElement, _ point: CGPoint) -> XCUICoordinate {
+        let origin = root.coordinate(withNormalizedOffset: CGVector(dx: 0, dy: 0))
+        return origin.withOffset(CGVector(dx: point.x - root.frame.minX, dy: point.y - root.frame.minY))
+    }
+
+    private func points(_ command: [String: Any], _ x: String, _ y: String) -> CGPoint? {
+        guard let px = finite(command[x]), let py = finite(command[y]) else { return nil }
+        return CGPoint(x: px, y: py)
+    }
+
+    /// How far a finger moves before a scroll view follows it (UIKit's pan gesture starts after about 10 points and the
+    /// first movement only starts it).
+    private static let dragSlop: CGFloat = 20
+    private static let dragMoveSeconds = 0.3
+    private static let dragRestSeconds = 0.3
+    private static let minSwipeSeconds = 0.05
 
     private func node(for element: XCUIElement) -> [String: Any] {
         guard let snapshot = try? element.snapshot() else {

@@ -31,7 +31,7 @@ final class CommandExecutor {
         case "tapAt": return tapAt(command)
         case "type": return typeText(command)
         case "scroll": return scroll(command)
-        case "swipe": return swipe(command)
+        case "drag": return drag(command)
         case "hideKeyboard": return hideKeyboard()
         // Mocks are state of the process, not UI: they are served without touching the main thread
         case "setMocks": return setMocks(command)
@@ -40,7 +40,7 @@ final class CommandExecutor {
             return ok()
         case "mockHits": return ["type": "mockHits", "hits": MockStore.shared.takeHits()]
         case "setOrientation": return failure("setOrientation is served by the system runner", ErrorKind.unsupported)
-        case "doubleTap", "longPress": return failure("\(type) needs real touches: the CLI sends it to the system runner", ErrorKind.unsupported)
+        case "doubleTap", "longPress", "longPressAt", "swipe": return failure("\(type) needs real touches: the CLI sends it to the system runner", ErrorKind.unsupported)
         default: return failure("Unknown command \(type)", ErrorKind.unsupported)
         }
     }
@@ -120,12 +120,14 @@ final class CommandExecutor {
         }
     }
 
-    private func swipe(_ command: [String: Any]) -> [String: Any] {
+    /// The content under the start ends at the end, at rest: the scroll view under the start point moves its offset by
+    /// the distance. Anything else that a finger can drag (a slider, a reorder handle) needs real touches.
+    private func drag(_ command: [String: Any]) -> [String: Any] {
         guard let fromX = finite(command["fromX"]), let fromY = finite(command["fromY"]), let toX = finite(command["toX"]), let toY = finite(command["toY"]) else {
-            return failure("swipe needs numeric fromX, fromY, toX and toY", ErrorKind.unsupported)
+            return failure("drag needs numeric fromX, fromY, toX and toY", ErrorKind.unsupported)
         }
-        let moved = onMain { ElementActions.swipe(from: CGPoint(x: fromX, y: fromY), to: CGPoint(x: toX, y: toY)) }
-        return moved ? ok() : notHandled("Swipe")
+        let moved = onMain { ElementActions.drag(from: CGPoint(x: fromX, y: fromY), to: CGPoint(x: toX, y: toY)) }
+        return moved ? ok() : failure("No scroll view under (\(Element.integer(CGFloat(fromX))), \(Element.integer(CGFloat(fromY)))) moved: the CLI sends the drag to the system runner", ErrorKind.unsupported)
     }
 
     /// Finds the element (matching, enabled, on screen, in document order) and runs the action on the main thread.
