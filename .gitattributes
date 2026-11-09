@@ -1,0 +1,13 @@
+# Sources are LF on every machine: a script with CRLF does not run under Git Bash, and Windows tools read LF fine
+* text=auto eol=lf
+
+# What only Windows runs keeps its CRLF
+*.bat text eol=crlf
+*.cmd text eol=crlf
+
+*.jar binary
+*.png binary
+*.jpg binary
+*.gif binary
+*.apk binary
+*.zip binary
