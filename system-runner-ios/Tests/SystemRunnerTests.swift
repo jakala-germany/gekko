@@ -342,9 +342,9 @@ final class SystemRunnerTests: XCTestCase {
         return CGPoint(x: px, y: py)
     }
 
-    /// How far a finger moves before a scroll view follows it (UIKit's pan gesture starts after about 10 points and the
-    /// first movement only starts it).
-    private static let dragSlop: CGFloat = 20
+    /// How far a finger moves before a scroll view follows it. Measured on the simulator (iOS 27): the content of a
+    /// scroll view trails the finger of a press-and-drag by 12 points.
+    private static let dragSlop: CGFloat = 12
     private static let dragMoveSeconds = 0.3
     private static let dragRestSeconds = 0.3
     private static let minSwipeSeconds = 0.05
