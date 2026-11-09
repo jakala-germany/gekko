@@ -222,7 +222,7 @@ class ModelTest {
 
         assertTrue(step.action.runsOn(Platform.Android) && step.action.runsOn(Platform.Ios))
         assertTrue(step.until?.runsOn(Platform.Ios) == true)
-        assertTrue(step.until?.runsOn(Platform.Android) == false)
+        assertTrue(step.until.runsOn(Platform.Android) == false)
         assertFailsWith<Exception> { Yamls.parse(Action.serializer(), "{ platform: windows, wait: 1 }") }
     }
 
@@ -384,7 +384,7 @@ class ModelTest {
         val step = Yamls.parse(Step.serializer(), "do: { tap: { id: { android: a.b, ios: a_b, web: a-b } } }")
 
         assertEquals("a-b", step.action.tap!!.toSelector(Platform.Web).id)
-        assertEquals("a.b", step.action.tap!!.toSelector(Platform.Android).id)
+        assertEquals("a.b", step.action.tap.toSelector(Platform.Android).id)
         assertFailsWith<Exception> { Yamls.parse(Step.serializer(), "do: { tap: { id: { desktop: a } } }") }
     }
 
@@ -412,7 +412,7 @@ class ModelTest {
         val step = Yamls.parse(Step.serializer(), "do: { tap: { id: x } }\nuntil: { platform: [ios, web], wait: 1 }")
 
         assertTrue(step.until?.runsOn(Platform.Web) == true)
-        assertTrue(step.until?.runsOn(Platform.Android) == false)
+        assertTrue(step.until.runsOn(Platform.Android) == false)
     }
 
     @Test

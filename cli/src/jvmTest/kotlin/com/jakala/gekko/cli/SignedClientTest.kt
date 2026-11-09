@@ -8,6 +8,7 @@ import com.jakala.gekko.transport.ServerAuth
 import com.jakala.gekko.transport.TcpListener
 import com.sun.net.httpserver.HttpExchange
 import com.sun.net.httpserver.HttpServer
+import java.net.BindException
 import java.net.HttpURLConnection
 import java.net.InetSocketAddress
 import java.net.URL
@@ -42,12 +43,29 @@ class SignedClientTest {
             get() = listener.port
     }
 
+    /**
+     * A listener that was closed a moment ago holds its port until its accepting thread has woken up, so wait for it.
+     */
+    private fun listen(port: Int): TcpListener {
+        val deadline = System.nanoTime() + BIND_TIMEOUT_NANOS
+        while (true) {
+            try {
+                return TcpListener(port)
+            } catch (error: BindException) {
+                if (System.nanoTime() > deadline) {
+                    throw error
+                }
+                Thread.sleep(BIND_RETRY_MS)
+            }
+        }
+    }
+
     private fun realServer(
         port: Int = 0,
         serverKey: () -> ByteArray? = { key },
         executed: MutableList<Command> = CopyOnWriteArrayList(),
     ): Real {
-        val listener = TcpListener(port)
+        val listener = listen(port)
         val auth = ServerAuth(listener.port.toString(), serverKey)
         CommandServer(listener, auth) { command ->
                 executed += command
@@ -262,5 +280,10 @@ class SignedClientTest {
 
         assertEquals(401, answer.responseCode)
         assertTrue(server.executed.isEmpty())
+    }
+
+    private companion object {
+        const val BIND_TIMEOUT_NANOS = 5_000_000_000L
+        const val BIND_RETRY_MS = 10L
     }
 }

@@ -29,7 +29,9 @@ kotlin {
     }
 
     sourceSets {
-        all { languageSettings.optIn("kotlinx.cinterop.ExperimentalForeignApi") }
+        // cinterop exists on native only; on the JVM the marker cannot be resolved
+        matching { !it.name.startsWith("common") && !it.name.startsWith("jvm") }
+            .configureEach { languageSettings.optIn("kotlinx.cinterop.ExperimentalForeignApi") }
         commonMain.dependencies {
             implementation(project(":protocol"))
             implementation(libs.kotlinx.serialization.json)

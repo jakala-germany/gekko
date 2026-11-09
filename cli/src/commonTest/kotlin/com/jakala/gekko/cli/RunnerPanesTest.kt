@@ -123,9 +123,9 @@ class RunnerPanesTest {
                 )
 
         assertNotNull(result.failure)
-        assertTrue(result.failure!!.contains("not on pane 'login'"), result.failure)
-        assertTrue(result.failure!!.contains("Login.Title"), result.failure)
-        assertTrue(result.failure!!.contains("current pane: home"), result.failure)
+        assertTrue(result.failure.contains("not on pane 'login'"), result.failure)
+        assertTrue(result.failure.contains("Login.Title"), result.failure)
+        assertTrue(result.failure.contains("current pane: home"), result.failure)
         assertTrue(seen.none { it is Command.Type })
         assertEquals("Sign in", result.failedStep)
     }
@@ -208,8 +208,8 @@ class RunnerPanesTest {
                 )
 
         assertTrue(result.failure!!.startsWith("Element not found"), result.failure)
-        assertTrue(result.failure!!.contains("element login.submit = Selector(id=login_submit)"), result.failure)
-        assertTrue(result.failure!!.contains("current pane: login"), result.failure)
+        assertTrue(result.failure.contains("element login.submit = Selector(id=login_submit)"), result.failure)
+        assertTrue(result.failure.contains("current pane: login"), result.failure)
     }
 
     @Test
