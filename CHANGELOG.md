@@ -20,6 +20,7 @@
 - Android: the agent only answers in a debuggable build (it gets its key through `run-as`); `gekko launch` and `gekko run` fail with a clear message for a build that is not debuggable
 - A test whose app process is gone right after its start (on Android the late end of the `pm clear` before it killed the new process, so the agent never answered) starts the app once more instead of failing with "In-process agent did not respond"
 - iOS simulators: `simctl terminate` gets 30 seconds and one more try instead of 300 seconds, so a call that hangs on a freshly booted simulator no longer fails the first test of a run
+- Android: the system runner holds a `longPress` for `holdMs` and makes `swipe` and `scroll` in a fraction of a second ([#31](https://github.com/jakala-germany/gekko/issues/31)). It stepped through `UiDevice.swipe`, which waits for a frame of the runner's own process (it draws nothing) after every step, so a step took far longer than the 5 ms it was meant to: a long press of 700 ms lasted several seconds (17.8 s on one emulator) and a swipe moved too slowly to fling. The runner now injects the touches with event times of its own, and a `scroll` through it moves the content by its distance and stops (the finger no longer loses the touch slop). A `swipe` through the runner now flings as it does through the agent, so a test that swiped through it may scroll further than before
 - Upcoming changes go here
 
 ## [1.3.0]

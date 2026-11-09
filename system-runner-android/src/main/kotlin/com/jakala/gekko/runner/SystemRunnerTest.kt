@@ -2,6 +2,7 @@ package com.jakala.gekko.runner
 
 import android.accessibilityservice.AccessibilityServiceInfo
 import android.view.View
+import android.view.ViewConfiguration
 import android.view.accessibility.AccessibilityNodeInfo
 import androidx.test.platform.app.InstrumentationRegistry
 import androidx.test.uiautomator.UiDevice
@@ -36,6 +37,7 @@ class SystemRunnerTest {
     private val instrumentation = InstrumentationRegistry.getInstrumentation()
     private val device = UiDevice.getInstance(instrumentation)
     private val mockLocation by lazy { MockLocation(instrumentation.targetContext) }
+    private val touches = Touches { instrumentation.uiAutomation }
 
     @Test
     fun serve() {
@@ -135,16 +137,7 @@ class SystemRunnerTest {
                 }
             is Command.LongPress ->
                 withNode(command.selector, command.timeoutMs) { match, _ ->
-                    // A swipe that stays in place is the UiAutomator way to hold a finger down: one step is about 5 ms
-                    val steps = (command.holdMs / SWIPE_STEP_MS).toInt().coerceAtLeast(1)
-                    device.swipe(
-                        match.bounds.centerX,
-                        match.bounds.centerY,
-                        match.bounds.centerX,
-                        match.bounds.centerY,
-                        steps,
-                    )
-                    Response.Ok
+                    touched(touches.hold(match.bounds.centerX, match.bounds.centerY, command.holdMs))
                 }
             is Command.Type ->
                 withNode(command.selector, command.timeoutMs) { _, node ->
@@ -166,10 +159,8 @@ class SystemRunnerTest {
                 mockLocation.clear()
                 Response.Ok
             }
-            is Command.Swipe -> {
-                device.swipe(command.fromX, command.fromY, command.toX, command.toY, SWIPE_STEPS)
-                Response.Ok
-            }
+            is Command.Swipe ->
+                touched(touches.swipe(command.fromX, command.fromY, command.toX, command.toY, command.durationMs))
         }
     }
 
@@ -219,8 +210,7 @@ class SystemRunnerTest {
             if (container == null) {
                 Response.Error("Nothing scrollable at ${describe(match)}", ErrorKind.REJECTED)
             } else {
-                swipeToReveal(nodeBounds(container), reveal, command.distanceDp * density())
-                Response.Ok
+                dragToReveal(nodeBounds(container), reveal, command.distanceDp * density())
             }
         }
     }
@@ -243,21 +233,28 @@ class SystemRunnerTest {
         return if (reveal.y != 0) vertical else horizontal
     }
 
-    private fun swipeToReveal(container: Bounds, reveal: Reveal, distancePx: Float) {
+    /** The content moves by the distance and stops: a drag, so nothing flings on past it. */
+    private fun dragToReveal(container: Bounds, reveal: Reveal, distancePx: Float): Response {
         val visible = container.intersect(Bounds(0, 0, device.displayWidth, device.displayHeight))
         val extent = if (reveal.y != 0) visible.bottom - visible.top else visible.right - visible.left
         val distance = minOf(distancePx, extent * MAX_SWIPE_FRACTION).toInt().coerceAtLeast(1)
         // Content below comes into view when the finger moves up, content on the right when it moves left
         val moveX = -reveal.x * distance
         val moveY = -reveal.y * distance
-        val steps = (distance / SWIPE_PX_PER_STEP).coerceIn(MIN_SCROLL_STEPS, MAX_SCROLL_STEPS)
-        device.swipe(
-            visible.centerX - moveX / 2,
-            visible.centerY - moveY / 2,
-            visible.centerX + moveX / 2,
-            visible.centerY + moveY / 2,
-            steps,
+        val slop = ViewConfiguration.get(instrumentation.targetContext).scaledTouchSlop.toFloat()
+        return touched(
+            touches.drag(
+                visible.centerX - moveX / 2,
+                visible.centerY - moveY / 2,
+                visible.centerX + moveX / 2,
+                visible.centerY + moveY / 2,
+                slop,
+            )
         )
+    }
+
+    private fun touched(injected: Boolean): Response {
+        return if (injected) Response.Ok else Response.Error("The system refused the touch", ErrorKind.REJECTED)
     }
 
     private fun describe(node: UiNode): String {
@@ -337,11 +334,6 @@ class SystemRunnerTest {
         const val POLL_MS = 50L
         const val ROOT_RETRIES = 10
         const val ROOT_RETRY_MS = 50L
-        const val SWIPE_STEPS = 20
-        const val SWIPE_STEP_MS = 5L
-        const val SWIPE_PX_PER_STEP = 12
-        const val MIN_SCROLL_STEPS = 10
-        const val MAX_SCROLL_STEPS = 200
         const val MAX_SWIPE_FRACTION = 0.8f
         const val DOUBLE_TAP_GAP_MS = 80L
         const val ORIENTATION_IDLE_MS = 2_000L
