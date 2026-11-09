@@ -147,7 +147,7 @@ static int gekko_restrict_to_owner(const char *path, int is_directory) {
     if (error == ERROR_SUCCESS) {
         EXPLICIT_ACCESS_W access;
         ZeroMemory(&access, sizeof access);
-        access.grfAccessPermissions = GENERIC_ALL;
+        access.grfAccessPermissions = FILE_ALL_ACCESS;
         access.grfAccessMode = SET_ACCESS;
         access.grfInheritance = is_directory ? SUB_CONTAINERS_AND_OBJECTS_INHERIT : NO_INHERITANCE;
         access.Trustee.TrusteeForm = TRUSTEE_IS_SID;
