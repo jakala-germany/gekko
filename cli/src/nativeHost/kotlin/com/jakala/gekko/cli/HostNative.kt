@@ -44,6 +44,8 @@ import okio.Path.Companion.toPath
 
 actual val isWindowsHost: Boolean = Platform.osFamily == OsFamily.WINDOWS
 
+private const val ERROR_NOT_SUPPORTED = 50
+
 private fun takeString(pointer: CPointer<ByteVar>?): String? {
     if (pointer == null) {
         return null
@@ -92,8 +94,11 @@ actual fun randomHex(byteCount: Int): String {
 actual fun restrictToOwner(path: String) {
     val directory = FileSystem.SYSTEM.metadataOrNull(path.toPath())?.isDirectory == true
     val status = gekko_restrict_to_owner(native(path), if (directory) 1 else 0)
-    // chmod is best effort, as it always was; on Windows a path that stays readable for others is a failure
-    check(status == 0 || !isWindowsHost) { "cannot restrict $path to its owner (Windows error $status)" }
+    // chmod is best effort, as it always was; on Windows a path that stays readable for others is a failure, unless the
+    // file system has no ACLs at all (FAT, exFAT), where POSIX chmod is as powerless
+    check(status == 0 || status == ERROR_NOT_SUPPORTED || !isWindowsHost) {
+        "cannot restrict $path to its owner (Windows error $status)"
+    }
 }
 
 actual fun currentProcessId(): Long {

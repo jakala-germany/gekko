@@ -19,8 +19,13 @@ object UserToken {
             check(existing.length >= BYTES * 2) { "$path is damaged; delete it and run gekko again" }
             return existing
         }
+        val existed = fileExists(directory)
         makeDirs(directory)
-        restrictToOwner(directory)
+        // On Windows a restriction is handed down to everything inside (the installed runner, the Playwright files),
+        // so it is only set on a folder that gekko creates itself; the token file below is restricted in any case
+        if (!existed || !isWindowsHost) {
+            restrictToOwner(directory)
+        }
         val created = randomHex(BYTES)
         writeTextFile(path, created)
         restrictToOwner(path)

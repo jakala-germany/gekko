@@ -338,6 +338,8 @@ class WebBridge(
         makeDirs("${WebHome.directory()}/sessions")
         makeDirs("${WebHome.directory()}/logs")
         val logFile = "${WebHome.directory()}/logs/$name.log"
+        // Every start has a log of its own: the hint after a failure must not come from an earlier one
+        runCatching { writeTextFile(logFile, "") }
         val started =
             spawnDetached(
                 listOf(

@@ -31,7 +31,8 @@ actual fun makeDirs(path: String) {
 }
 
 actual fun removeRecursively(path: String) {
-    FileSystem.SYSTEM.deleteRecursively(path.toPath(), mustExist = false)
+    // Best effort, like rm -rf: on Windows a virus scanner or a program that was just stopped can still hold a file
+    runCatching { FileSystem.SYSTEM.deleteRecursively(path.toPath(), mustExist = false) }
 }
 
 actual fun nowMillis(): Long {
