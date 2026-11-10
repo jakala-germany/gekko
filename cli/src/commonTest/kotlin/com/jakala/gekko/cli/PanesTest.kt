@@ -138,6 +138,18 @@ class PanesTest {
     }
 
     @Test
+    fun aPaneIsNamedByItsPathAlsoWhenTheProjectFolderIsWrittenWithADotOrATrailingSlash() {
+        val project = paneProject(mapOf("panes/auth/login.yaml" to LOGIN_PANE))
+
+        for (root in listOf("${project.root}/.", "${project.root}/", "${project.root}//")) {
+            val panes = Project(root, GekkoConfig()).panes
+
+            assertEquals(listOf("auth/login"), panes.names, root)
+            assertTrue(panes.pane("auth/login").elements.containsKey("email"), root)
+        }
+    }
+
+    @Test
     fun theNameOfAPaneIsItsPathAndAnElementMayHaveDots() {
         val project =
             paneProject(

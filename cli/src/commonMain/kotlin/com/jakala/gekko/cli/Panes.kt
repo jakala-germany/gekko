@@ -85,7 +85,7 @@ class Panes(
         val result = linkedMapOf<String, Loaded>()
         val files = listFilesRecursive(dir).filter { it.endsWith(".yaml") || it.endsWith(".yml") }.sorted()
         for (path in files) {
-            val name = path.removePrefix("$dir/").removeSuffix(".yaml").removeSuffix(".yml")
+            val name = nameOf(path)
             if (!PANE_NAME.matches(name)) {
                 naming += "$path: a pane name is letters, digits, _ and - (and / for folders), not '$name'"
                 continue
@@ -102,6 +102,20 @@ class Panes(
                 }
         }
         return result
+    }
+
+    /**
+     * The name of the pane in [path]: its path below [dir] without the extension. A listing does not always spell [dir]
+     * the way it was given (okio lists `./panes` as `panes/…` and `a//panes` as `a/panes/…`), so the folders are
+     * counted.
+     */
+    private fun nameOf(path: String): String {
+        val below = segments(path).drop(segments(dir).size).joinToString("/")
+        return below.removeSuffix(".yaml").removeSuffix(".yml")
+    }
+
+    private fun segments(path: String): List<String> {
+        return path.split('/').filter { it.isNotEmpty() && it != "." }
     }
 
     private fun read(path: String): PaneFile {

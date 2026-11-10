@@ -128,7 +128,7 @@ if ($Web -ne '') {
 
 $architecture = if ($env:PROCESSOR_ARCHITEW6432) { $env:PROCESSOR_ARCHITEW6432 } else { $env:PROCESSOR_ARCHITECTURE }
 if ($architecture -ne 'AMD64') {
-    Fail "unsupported platform Windows $architecture: gekko runs on Windows x64 (and on macOS arm64 and Linux x64)"
+    Fail "unsupported platform Windows ${architecture}: gekko runs on Windows x64 (and on macOS arm64 and Linux x64)"
 }
 
 if ($Version -eq 'latest') {

@@ -36,6 +36,11 @@
 - `scrollUntilVisible` drags instead of swiping ([#34](https://github.com/jakala-germany/gekko/issues/34)): it moves the list by half a viewport per step and lets go, so a fling can no longer carry it past the element, and its nudge near a sticky bar is exact. A fling used to cover more ground on Android, so a very long list may need a higher `maxScrolls`. The web still turns the mouse wheel
 - Upcoming changes go here
 
+**Fixed**
+
+- Panes: run without `--project` (or with `--project ./x` or `x/`), gekko named every pane with its folder in front (`panes/sample`), so `gekko check` and `gekko run` did not find `sample`
+- `scripts/install.ps1` could not be parsed by PowerShell (`$architecture:` in a message)
+
 ## [1.3.0]
 
 [1.3.0]: https://github.com/jakala-germany/gekko/compare/1.2.0...1.3.0
