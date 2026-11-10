@@ -308,10 +308,7 @@ final class SystemRunnerTests: XCTestCase {
         return ok()
     }
 
-    /// Moves the content under the start to the end and lets it rest there, so nothing flings on past it. Measured on
-    /// the simulator (iOS 27): exact for a distance up to about 90 points; a longer drag can still fling the content on
-    /// (a scroll view keeps the speed of the last movement of a touch that rests), however fast or slow it is made. The
-    /// agent moves the offset of a scroll view by exactly the distance and is the better choice for lists.
+    /// Moves the content under the start to the end and lets it rest there, so nothing flings on past it.
     private func drag(_ command: [String: Any]) -> [String: Any] {
         guard let from = points(command, "fromX", "fromY"), let to = points(command, "toX", "toY") else {
             return error("drag needs numeric fromX, fromY, toX and toY", ErrorKind.unsupported)
@@ -322,16 +319,18 @@ final class SystemRunnerTests: XCTestCase {
         return ok()
     }
 
-    /// The content only follows the finger after it moved the touch slop, so the finger goes that far beyond the end,
-    /// slowly, and rests there before it lifts: a touch that lets go while it moves keeps that speed as a fling.
+    /// The content only follows the finger after it moved the touch slop, so the finger goes that far beyond the end and
+    /// rests there before it lifts. It moves at the slow speed of XCUITest: measured on the simulator (iOS 27), the
+    /// content ends at the end to the point for 175, 350 and 525 points, while a drag at any other speed that was tried
+    /// (a fixed time of 0.3 s, 100, 300 and 623 points per second) flung it on by up to 490 points for a distance over
+    /// 100 points, whatever the rest before it lifted.
     private func drag(from: CGPoint, to: CGPoint, coordinate: (CGPoint) -> XCUICoordinate) {
         let dx = to.x - from.x
         let dy = to.y - from.y
         let length = hypot(dx, dy)
         let beyond = length == 0 ? CGPoint.zero : CGPoint(x: dx / length * Self.dragSlop, y: dy / length * Self.dragSlop)
         let end = CGPoint(x: to.x + beyond.x, y: to.y + beyond.y)
-        let velocity = XCUIGestureVelocity(rawValue: hypot(end.x - from.x, end.y - from.y) / CGFloat(Self.dragMoveSeconds))
-        coordinate(from).press(forDuration: 0.05, thenDragTo: coordinate(end), withVelocity: velocity, thenHoldForDuration: Self.dragRestSeconds)
+        coordinate(from).press(forDuration: 0.05, thenDragTo: coordinate(end), withVelocity: .slow, thenHoldForDuration: Self.dragRestSeconds)
     }
 
     /// Screen points, counted from the origin of the element that owns the screen.
@@ -348,7 +347,6 @@ final class SystemRunnerTests: XCTestCase {
     /// How far a finger moves before a scroll view follows it. Measured on the simulator (iOS 27): the content of a
     /// scroll view trails the finger of a press-and-drag by 12 points.
     private static let dragSlop: CGFloat = 12
-    private static let dragMoveSeconds = 0.3
     private static let dragRestSeconds = 0.3
     private static let minSwipeSeconds = 0.05
 

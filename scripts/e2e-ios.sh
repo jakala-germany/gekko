@@ -24,7 +24,7 @@ xcrun simctl bootstatus "$UDID" -b
   --junit "$OUT/junit.xml" --output "$OUT/results" 2>&1 | tee "$OUT/run.log"
 
 # A drag moves the list exactly as far as the finger, a fast swipe flings it, a slow one does not
-./scripts/check-touches.sh "$OUT/run.log" --no-runner-drag
+./scripts/check-touches.sh "$OUT/run.log"
 
 status=0
 "$GEKKO" run --project examples/sample-tests --platform ios -s "$UDID" --tags broken --output "$OUT/failing" || status=$?
