@@ -28,9 +28,10 @@ Without `-s`, Android uses the one attached device, iOS the one booted simulator
 | Command | Purpose |
 |---|---|
 | `gekko devices` | Attached adb devices, booted simulators and running web sessions, one per line: `android <serial>`, `ios <UDID>`, `web <browser>` |
-| `gekko tree [--json]` | The current UI as the active driver sees it: role, `id=`, `text=`, `desc=`, `actions=`, `disabled`. Lines that are an element of a pane (`panes/`) end with `<- pane.element`, and a last line `current pane: ...` names the panes whose identity is on screen (not with `--json`) |
+| `gekko tree [--json]` | The current UI as the active driver sees it: role, `id=`, `text=`, `desc=`, `actions=`, `disabled`, `focused` (the element that has the input focus; not on iOS system-runner trees). Lines that are an element of a pane (`panes/`) end with `<- pane.element`, and a last line `current pane: ...` names the panes whose identity is on screen (not with `--json`) |
 | `gekko tap SELECTOR` | Tap an element; when the in-app agent's accessibility tap is not handled, the tap is repeated as a real touch through the system runner |
 | `gekko type SELECTOR "text"` | Type into an element (replaces its text) |
+| `gekko type-focused "text"` | Type at the cursor of the field that has the focus (adds to its text); waits up to `--timeout` for a field to get the focus, `--system` uses the system runner |
 | `gekko scroll SELECTOR [--direction D] [--distance DP]` | Scroll the container of an element; `--direction` is where the wanted content is: `down` (default), `up`, `start`, `end`, `left`, `right`; `--distance` in dp, points on iOS, CSS pixels on the web (default 400) |
 | `gekko assert SELECTOR [--gone]` | Wait until the element is visible (or, with `--gone`, not visible); exit 1 when it is not within `--timeout` |
 | `gekko screenshot FILE` | Save a screenshot as PNG |

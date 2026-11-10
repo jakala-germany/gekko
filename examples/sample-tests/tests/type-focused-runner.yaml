@@ -1,0 +1,21 @@
+name: The system runner types at the focus
+tags: [typing]
+steps:
+  - say: Put the focus into the name field with a real touch
+    platform: [android, ios]
+    do: { tap: { id: sample.name, system: true } }
+  - say: Type the first name at the cursor
+    platform: [android, ios]
+    do: { typeFocused: { value: Ada, system: true } }
+  - say: Type the last name after it
+    platform: [android, ios]
+    do: { typeFocused: { value: " Lovelace", system: true } }
+  - say: The field holds both names
+    platform: [android, ios]
+    do: { assertVisible: { id: sample.name, text: "Ada Lovelace" } }
+  - say: Greet
+    platform: [android, ios]
+    do: { tap: { id: sample.greet } }
+  - say: The greeting has both names
+    platform: [android, ios]
+    do: { assertVisible: { id: sample.greeting, text: "Hello Ada Lovelace" } }

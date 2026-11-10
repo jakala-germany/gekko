@@ -38,7 +38,7 @@ A pane is a screen written once in `panes/<name>.yaml`: named elements (a select
 - The same id must work on all platforms of the repo. If iOS and Android differ, use `id: { android: a.b, ios: a_b, web: a-b }` (a key per platform that differs) and tell the user: it is tag debt that the app teams should align. An id for one platform only needs `platform:` on the step (a list works: `platform: [android, web]`).
 - `index: 2` only for genuinely repeated items such as list rows.
 - On the web, a consent banner and a login come back in every test (each test is a new browser context): put them in flows and list those in `uses:`; a banner is an `optional: true` step. Native browser dialogs (`alert`, `confirm`) are answered with `tap: { text: OK, system: true }`. Read "On the web" in `references/format.md` before writing the first web test: what is on screen is what is in the window, and a tap scrolls the page to its element but an assertion does not.
-- Elements outside the app (permission dialogs, the browser) are reached with `system: true` on a `tap`, `doubleTap` or `longPress` selector (`{ tap: { text: Allow, system: true } }`); `swipe` and `drag` take it too (a real touch of the runner); the other actions do not.
+- Elements outside the app (permission dialogs, the browser) are reached with `system: true` on a `tap`, `doubleTap` or `longPress` selector (`{ tap: { text: Allow, system: true } }`); `swipe`, `drag` and `typeFocused` take it too (a real touch, or typing, of the runner: after a `tap` with `system: true` into a field outside the app, `typeFocused: { value: "...", system: true }` types into it); the other actions do not.
 
 ## Writing good steps
 
