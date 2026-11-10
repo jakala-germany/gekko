@@ -846,6 +846,7 @@ class Drivers(
             is Command.DoubleTap -> timeoutMs
             is Command.LongPress -> holdMs + timeoutMs
             is Command.Type -> timeoutMs
+            is Command.TypeFocused -> timeoutMs
             is Command.Scroll -> timeoutMs
             is Command.WaitFor -> timeoutMs
             is Command.WaitIdle -> timeoutMs

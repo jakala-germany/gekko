@@ -1,7 +1,9 @@
 package com.jakala.gekko.protocol
 
+import kotlinx.serialization.ExperimentalSerializationApi
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
+import kotlinx.serialization.descriptors.elementDescriptors
 
 @Serializable
 sealed interface Command {
@@ -47,6 +49,18 @@ sealed interface Command {
         val timeoutMs: Long = DEFAULT_TIMEOUT_MS,
         val settleMs: Long = 0,
     ) : Command
+
+    /**
+     * Types [text] into the element that has the input focus, at its cursor, the way a keyboard does: nothing is
+     * selected or replaced first (a selection is replaced, as when a person types over it). Waits up to [timeoutMs] for
+     * an element that takes text to have the focus (right after a tap the focus can still be on its way); answers
+     * `error` with kind `rejected` when none has it by then (the message tells whether nothing had the focus or an
+     * element that takes no text), and when the field did not change. Answers `ok` once the text of the field changed.
+     * Use [Type] to replace a text.
+     */
+    @Serializable
+    @SerialName("typeFocused")
+    data class TypeFocused(val text: String, val timeoutMs: Long = DEFAULT_TIMEOUT_MS) : Command
 
     /**
      * Scrolls the scrollable container of the element by [distanceDp]. [direction] is where the wanted content is (see
@@ -145,6 +159,12 @@ sealed interface Command {
         const val DEFAULT_TIMEOUT_MS = 5_000L
         const val DEFAULT_HOLD_MS = 700L
         const val DEFAULT_SCROLL_DP = 400
+
+        /** The wire names of all commands: what `hello` lists of a server that serves every one of them. */
+        @OptIn(ExperimentalSerializationApi::class)
+        fun names(): List<String> {
+            return serializer().descriptor.getElementDescriptor(1).elementDescriptors.map { it.serialName }
+        }
     }
 }
 

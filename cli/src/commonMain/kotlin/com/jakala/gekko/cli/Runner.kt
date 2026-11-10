@@ -772,6 +772,7 @@ class TestRunner(
             when {
                 action.tap != null -> "tap"
                 action.type != null -> "type"
+                action.typeFocused != null -> "type into the focused field"
                 action.scroll != null -> "scroll"
                 action.assertVisible != null -> "assert"
                 else -> return false
@@ -954,6 +955,10 @@ class TestRunner(
             action.type != null ->
                 expectOk(
                     drivers.send(Command.Type(action.type.selector(platform), action.type.value, timeout, settleMs))
+                )
+            action.typeFocused != null ->
+                expectOk(
+                    drivers.send(Command.TypeFocused(action.typeFocused.value, timeout), action.typeFocused.system)
                 )
             action.scroll != null ->
                 expectOk(
@@ -1750,7 +1755,8 @@ object TreePrinter {
             node.id != null ||
                 !node.text.isNullOrEmpty() ||
                 !node.description.isNullOrEmpty() ||
-                node.actions.isNotEmpty()
+                node.actions.isNotEmpty() ||
+                node.focused
         val nextDepth =
             if (interesting) {
                 // Everything here comes from the app: a value must not be able to end its line or start an escape
@@ -1768,6 +1774,7 @@ object TreePrinter {
                     builder.append(" actions=").append(Terminal.inline(node.actions.joinToString(",")))
                 }
                 if (!node.enabled) builder.append(" disabled")
+                if (node.focused) builder.append(" focused")
                 label(node)?.let { builder.append("  <- ").append(it) }
                 builder.append('\n')
                 depth + 1

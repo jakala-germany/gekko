@@ -44,6 +44,7 @@ fun runCli(args: List<String>) {
                 TreeCommand(),
                 TapCommand(),
                 TypeCommand(),
+                TypeFocusedCommand(),
                 ScrollCommand(),
                 AssertCommand(),
                 ScreenshotCommand(),
@@ -183,6 +184,13 @@ private abstract class DeviceCommand(name: String) : CliktCommand(name = name) {
     protected fun failWith(error: Throwable): Nothing {
         fail(error.message ?: error.toString(), ExitCode.of(error))
     }
+
+    protected fun report(response: Response) {
+        if (response is Response.Error) {
+            fail(response.message, ExitCode.FAILED)
+        }
+        say("ok")
+    }
 }
 
 private abstract class SelectorCommand(name: String) : DeviceCommand(name) {
@@ -211,13 +219,6 @@ private abstract class SelectorCommand(name: String) : DeviceCommand(name) {
             within = within,
             index = index,
         )
-    }
-
-    protected fun report(response: Response) {
-        if (response is Response.Error) {
-            fail(response.message, ExitCode.FAILED)
-        }
-        say("ok")
     }
 }
 
@@ -291,6 +292,25 @@ private class TypeCommand : SelectorCommand("type") {
         withDrivers { drivers, _, project ->
             report(drivers.send(Command.Type(selector(), value, timeout, project.config.settleMs), system))
         }
+    }
+}
+
+private class TypeFocusedCommand : DeviceCommand("type-focused") {
+    val value by argument(name = "TEXT")
+    val system by
+        option("--system", help = "Use the system runner (permission prompts, browser) instead of the in-app agent")
+            .flag()
+    val timeout by
+        option("--timeout", help = "Milliseconds to wait for a field with the focus")
+            .long()
+            .default(Command.DEFAULT_TIMEOUT_MS)
+
+    override fun help(context: Context): String {
+        return "Type text at the cursor of the field that has the focus, e.g. after a tap"
+    }
+
+    override fun run() {
+        withDrivers { drivers, _, _ -> report(drivers.send(Command.TypeFocused(value, timeout), system)) }
     }
 }
 

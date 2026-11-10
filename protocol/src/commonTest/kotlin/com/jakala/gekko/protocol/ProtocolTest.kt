@@ -148,6 +148,57 @@ class ProtocolTest {
         assertEquals(true, json.encodeToString(wait).contains("\"type\":\"waitFor\""))
         assertEquals(true, json.encodeToString(response).contains("\"type\":\"notForeground\""))
     }
+
+    @Test
+    fun typeFocusedRoundTripsWithItsWireName() {
+        val command: Command = Command.TypeFocused("Ada Lovelace", timeoutMs = 2_000)
+
+        assertEquals(command, json.decodeFromString<Command>(json.encodeToString(command)))
+        assertTrue(json.encodeToString(command).contains("\"type\":\"typeFocused\""))
+        assertEquals(
+            Command.TypeFocused("Ada", Command.DEFAULT_TIMEOUT_MS),
+            json.decodeFromString<Command>("""{"type":"typeFocused","text":"Ada"}"""),
+        )
+    }
+
+    @Test
+    fun theFocusOfANodeOnlyTravelsWhenItHasIt() {
+        val json = Json { encodeDefaults = true }
+        val plain = UiNode(bounds = Bounds(0, 0, 1, 1))
+
+        val without = json.encodeToString(UiNode.serializer(), plain)
+        val with = json.encodeToString(UiNode.serializer(), plain.copy(focused = true))
+
+        assertTrue("focused" !in without)
+        assertTrue("\"focused\":true" in with)
+        assertTrue(Json.decodeFromString(UiNode.serializer(), with).focused)
+        assertFalse(Json.decodeFromString(UiNode.serializer(), without).focused)
+    }
+
+    @Test
+    fun theFocusChangesTheSignatureOfANode() {
+        val plain = UiNode(id = "field", bounds = Bounds(0, 0, 1, 1))
+
+        assertTrue(plain.signature() != plain.copy(focused = true).signature())
+    }
+
+    @Test
+    fun aHelloWithoutCommandsReadsAsTheOldSet() {
+        val old = """{"type":"hello","protocol":2,"version":"1.3.0","role":"agent"}"""
+        val current =
+            Response.HelloResult(Protocol.VERSION, "1.4.0", Protocol.ROLE_AGENT, listOf("hello", "tree", "typeFocused"))
+
+        assertEquals(emptyList(), (json.decodeFromString<Response>(old) as Response.HelloResult).commands)
+        assertEquals(current, json.decodeFromString<Response>(json.encodeToString<Response>(current)))
+    }
+
+    @Test
+    fun theCommandNamesAreTheWireNamesOfEveryCommand() {
+        val names = Command.names()
+
+        assertTrue(names.containsAll(listOf("hello", "tree", "tap", "type", "typeFocused", "drag", "mockHits")))
+        assertEquals(names.size, names.toSet().size)
+    }
 }
 
 class VisibilityWaiterTest {

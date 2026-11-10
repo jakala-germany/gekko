@@ -37,10 +37,12 @@ private fun node(
     bounds: JsonObject = box(0, 0, 100, 20),
     actions: List<String> = emptyList(),
     clip: JsonObject? = null,
+    focused: Boolean = false,
     children: List<JsonObject> = emptyList(),
 ): JsonObject {
     return buildJsonObject {
         put("ref", JsonPrimitive(ref))
+        put("focused", JsonPrimitive(focused))
         put("id", id?.let { JsonPrimitive(it) } ?: JsonNull)
         put("text", text?.let { JsonPrimitive(it) } ?: JsonNull)
         put("bounds", bounds)
@@ -76,9 +78,13 @@ private class FakeBridge(var answer: () -> JsonObject) : WebRpc {
     val calls = mutableListOf<Pair<String, JsonObject>>()
     var failure: WebBridgeException? = null
 
+    /** What the page answers to `focus`: by default nothing has the input focus. */
+    var focus: () -> JsonObject = { buildJsonObject { put("ok", JsonPrimitive(true)) } }
+
     override suspend fun call(operation: String, fields: JsonObject): JsonObject {
         calls += operation to fields
         if (operation == "snapshot") return answer()
+        if (operation == "focus") return focus()
         failure?.let { throw it }
         return buildJsonObject { put("ok", JsonPrimitive(true)) }
     }
@@ -231,6 +237,96 @@ class WebAgentClientTest {
         val fill = bridge.called("fill").single()
         assertEquals("0:6", fill["ref"]!!.jsonPrimitive.content)
         assertEquals("Ada", fill["text"]!!.jsonPrimitive.content)
+    }
+
+    private fun focusOn(text: String?, editable: Boolean = true): JsonObject {
+        return buildJsonObject {
+            put("ok", JsonPrimitive(true))
+            put("focused", JsonPrimitive(true))
+            put("editable", JsonPrimitive(editable))
+            put("text", text?.let { JsonPrimitive(it) } ?: JsonNull)
+        }
+    }
+
+    @Test
+    fun typingAtTheFocusInsertsTextAndWaitsUntilTheFieldHoldsIt() = runTest {
+        val bridge = FakeBridge({ page() })
+        bridge.focus = { focusOn(if (bridge.called("insertText").isEmpty()) "Ada" else "Ada Lovelace") }
+
+        val response = client(bridge).send(Command.TypeFocused(" Lovelace", timeoutMs = 2_000))
+
+        assertEquals(Response.Ok, response)
+        assertEquals(" Lovelace", bridge.called("insertText").single()["text"]!!.jsonPrimitive.content)
+        assertTrue(bridge.called("fill").isEmpty())
+    }
+
+    @Test
+    fun typingAtTheFocusWaitsForAFieldToGetIt() = runTest {
+        val bridge = FakeBridge({ page() })
+        var asked = 0
+        bridge.focus = {
+            asked++
+            if (asked < 3) buildJsonObject { put("ok", JsonPrimitive(true)) }
+            else focusOn(if (bridge.called("insertText").isEmpty()) "" else "Ada")
+        }
+
+        assertEquals(Response.Ok, client(bridge).send(Command.TypeFocused("Ada", timeoutMs = 2_000)))
+    }
+
+    @Test
+    fun typingAtTheFocusIsRejectedWhenNothingGetsIt() = runTest {
+        val bridge = FakeBridge({ page() })
+
+        val response = client(bridge).send(Command.TypeFocused("Ada", timeoutMs = 100))
+
+        assertIs<Response.Error>(response)
+        assertEquals(ErrorKind.REJECTED, response.kind)
+        assertTrue(bridge.called("insertText").isEmpty())
+    }
+
+    @Test
+    fun typingAtTheFocusIsRejectedForAnElementThatTakesNoText() = runTest {
+        val bridge = FakeBridge({ page() })
+        bridge.focus = { focusOn(null, editable = false) }
+
+        val response = client(bridge).send(Command.TypeFocused("Ada", timeoutMs = 100))
+
+        assertIs<Response.Error>(response)
+        assertEquals(ErrorKind.REJECTED, response.kind)
+        assertTrue(bridge.called("insertText").isEmpty())
+    }
+
+    @Test
+    fun typingAtTheFocusIsRejectedWhenTheFieldDoesNotChange() = runTest {
+        val bridge = FakeBridge({ page() })
+        bridge.focus = { focusOn("12345") }
+
+        val response = client(bridge).send(Command.TypeFocused("6", timeoutMs = 100))
+
+        assertIs<Response.Error>(response)
+        assertEquals(ErrorKind.REJECTED, response.kind)
+    }
+
+    @Test
+    fun theTreeMarksTheElementThatHasTheFocus() = runTest {
+        val bridge = FakeBridge({ page(node("0:1", id = "name", actions = listOf("setText"), focused = true)) })
+
+        val tree = client(bridge).send(Command.Tree)
+
+        assertIs<Response.TreeResult>(tree)
+        val field = tree.windows.single().children.single()
+        assertTrue(field.focused)
+        assertTrue(!tree.windows.single().focused)
+    }
+
+    @Test
+    fun helloListsTheCommandsTheWebServes() = runTest {
+        val hello = client(FakeBridge({ page() })).send(Command.Hello)
+
+        assertIs<Response.HelloResult>(hello)
+        assertTrue("typeFocused" in hello.commands)
+        assertTrue("tap" in hello.commands)
+        assertTrue("screenshot" !in hello.commands)
     }
 
     @Test

@@ -537,6 +537,24 @@ const operations = {
     return untilDialog(() => page.keyboard.press(key))
   },
 
+  // The element that has the input focus, in the page or in the first frame that has one
+  async focus() {
+    noDialog()
+    for (const frame of state.frames) {
+      const focus = await frame.evaluate(() => window.__gekko && window.__gekko.focus()).catch(() => null)
+      if (focus) return { focused: true, editable: focus.editable, text: focus.text }
+    }
+    return { focused: false }
+  },
+
+  // Types at the cursor of whatever has the input focus, without selecting or replacing anything first
+  async insertText({ text }) {
+    const page = currentPage()
+    noDialog()
+    await page.keyboard.insertText(text)
+    return {}
+  },
+
   async blur() {
     noDialog()
     for (const frame of state.frames) await frame.evaluate(() => window.__gekko && window.__gekko.blur()).catch(() => {})

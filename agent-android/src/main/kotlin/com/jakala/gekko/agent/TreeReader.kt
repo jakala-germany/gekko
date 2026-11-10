@@ -3,6 +3,7 @@ package com.jakala.gekko.agent
 import android.text.method.PasswordTransformationMethod
 import android.view.View
 import android.view.ViewGroup
+import android.view.inputmethod.EditorInfo
 import android.widget.EditText
 import android.widget.ProgressBar
 import android.widget.TextView
@@ -39,6 +40,8 @@ internal class TreeReader(private val rootViews: () -> List<View>) {
         val secure = view is TextView && isPassword(view)
         val value = (view as? TextView)?.text?.toString()
         val description = view.contentDescription?.toString()
+        // A window that lost the focus (behind a dialog) keeps the focused view of its own; Compose decides for itself
+        val focused = view.isFocused && view.hasWindowFocus() && !(composeAvailable && ComposeReader.isHost(view))
         val element =
             Element(
                 node =
@@ -55,6 +58,7 @@ internal class TreeReader(private val rootViews: () -> List<View>) {
                         selected = NodeFacts.selectedState(view.isSelected, isTabLike(view)),
                         secure = secure,
                         busy = view is ProgressBar && view.isIndeterminate,
+                        focused = focused,
                     ),
                 parent = parent,
                 rootView = root,
@@ -79,6 +83,7 @@ internal class TreeReader(private val rootViews: () -> List<View>) {
                     else null,
                 clip = clip,
                 rtl = view.layoutDirection == View.LAYOUT_DIRECTION_RTL,
+                textInput = if (focused) textInputOf(view) else null,
             )
         sink += element
         // Children are cut off at the bounds of their parent unless it lets them draw outside
@@ -95,6 +100,30 @@ internal class TreeReader(private val rootViews: () -> List<View>) {
             }
         }
         return element
+    }
+
+    private fun textInputOf(view: View): TextInput? {
+        if (!view.onCheckIsTextEditor()) {
+            return null
+        }
+        return TextInput(
+            insert = { text -> insertAtCursor(view, text) },
+            current = { (view as? TextView)?.text?.toString() },
+        )
+    }
+
+    /** Through the input connection, which is the path the soft keyboard takes; an edit text can do without it. */
+    private fun insertAtCursor(view: View, text: String): Boolean {
+        val connection = view.onCreateInputConnection(EditorInfo())
+        if (connection != null && connection.commitText(text, 1)) {
+            return true
+        }
+        val edit = view as? EditText ?: return false
+        val editable = edit.text ?: return false
+        val start = edit.selectionStart.takeIf { it >= 0 } ?: editable.length
+        val end = edit.selectionEnd.takeIf { it >= 0 } ?: editable.length
+        editable.replace(minOf(start, end), maxOf(start, end), text)
+        return true
     }
 
     private fun isPassword(view: TextView): Boolean {

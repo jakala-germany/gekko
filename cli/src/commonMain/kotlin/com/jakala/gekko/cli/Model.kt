@@ -367,6 +367,17 @@ data class SwipeSpec(
 }
 
 /**
+ * Types [value] into the element that has the input focus, at its cursor, as a person does after tapping a field: it
+ * adds to the text where `type` replaces it. [system] sends it to the system runner instead of the in-app agent.
+ */
+@Serializable
+data class TypeFocusedSpec(val value: String, val system: Boolean = false) {
+    init {
+        require(value.isNotEmpty()) { "typeFocused.value must not be empty; eraseText clears a field" }
+    }
+}
+
+/**
  * Moves the content under a spot to another and lets go without momentum, so nothing keeps scrolling: scroll by an
  * exact distance, move a slider, reorder a list. The finger starts at [start] (`x%,y%` of the screen) or in the center
  * of the element [from] and ends at [end]. [system] sends it to the system runner (a real touch) instead of the in-app
@@ -606,6 +617,8 @@ data class CopyTextSpec(
 data class Action(
     @Serializable(with = SelectorSpecSerializer::class) val tap: SelectorSpec? = null,
     val type: TypeSpec? = null,
+    /** Types at the cursor of the field that has the focus, without naming it. */
+    val typeFocused: TypeFocusedSpec? = null,
     @Serializable(with = ScrollSpecSerializer::class) val scroll: ScrollSpec? = null,
     val swipe: SwipeSpec? = null,
     /** Moves the content under a spot to another without a fling. */
@@ -694,6 +707,7 @@ data class Action(
         return listOfNotNull(
             "tap".takeIf { tap != null },
             "type".takeIf { type != null },
+            "typeFocused".takeIf { typeFocused != null },
             "scroll".takeIf { scroll != null },
             "swipe".takeIf { swipe != null },
             "drag".takeIf { drag != null },

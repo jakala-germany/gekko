@@ -87,7 +87,13 @@ internal class WebAgentClient(
 
     private suspend fun execute(command: Command): Response {
         return when (command) {
-            Command.Hello -> Response.HelloResult(Protocol.VERSION, GekkoVersion.NAME, Protocol.ROLE_AGENT)
+            Command.Hello ->
+                Response.HelloResult(
+                    Protocol.VERSION,
+                    GekkoVersion.NAME,
+                    Protocol.ROLE_AGENT,
+                    Command.names() - UNSUPPORTED_COMMANDS,
+                )
             Command.Metrics -> Response.MetricsResult(1f, read()?.rtl ?: lastRtl)
             Command.Tree -> Response.TreeResult(read()?.windows.orEmpty())
             Command.Foreground -> Response.ForegroundResult(true)
@@ -160,6 +166,7 @@ internal class WebAgentClient(
             is Command.LongPress ->
                 click(command.selector, command.timeoutMs, command.settleMs, count = 1, holdMs = command.holdMs)
             is Command.Type -> type(command)
+            is Command.TypeFocused -> typeFocused(command)
             is Command.Scroll -> scroll(command)
         }
     }
@@ -255,6 +262,7 @@ internal class WebAgentClient(
                 secure = json.flag("secure") ?: false,
                 busy = json.flag("busy") ?: false,
                 clip = bounds(json["clip"]),
+                focused = json.flag("focused") ?: false,
                 children = children,
             )
         json.string("ref")?.let { refs += node to it }
@@ -464,6 +472,45 @@ internal class WebAgentClient(
         }
     }
 
+    /** What the element with the input focus holds; null when nothing has the focus. */
+    private class Focus(val editable: Boolean, val text: String?)
+
+    private suspend fun readFocus(): Focus? {
+        val answer = bridge.call("focus")
+        if (answer.flag("focused") != true) {
+            return null
+        }
+        return Focus(answer.flag("editable") ?: false, answer.string("text"))
+    }
+
+    /** Waits for an element with the input focus, types at its cursor and sees whether the field took it. */
+    private suspend fun typeFocused(command: Command.TypeFocused): Response {
+        val deadline = clock() + command.timeoutMs
+        var focus = readFocus()
+        // Right after a tap the focus can still be on its way to the field: only the end of the timeout gives up
+        while (focus == null || !(focus.editable || command.text.isEmpty())) {
+            if (clock() > deadline) {
+                val message =
+                    if (focus == null) "Nothing has the input focus" else "The focused element does not take text"
+                return Response.Error(message, ErrorKind.REJECTED)
+            }
+            pause(POLL_MS)
+            focus = readFocus()
+        }
+        if (command.text.isEmpty()) {
+            return Response.Ok
+        }
+        bridge.call("insertText", buildJsonObject { put("text", JsonPrimitive(command.text)) })
+        val changeDeadline = clock() + CHANGE_WAIT_MS
+        while (readFocus()?.text == focus.text) {
+            if (clock() > changeDeadline) {
+                return Response.Error("The focused field did not take the text", ErrorKind.REJECTED)
+            }
+            pause(POLL_MS)
+        }
+        return Response.Ok
+    }
+
     private fun firstEditable(node: UiNode): UiNode? {
         return node.children.firstNotNullOfOrNull { child ->
             child.takeIf { "setText" in it.actions } ?: firstEditable(child)
@@ -600,6 +647,10 @@ internal class WebAgentClient(
 
     private companion object {
         const val POLL_MS = 30L
+        const val CHANGE_WAIT_MS = 1_000L
+
+        /** The commands this client answers with `unsupported`: the others are listed in its answer to `hello`. */
+        val UNSUPPORTED_COMMANDS = setOf("screenshot")
         const val QUIET_LIMIT_MS = 1_500L
         const val QUIET_MS = 100L
         const val MAX_PAGE_SCROLLS = 3
