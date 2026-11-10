@@ -90,6 +90,39 @@ enum ElementActions {
         return false
     }
 
+    /// What typing at the focus came to: `nothingFocused` is not an answer yet, a field may get the focus a moment later.
+    enum FocusTyping {
+        case typed
+        case nothingFocused
+        case notEditable
+        case unchanged
+    }
+
+    /// Types at the cursor of the first responder, the path a keyboard takes (delegate, editing events, bindings); a
+    /// selection is replaced, as when a person types over it. Counts as typed when the field holds something else after.
+    static func typeAtFocus(_ text: String) -> FocusTyping {
+        guard let view = TreeReader.focusedView() else { return .nothingFocused }
+        if text.isEmpty { return .typed }
+        guard let input = view as? UIKeyInput else { return .notEditable }
+        let before = contents(of: view)
+        input.insertText(text)
+        // A field that cannot be read cannot be checked: it got the text
+        guard let before else { return .typed }
+        let deadline = Date().addingTimeInterval(changeSeconds)
+        repeat {
+            spin(changePollSeconds)
+            if contents(of: view) != before { return .typed }
+        } while Date() < deadline
+        return .unchanged
+    }
+
+    private static func contents(of view: UIView) -> String? {
+        if let field = view as? UITextField { return field.text ?? "" }
+        if let textView = view as? UITextView { return textView.text ?? "" }
+        guard let input = view as? UITextInput, let range = input.textRange(from: input.beginningOfDocument, to: input.endOfDocument) else { return nil }
+        return input.text(in: range)
+    }
+
     /// Select-all + insertText goes through the same path as typing (delegate, editing events, bindings); verified by reading back.
     private static func enter(_ text: String, into input: UIView) -> Bool {
         if let field = input as? UITextField {
@@ -123,6 +156,8 @@ enum ElementActions {
     private static let settleSeconds = 0.9
     private static let retrySeconds = 0.2
     private static let typeAttempts = 3
+    private static let changeSeconds = 1.0
+    private static let changePollSeconds = 0.05
 
     private static func spin(_ seconds: TimeInterval) {
         RunLoop.current.run(until: Date(timeIntervalSinceNow: seconds))
