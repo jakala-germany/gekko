@@ -30,7 +30,7 @@ internal class CommandExecutor(private val application: Application, private val
             return Response.NotForeground
         }
         return when (command) {
-            Command.Hello -> Response.HelloResult(Protocol.VERSION, GekkoVersion.NAME, Protocol.ROLE_AGENT)
+            Command.Hello -> hello()
             Command.Metrics -> metrics()
             Command.Tree -> Response.TreeResult(snapshotNodes())
             Command.Foreground -> Response.ForegroundResult(isForeground())
@@ -54,10 +54,16 @@ internal class CommandExecutor(private val application: Application, private val
             is Command.DoubleTap -> doubleTap(command)
             is Command.LongPress -> longPress(command)
             is Command.Type -> type(command)
+            is Command.TypeFocused -> typeFocused(command)
             is Command.Scroll -> scroll(command)
             is Command.Swipe -> swipe(command)
             is Command.Drag -> drag(command)
         }
+    }
+
+    private fun hello(): Response {
+        val commands = Command.names() - UNSUPPORTED_COMMANDS
+        return Response.HelloResult(Protocol.VERSION, GekkoVersion.NAME, Protocol.ROLE_AGENT, commands)
     }
 
     /** Hello and metrics are facts about the agent and the display, and the CLI asks them before anything else. */
@@ -215,6 +221,52 @@ internal class CommandExecutor(private val application: Application, private val
         }
     }
 
+    /** Waits for an element with the input focus, then types at its cursor and sees whether the field took it. */
+    private fun typeFocused(command: Command.TypeFocused): Response {
+        val deadline = SystemClock.uptimeMillis() + command.timeoutMs
+        idle.await(minOf(command.timeoutMs, IDLE_WAIT_MS))
+        var withoutText = false
+        while (true) {
+            val focus = MainThread.run { focusedElement() }
+            if (focus != null && (focus.textInput != null || command.text.isEmpty())) {
+                return typeInto(focus, command.text)
+            }
+            withoutText = withoutText || focus != null
+            if (SystemClock.uptimeMillis() > deadline) {
+                return rejected(
+                    if (withoutText) "The focused element does not take text" else "Nothing has the input focus"
+                )
+            }
+            Thread.sleep(POLL_MS)
+        }
+    }
+
+    /** The deepest element that has the focus in the windows a person can reach. */
+    private fun focusedElement(): Element? {
+        return reader.read().flat.lastOrNull { it.toUiNode().focused }
+    }
+
+    private fun typeInto(focus: Element, text: String): Response {
+        if (text.isEmpty()) {
+            return Response.Ok
+        }
+        val input = focus.textInput ?: return rejected("The focused element does not take text")
+        val before = MainThread.run { input.current() }
+        if (!MainThread.run { input.insert(text) }) {
+            return rejected("The focused element did not accept the text")
+        }
+        // A field that cannot be read cannot be checked: it got the text
+        before ?: return Response.Ok
+        val deadline = SystemClock.uptimeMillis() + CHANGE_WAIT_MS
+        while (MainThread.run { input.current() } == before) {
+            if (SystemClock.uptimeMillis() > deadline) {
+                return rejected("The focused field did not take the text")
+            }
+            Thread.sleep(POLL_MS)
+        }
+        return Response.Ok
+    }
+
     private fun rejected(message: String): Response {
         return Response.Error(message, ErrorKind.REJECTED)
     }
@@ -365,9 +417,14 @@ internal class CommandExecutor(private val application: Application, private val
     }
 
     private companion object {
+        /** The commands this server answers with `unsupported`: the others are listed in its answer to `hello`. */
+        val UNSUPPORTED_COMMANDS =
+            setOf("screenshot", "setOrientation", "hideKeyboard", "setLocation", "clearLocation", "wheel")
+
         const val POLL_MS = 16L
         const val IDLE_WAIT_MS = 500L
         const val TAP_MS = 60L
+        const val CHANGE_WAIT_MS = 1_000L
         const val DOUBLE_TAP_GAP_MS = 80L
     }
 }

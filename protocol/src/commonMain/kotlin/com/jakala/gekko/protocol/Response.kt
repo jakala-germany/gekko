@@ -9,11 +9,17 @@ sealed interface Response {
 
     /**
      * [protocol] is the wire format number (see [Protocol]), [role] one of [Protocol.ROLE_AGENT] /
-     * [Protocol.ROLE_RUNNER].
+     * [Protocol.ROLE_RUNNER]. [commands] are the wire names of the commands the server serves; a server older than
+     * 1.4.0 leaves them out, which a client reads as the set of 1.3.0.
      */
     @Serializable
     @SerialName("hello")
-    data class HelloResult(val protocol: Int, val version: String, val role: String) : Response
+    data class HelloResult(
+        val protocol: Int,
+        val version: String,
+        val role: String,
+        val commands: List<String> = emptyList(),
+    ) : Response
 
     /**
      * [density] is pixels per dp (1 on iOS, where coordinates are points); [rtl] is true for a right-to-left layout.

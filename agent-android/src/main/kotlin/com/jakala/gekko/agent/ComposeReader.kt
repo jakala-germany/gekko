@@ -6,7 +6,9 @@ import androidx.compose.ui.platform.ViewRootForTest
 import androidx.compose.ui.semantics.ProgressBarRangeInfo
 import androidx.compose.ui.semantics.ScrollAxisRange
 import androidx.compose.ui.semantics.SemanticsActions
+import androidx.compose.ui.semantics.SemanticsConfiguration
 import androidx.compose.ui.semantics.SemanticsNode
+import androidx.compose.ui.semantics.SemanticsOwner
 import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.semantics.getOrNull
 import androidx.compose.ui.state.ToggleableState
@@ -22,6 +24,11 @@ internal object ComposeReader {
         return runCatching { ViewRootForTest::class.java }.isSuccess
     }
 
+    /** The view that hosts a composition: it has the view focus whenever something inside it has the Compose focus. */
+    fun isHost(view: View): Boolean {
+        return view is ViewRootForTest
+    }
+
     fun read(view: View, parent: Element, root: View, clip: Bounds, sink: MutableList<Element>): Element? {
         val forTest = view as? ViewRootForTest ?: return null
         val origin = IntArray(2)
@@ -29,7 +36,7 @@ internal object ComposeReader {
         val owner = forTest.semanticsOwner
         val unmerged = mutableMapOf<Int, SemanticsNode>()
         indexById(owner.unmergedRootSemanticsNode, unmerged)
-        return readNode(owner.rootSemanticsNode, parent, root, origin, clip, sink, unmerged)
+        return readNode(owner, owner.rootSemanticsNode, parent, root, origin, clip, sink, unmerged)
     }
 
     private fun indexById(node: SemanticsNode, into: MutableMap<Int, SemanticsNode>) {
@@ -38,6 +45,7 @@ internal object ComposeReader {
     }
 
     private fun readNode(
+        owner: SemanticsOwner,
         node: SemanticsNode,
         parent: Element,
         root: View,
@@ -53,6 +61,7 @@ internal object ComposeReader {
         val scrollAction = config.getOrNull(SemanticsActions.ScrollBy)?.action
         val focusAction = config.getOrNull(SemanticsActions.RequestFocus)?.action
         val secure = config.contains(SemanticsProperties.Password)
+        val focused = root.hasWindowFocus() && config.getOrNull(SemanticsProperties.Focused) == true
         val editable = config.getOrNull(SemanticsProperties.EditableText)?.text
         val texts = config.getOrNull(SemanticsProperties.Text)?.map { it.text }
         val description = config.getOrNull(SemanticsProperties.ContentDescription)?.joinToString(" ")
@@ -88,6 +97,7 @@ internal object ComposeReader {
                         selected = config.getOrNull(SemanticsProperties.Selected),
                         secure = secure,
                         busy = isBusy(config.getOrNull(SemanticsProperties.ProgressBarRangeInfo)),
+                        focused = focused,
                     ),
                 parent = parent,
                 rootView = root,
@@ -117,21 +127,69 @@ internal object ComposeReader {
                     },
                 clip = clip,
                 rtl = rtl,
+                textInput = if (focused) textInputOf(owner, node, config) else null,
             )
         sink += element
         // A lazy list keeps rows that scrolled out of view, but does not place them: their bounds are still the ones
         // from when they were shown, so they would count as on screen. Compose's own accessibility skips them too.
         node.children
             .filter { it.layoutInfo.isPlaced }
-            .forEach { child -> element.children += readNode(child, element, root, origin, clip, sink, unmerged) }
+            .forEach { child ->
+                element.children += readNode(owner, child, element, root, origin, clip, sink, unmerged)
+            }
         // A node that merges its descendants (a button, a list row) hides the texts inside it in this tree;
         // accessibility
         // services and other UI-test tools see them as nodes of their own, so they are added below it
         val own = if (unmerged != null && node.config.isMergingSemanticsOfDescendants) unmerged[node.id] else null
         own?.children
             ?.filter { it.layoutInfo.isPlaced }
-            ?.forEach { child -> element.children += readNode(child, element, root, origin, clip, sink, null) }
+            ?.forEach { child -> element.children += readNode(owner, child, element, root, origin, clip, sink, null) }
         return element
+    }
+
+    private fun textInputOf(owner: SemanticsOwner, node: SemanticsNode, config: SemanticsConfiguration): TextInput? {
+        val insertAction = insertAction(config)
+        val setText = config.getOrNull(SemanticsActions.SetText)?.action
+        if (insertAction == null && setText == null) {
+            return null
+        }
+        val id = node.id
+        return TextInput(
+            insert = { text ->
+                when {
+                    insertAction != null -> insertAction(AnnotatedString(text))
+                    setText != null -> setText(AnnotatedString(splice(config, text)))
+                    else -> false
+                }
+            },
+            current = { currentText(owner, id) },
+        )
+    }
+
+    /** Compose is `compileOnly`: an app on a Compose that has no such action gets the fallback of [splice]. */
+    private fun insertAction(config: SemanticsConfiguration): ((AnnotatedString) -> Boolean)? {
+        return try {
+            config.getOrNull(SemanticsActions.InsertTextAtCursor)?.action
+        } catch (error: LinkageError) {
+            null
+        }
+    }
+
+    /** The text of the field with [text] in place of its selection, or at its end when it does not report one. */
+    private fun splice(config: SemanticsConfiguration, text: String): String {
+        val current = config.getOrNull(SemanticsProperties.EditableText)?.text.orEmpty()
+        val selection = config.getOrNull(SemanticsProperties.TextSelectionRange)
+        val start = (selection?.min ?: current.length).coerceIn(0, current.length)
+        val end = (selection?.max ?: current.length).coerceIn(start, current.length)
+        return current.replaceRange(start, end, text)
+    }
+
+    /** What the field holds now; a node of an earlier read keeps the text it had then, so it is looked up again. */
+    private fun currentText(owner: SemanticsOwner, id: Int): String? {
+        val nodes = mutableMapOf<Int, SemanticsNode>()
+        indexById(owner.unmergedRootSemanticsNode, nodes)
+        indexById(owner.rootSemanticsNode, nodes)
+        return nodes[id]?.config?.getOrNull(SemanticsProperties.EditableText)?.text
     }
 
     /**

@@ -363,6 +363,47 @@ class ModelTest {
     }
 
     @Test
+    fun parsesTypingIntoTheFocusedField() {
+        val step = Yamls.parse(Step.serializer(), "do: { typeFocused: { value: Ada, system: true } }")
+
+        assertEquals("Ada", step.action.typeFocused?.value)
+        assertTrue(step.action.typeFocused?.system == true)
+        assertEquals(listOf("typeFocused"), step.action.names())
+        assertEquals(
+            false,
+            Yamls.parse(Step.serializer(), "do: { typeFocused: { value: ' x' } }").action.typeFocused?.system,
+        )
+    }
+
+    @Test
+    fun rejectsTypingIntoTheFocusedFieldWithoutATextOrNextToAnotherAction() {
+        assertFailsWith<Exception> { Yamls.parse(Step.serializer(), "do: { typeFocused: { value: '' } }") }
+        assertFailsWith<Exception> { Yamls.parse(Step.serializer(), "do: { typeFocused: {} }") }
+        assertFailsWith<Exception> {
+            Yamls.parse(Step.serializer(), "do: { typeFocused: { value: a }, tap: { id: b } }")
+        }
+    }
+
+    @Test
+    fun theTextOfTypingIntoTheFocusedFieldTakesVariables() {
+        val step = Yamls.parse(Step.serializer(), "do: { typeFocused: { value: '\${name}' } }")
+
+        assertEquals("Ada", step.action.resolved { it.replace("\${name}", "Ada") }.typeFocused?.value)
+    }
+
+    @Test
+    fun treePrinterShowsTheElementThatHasTheFocus() {
+        val field =
+            com.jakala.gekko.protocol.UiNode(
+                id = "name",
+                bounds = com.jakala.gekko.protocol.Bounds(0, 0, 1, 1),
+                focused = true,
+            )
+
+        assertEquals("node id=name focused\n", TreePrinter.print(listOf(field)))
+    }
+
+    @Test
     fun parsesDragsAndLongPressesOnASpot() {
         val points = Yamls.parse(Step.serializer(), "do: { drag: { start: '50%,80%', end: '50%,30%' } }").action.drag
         val element =

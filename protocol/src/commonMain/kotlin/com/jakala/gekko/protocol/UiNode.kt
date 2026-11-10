@@ -42,11 +42,16 @@ data class UiNode(
      * outside of it. Null: nowhere. Only the web agent sets it; the other agents keep this to themselves.
      */
     @EncodeDefault(EncodeDefault.Mode.NEVER) val clip: Bounds? = null,
+    /**
+     * The element has the input focus: what a keyboard types into (see [Command.TypeFocused]). Left out when false. The
+     * iOS system runner leaves it out of its trees, because a query for the focus is slow.
+     */
+    @EncodeDefault(EncodeDefault.Mode.NEVER) val focused: Boolean = false,
     val children: List<UiNode> = emptyList(),
 ) {
     /** Changes whenever something a person could notice changes (ids, texts, positions, state). */
     fun signature(): Int {
-        var hash = listOf(id, text, description, bounds, enabled, checked, selected, busy).hashCode()
+        var hash = listOf(id, text, description, bounds, enabled, checked, selected, busy, focused).hashCode()
         children.forEach { hash = 31 * hash + it.signature() }
         return hash
     }

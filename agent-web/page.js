@@ -47,6 +47,13 @@
     return flag !== null && flag.toLowerCase() !== 'false'
   }
 
+  // The element of this document that has the input focus; not the page itself, and not a frame (its own page decides)
+  const focusedElement = () => {
+    const active = document.activeElement
+    if (!active || active === document.body || active === document.documentElement) return null
+    return active.tagName === 'IFRAME' || active.tagName === 'FRAME' ? null : active
+  }
+
   const textOf = (el, role) => {
     const tag = el.tagName
     if (tag === 'INPUT') {
@@ -229,6 +236,7 @@
             selected: stateSelected(el),
             secure,
             busy,
+            focused: el === focusedElement(),
             children,
           }
           if (own !== viewport && (own[0] > 0 || own[1] > 0 || own[2] < viewport[2] || own[3] < viewport[3])) {
@@ -296,6 +304,14 @@
     return target.querySelector('input:not([type=hidden]), textarea, select, [contenteditable]:not([contenteditable=false])')
   }
 
+  // The element that has the input focus and what it holds, for typing at its cursor; null when nothing has it
+  const focus = () => {
+    const active = focusedElement()
+    if (!active) return null
+    const takesText = isEditable(active) && active.tagName !== 'SELECT'
+    return { editable: takesText, text: takesText ? (active.value !== undefined ? active.value : active.textContent) : null }
+  }
+
   const blur = () => {
     const active = document.activeElement
     if (active && active !== document.body && typeof active.blur === 'function') active.blur()
@@ -310,5 +326,5 @@
     return true
   }
 
-  window.__gekko = { snapshot, element, editable, blur, reveal }
+  window.__gekko = { snapshot, element, editable, focus, blur, reveal }
 })()

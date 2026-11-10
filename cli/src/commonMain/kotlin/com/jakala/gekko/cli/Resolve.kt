@@ -25,6 +25,7 @@ internal fun Action.resolved(resolve: (String) -> String): Action {
                 textMatches = type.textMatches?.let(resolve),
                 value = resolve(type.value),
             ),
+        typeFocused = typeFocused?.copy(value = resolve(typeFocused.value)),
         scroll =
             scroll?.copy(
                 text = scroll.text?.let(resolve),
