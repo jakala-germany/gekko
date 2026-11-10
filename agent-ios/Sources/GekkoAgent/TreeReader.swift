@@ -11,7 +11,30 @@ enum TreeReader {
 
     static func read() -> [Element] {
         let secureFrames = secureInputFrames()
-        return windows().compactMap { build($0, parent: nil, visited: [], secureFrames: secureFrames) }
+        let focus = focusedView()
+        let focusedFrame = focus.flatMap { screenFrame(of: $0) }
+        return windows().compactMap { build($0, parent: nil, visited: [], secureFrames: secureFrames, focus: focus, focusedFrame: focusedFrame) }
+    }
+
+    /// The view that has the input focus, from the topmost window down: what a keyboard types into. A text field is
+    /// edited through a field editor (a scroll view) inside of it; the field is what a person calls focused.
+    static func focusedView() -> UIView? {
+        func find(_ view: UIView) -> UIView? {
+            if view.isFirstResponder { return view }
+            for subview in view.subviews {
+                if let found = find(subview) { return found }
+            }
+            return nil
+        }
+        for window in windows().reversed() {
+            if let found = find(window) { return found.superview as? UITextField ?? found }
+        }
+        return nil
+    }
+
+    private static func screenFrame(of view: UIView) -> CGRect? {
+        guard let screen = view.window?.screen else { return nil }
+        return view.convert(view.bounds, to: screen.coordinateSpace)
     }
 
     /// Changes whenever something a person could notice changes (ids, texts, positions, state).
@@ -28,11 +51,12 @@ enum TreeReader {
             hasher.combine(element.checked)
             hasher.combine(element.selected)
             hasher.combine(element.busy)
+            hasher.combine(element.focused)
         }
         return hasher.finalize()
     }
 
-    private static func build(_ object: NSObject, parent: Element?, visited: Set<ObjectIdentifier>, secureFrames: [CGRect]) -> Element? {
+    private static func build(_ object: NSObject, parent: Element?, visited: Set<ObjectIdentifier>, secureFrames: [CGRect], focus: UIView?, focusedFrame: CGRect?) -> Element? {
         let identity = ObjectIdentifier(object)
         if visited.contains(identity) { return nil }
         if let view = object as? UIView, view.isHidden || view.alpha < 0.01 || view.accessibilityElementsHidden {
@@ -41,6 +65,8 @@ enum TreeReader {
         let area = frame(of: object)
         // A SwiftUI field is an accessibility node on top of the UITextField: it is secure when it covers a secure one
         let secure = isSecureInput(object) || secureFrames.contains { Self.covers($0, area) }
+        // Same for the focus: the node on top of the focused UITextField has it as well
+        let focused = (focus != nil && object === focus) || focusedFrame.map { Self.covers($0, area) } == true
         let element = Element(
             object: object,
             id: identifier(of: object),
@@ -52,11 +78,12 @@ enum TreeReader {
             checked: checked(of: object),
             selected: selected(of: object, parent: parent),
             secure: secure,
-            busy: isBusy(object)
+            busy: isBusy(object),
+            focused: focused
         )
         element.parent = parent
         let nextVisited = visited.union([identity])
-        element.children = accessibleChildren(of: object).compactMap { build($0, parent: element, visited: nextVisited, secureFrames: secureFrames) }
+        element.children = accessibleChildren(of: object).compactMap { build($0, parent: element, visited: nextVisited, secureFrames: secureFrames, focus: focus, focusedFrame: focusedFrame) }
         let isBoring = element.id == nil && element.text == nil && element.actions.isEmpty && element.children.isEmpty
         return isBoring ? nil : element
     }

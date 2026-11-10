@@ -12,10 +12,12 @@ final class Element {
     let selected: Bool?
     let secure: Bool
     let busy: Bool
+    /// The element has the input focus: what a keyboard types into.
+    let focused: Bool
     var children: [Element] = []
     weak var parent: Element?
 
-    init(object: NSObject, id: String?, text: String?, role: String, frame: CGRect, actions: [String], enabled: Bool, checked: Bool? = nil, selected: Bool? = nil, secure: Bool = false, busy: Bool = false) {
+    init(object: NSObject, id: String?, text: String?, role: String, frame: CGRect, actions: [String], enabled: Bool, checked: Bool? = nil, selected: Bool? = nil, secure: Bool = false, busy: Bool = false, focused: Bool = false) {
         self.object = object
         self.id = id
         self.text = text
@@ -27,6 +29,12 @@ final class Element {
         self.selected = selected
         self.secure = secure
         self.busy = busy
+        self.focused = focused
+    }
+
+    /// This element or one below it has the input focus.
+    private var holdsFocus: Bool {
+        return focused || children.contains { $0.holdsFocus }
     }
 
     func toJson() -> [String: Any] {
@@ -48,6 +56,8 @@ final class Element {
         if let text { json["text"] = text }
         if let checked { json["checked"] = checked }
         if let selected { json["selected"] = selected }
+        // Only the deepest element of a focus keeps the flag: a SwiftUI node covers the field it wraps
+        if focused && !children.contains(where: { $0.holdsFocus }) { json["focused"] = true }
         return json
     }
 

@@ -11,6 +11,12 @@ final class SystemRunnerTests: XCTestCase {
     private static let maxTimeoutSeconds = 600.0
     private static let pollSeconds = 0.1
     private static let maxResolved = 8
+    private static let changeSeconds = 1.0
+    /// The commands this runner serves, as `hello` lists them. Keep in sync with the cases of `execute`.
+    private static let servedCommands = [
+        "hello", "metrics", "tree", "foreground", "waitIdle", "tap", "doubleTap", "longPress", "type", "typeFocused",
+        "tapAt", "longPressAt", "scroll", "swipe", "drag", "setOrientation",
+    ]
 
     private let springboard = XCUIApplication(bundleIdentifier: "com.apple.springboard")
     private lazy var target: XCUIApplication? = {
@@ -47,7 +53,7 @@ final class SystemRunnerTests: XCTestCase {
     private func execute(_ command: [String: Any]) -> [String: Any] {
         guard let type = command["type"] as? String else { return error("Command has no type", ErrorKind.unsupported) }
         switch type {
-        case "hello": return ["type": "hello", "protocol": Self.protocolVersion, "version": Self.version, "role": "runner"]
+        case "hello": return ["type": "hello", "protocol": Self.protocolVersion, "version": Self.version, "role": "runner", "commands": Self.servedCommands]
         case "metrics": return ["type": "metrics", "density": 1.0, "rtl": UIView.userInterfaceLayoutDirection(for: .unspecified) == .rightToLeft]
         case "tree": return ["type": "tree", "windows": [node(for: foremost().root)]]
         case "foreground": return ["type": "foreground", "appInForeground": false]
@@ -74,6 +80,7 @@ final class SystemRunnerTests: XCTestCase {
                 match.scope.app.typeText(text)
                 return self.ok()
             }
+        case "typeFocused": return typeFocused(command)
         case "tapAt": return tapAt(command)
         case "longPressAt": return longPressAt(command)
         case "scroll": return scroll(command)
@@ -243,6 +250,56 @@ final class SystemRunnerTests: XCTestCase {
         let origin = foremost().app.coordinate(withNormalizedOffset: CGVector(dx: 0, dy: 0))
         origin.withOffset(CGVector(dx: x, dy: y)).tap()
         return ok()
+    }
+
+    /// While a typeFocused runs, what XCTest would record as a failure is kept here instead; nil otherwise.
+    private var typingIssues: [String]?
+
+    /// XCTest records a failure when typeText finds nothing with the keyboard focus, and a failure ends this one
+    /// long-running test: the focus is checked first, and one lost on the way is answered, not recorded.
+    override func record(_ issue: XCTIssue) {
+        if typingIssues != nil {
+            typingIssues?.append(issue.compactDescription)
+            return
+        }
+        super.record(issue)
+    }
+
+    /// Types at the cursor of the element that has the keyboard focus and sees whether its value changed.
+    private func typeFocused(_ command: [String: Any]) -> [String: Any] {
+        let text = command["text"] as? String ?? ""
+        let scope = foremost()
+        let deadline = Date().addingTimeInterval(seconds(command["timeoutMs"]))
+        typingIssues = []
+        defer { typingIssues = nil }
+        var focused = focusedElement(in: scope)
+        while focused == nil {
+            if Date() > deadline { return error("Nothing has the input focus", ErrorKind.rejected) }
+            Thread.sleep(forTimeInterval: Self.pollSeconds)
+            focused = focusedElement(in: scope)
+        }
+        guard let field = focused else { return error("Nothing has the input focus", ErrorKind.rejected) }
+        if text.isEmpty { return ok() }
+        let before = field.value as? String
+        scope.app.typeText(text)
+        if let lost = typingIssues?.first {
+            return error("The input focus was lost before the text was typed: \(lost)", ErrorKind.rejected)
+        }
+        // A value that cannot be read cannot be checked: it got the text
+        guard let before else { return ok() }
+        let changeDeadline = Date().addingTimeInterval(Self.changeSeconds)
+        repeat {
+            if field.exists, field.value as? String != before { return ok() }
+            Thread.sleep(forTimeInterval: 0.1)
+        } while Date() < changeDeadline
+        return error("The focused field did not take the text", ErrorKind.rejected)
+    }
+
+    /// The element with the keyboard focus; no snapshot field has it, so it takes a query of its own.
+    private func focusedElement(in scope: Scope) -> XCUIElement? {
+        let query = scope.app.descendants(matching: .any).matching(NSPredicate(format: "hasKeyboardFocus == true"))
+        let element = query.firstMatch
+        return element.exists ? element : nil
     }
 
     /// A touch at screen points, counted from the origin of the foremost application, held for holdMs.

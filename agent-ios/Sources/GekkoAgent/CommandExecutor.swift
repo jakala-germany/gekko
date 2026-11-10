@@ -8,6 +8,11 @@ final class CommandExecutor {
     private static let verifyPollSeconds = 0.05
     /// Keep in sync with Protocol.VERSION of the shared protocol.
     private static let protocolVersion = 2
+    /// The commands this agent serves, as `hello` lists them. Keep in sync with the cases of `execute`.
+    private static let servedCommands = [
+        "hello", "metrics", "tree", "foreground", "waitIdle", "tap", "tapAt", "type", "typeFocused", "scroll", "drag",
+        "hideKeyboard", "setMocks", "clearMocks", "mockHits",
+    ]
     /// Set to 0 to skip checking that a tap changed anything.
     private static let verifyTaps = ProcessInfo.processInfo.environment["GEKKO_TAP_VERIFY"] != "0"
 
@@ -21,7 +26,7 @@ final class CommandExecutor {
     func execute(_ command: [String: Any]) -> [String: Any] {
         guard let type = command["type"] as? String else { return failure("Command has no type", ErrorKind.unsupported) }
         switch type {
-        case "hello": return ["type": "hello", "protocol": Self.protocolVersion, "version": GekkoBuild.version, "role": "agent"]
+        case "hello": return ["type": "hello", "protocol": Self.protocolVersion, "version": GekkoBuild.version, "role": "agent", "commands": Self.servedCommands]
         case "metrics": return metrics()
         case "tree": return ["type": "tree", "windows": onMain { TreeReader.read().map { $0.toJson() } }]
         case "foreground": return ["type": "foreground", "appInForeground": onMain { UIApplication.shared.applicationState == .active }]
@@ -30,6 +35,7 @@ final class CommandExecutor {
         case "tap": return tap(command)
         case "tapAt": return tapAt(command)
         case "type": return typeText(command)
+        case "typeFocused": return typeFocused(command)
         case "scroll": return scroll(command)
         case "drag": return drag(command)
         case "hideKeyboard": return hideKeyboard()
@@ -100,6 +106,26 @@ final class CommandExecutor {
         let text = command["text"] as? String ?? ""
         return withElement(command) { element, _ in
             return .done(ElementActions.type(element, text: text) ? self.ok() : self.failure("Element is not editable", ErrorKind.rejected))
+        }
+    }
+
+    /// Waits for an element with the input focus, then types at its cursor and sees whether the field took it.
+    private func typeFocused(_ command: [String: Any]) -> [String: Any] {
+        let text = command["text"] as? String ?? ""
+        let timeout = seconds(command["timeoutMs"])
+        _ = waitIdle(timeout: min(timeout, Self.idleWaitSeconds))
+        let deadline = Date().addingTimeInterval(timeout)
+        // Right after a tap the focus can still be on its way to the field: only the end of the timeout gives up
+        while true {
+            let reason: String
+            switch onMain({ ElementActions.typeAtFocus(text) }) {
+            case .typed: return ok()
+            case .unchanged: return failure("The focused field did not take the text", ErrorKind.rejected)
+            case .notEditable: reason = "The focused element does not take text"
+            case .nothingFocused: reason = "Nothing has the input focus"
+            }
+            if Date() > deadline { return failure(reason, ErrorKind.rejected) }
+            Thread.sleep(forTimeInterval: Self.pollSeconds)
         }
     }
 
