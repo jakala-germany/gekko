@@ -277,6 +277,13 @@ class SystemRunnerTest {
         var withoutText = false
         while (true) {
             val focus = roots().firstNotNullOfOrNull { it.findFocus(AccessibilityNodeInfo.FOCUS_INPUT) }
+            if (focus != null && focus.isPassword && command.text.isNotEmpty()) {
+                // The text of a password field is bullets here, so the cursor cannot be honoured
+                return Response.Error(
+                    "The system runner cannot type at the cursor of a password field; the in-app agent can",
+                    ErrorKind.REJECTED,
+                )
+            }
             if (focus != null && (focus.isEditable || command.text.isEmpty())) {
                 return typeInto(focus, command.text)
             }
@@ -293,13 +300,6 @@ class SystemRunnerTest {
     private fun typeInto(node: AccessibilityNodeInfo, text: String): Response {
         if (text.isEmpty()) {
             return Response.Ok
-        }
-        if (node.isPassword) {
-            // The text of a password field is bullets here, so the cursor cannot be honoured
-            return Response.Error(
-                "The system runner cannot type at the cursor of a password field; the in-app agent can",
-                ErrorKind.REJECTED,
-            )
         }
         val shown = node.text?.toString()
         val current = if (showsHint(node)) "" else shown.orEmpty()
