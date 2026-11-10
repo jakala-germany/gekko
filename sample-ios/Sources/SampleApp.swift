@@ -36,6 +36,7 @@ extension View {
 struct ContentView: View {
     @State private var name = ""
     @State private var greeting = ""
+    @State private var password = ""
     @State private var time = Date()
     @State private var gesture = "none"
     @State private var network = "none"
@@ -45,11 +46,22 @@ struct ContentView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
-            TextField("Name", text: $name)
-                .textFieldStyle(.roundedBorder)
-                .accessibilityIdentifier("sample.name")
-            Button("Greet") { greeting = "Hello \(name)" }
-                .accessibilityIdentifier("sample.greet")
+            // Both fields share a row, so the rows below keep their place
+            HStack {
+                TextField("Name", text: $name)
+                    .textFieldStyle(.roundedBorder)
+                    .accessibilityIdentifier("sample.name")
+                SecureField("Password", text: $password)
+                    .textFieldStyle(.roundedBorder)
+                    .accessibilityIdentifier("sample.password")
+            }
+            HStack(spacing: 16) {
+                Button("Greet") { greeting = "Hello \(name)" }
+                    .accessibilityIdentifier("sample.greet")
+                // A password is never readable in the tree: the app tells how long it is, which a test can check
+                Text("Password: \(password.count)")
+                    .accessibilityIdentifier("sample.password.length")
+            }
             Text(greeting)
                 .accessibilityIdentifier("sample.greeting")
             Text("Gesture target")

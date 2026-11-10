@@ -14,13 +14,16 @@
 </head>
 <body>
   <label for="name">Name</label>
-  <input id="name" data-testid="sample.name" type="text">
+  <input id="name" data-testid="sample.name" type="text" size="10">
+  <label for="password">Password</label>
+  <input id="password" data-testid="sample.password" type="password" size="10">
   <div class="row">
     <button data-testid="sample.greet" id="greet">Greet</button>
     <button data-testid="sample.locate" id="locate">Locate</button>
   </div>
   <div class="row">
     <span data-testid="sample.greeting" id="greeting"></span>
+    <span data-testid="sample.password.length" id="password-length">Password: 0</span>
     <span data-testid="sample.location" id="location">Location: unknown</span>
   </div>
   <div id="gesture" data-testid="sample.gesture">Gesture target</div>
@@ -56,6 +59,9 @@
 
     // How far the list is scrolled, in pixels: the end-to-end tests of the native samples compare what a drag moved
     list.addEventListener('scroll', () => { $('list-offset').textContent = 'Scroll: ' + Math.round(list.scrollTop) })
+
+    // A password is never readable in the tree: the page tells how long it is, which a test can check
+    $('password').addEventListener('input', () => { $('password-length').textContent = 'Password: ' + $('password').value.length })
 
     $('greet').addEventListener('click', () => { $('greeting').textContent = 'Hello ' + $('name').value })
 

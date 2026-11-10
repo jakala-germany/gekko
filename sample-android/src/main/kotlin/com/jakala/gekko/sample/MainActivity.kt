@@ -33,6 +33,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.testTagsAsResourceId
+import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import java.net.HttpURLConnection
 import java.net.URL
@@ -53,6 +54,8 @@ class MainActivity : ComponentActivity() {
 private fun SampleApp() {
     var name by rememberSaveable { mutableStateOf("") }
     var greeting by rememberSaveable { mutableStateOf("") }
+    // Not saved: a password does not belong into the saved state of an activity
+    var password by remember { mutableStateOf("") }
     var gesture by rememberSaveable { mutableStateOf("none") }
     var location by rememberSaveable { mutableStateOf("unknown") }
     var network by rememberSaveable { mutableStateOf("none") }
@@ -61,12 +64,22 @@ private fun SampleApp() {
     // The first request is made while the app starts, so the end-to-end tests can mock what an app asks for at startup
     LaunchedEffect(Unit) { thread { startup = fetchWithOkHttp("$BACKEND/startup") } }
     Column(Modifier.padding(16.dp).semantics { testTagsAsResourceId = true }) {
-        OutlinedTextField(
-            value = name,
-            onValueChange = { name = it },
-            label = { Text("Name") },
-            modifier = Modifier.testTag("sample.name"),
-        )
+        // Both fields share a row, so the rows below keep their place
+        Row {
+            OutlinedTextField(
+                value = name,
+                onValueChange = { name = it },
+                label = { Text("Name") },
+                modifier = Modifier.weight(1f).testTag("sample.name"),
+            )
+            OutlinedTextField(
+                value = password,
+                onValueChange = { password = it },
+                label = { Text("Password") },
+                visualTransformation = PasswordVisualTransformation(),
+                modifier = Modifier.weight(1f).padding(start = 8.dp).testTag("sample.password"),
+            )
+        }
         // The location UI shares the rows of the greeting, so the list below keeps its place
         Row {
             Button(onClick = { greeting = "Hello $name" }, modifier = Modifier.testTag("sample.greet")) {
@@ -75,6 +88,11 @@ private fun SampleApp() {
             Button(onClick = { locate(context) { location = it } }, modifier = Modifier.testTag("sample.locate")) {
                 Text("Locate")
             }
+            // A password is never readable in the tree: the app tells how long it is, which a test can check
+            Text(
+                "Password: ${password.length}",
+                modifier = Modifier.padding(start = 16.dp).testTag("sample.password.length"),
+            )
         }
         Row {
             Text(greeting, modifier = Modifier.testTag("sample.greeting"))
