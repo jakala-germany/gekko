@@ -105,6 +105,7 @@ teardown: [account-cleanup]      # optional flows, run once after the last test
 | `doubleTap` | `{ doubleTap: { id: Photo } }` | Two quick touches (a real touch on Android and iOS, a double click on the web). Takes `system: true` like `tap`. |
 | `longPress` | `{ longPress: { id: Row, holdMs: 1000 } }`<br>`{ longPress: { id: Map, point: "25%,75%", holdMs: 900 } }`<br>`{ longPress: { point: "50%,40%", holdMs: 900 } }` | Holds the element pressed (default 700 ms), e.g. for a context menu. `point` holds a spot as `x%,y%` instead: of the element when one is named (`50%,50%` is its center, `25%,75%` a spot in its lower left), of the screen when none is: for a map, a chart or a canvas that has nothing to select inside. Takes `system: true`. On iOS, SwiftUI may read a hold of 700 ms as a tap: hold 900 ms. |
 | `type` | `{ type: { id: Search.Field, value: "tent" } }` | Sets the text of a field (replaces what is there). Any selector key (not `system` or `point`) plus `value`. The text of a password field can be typed but never read back. |
+| `typeFocused` | `{ typeFocused: { value: "Ada" } }`<br>`{ typeFocused: { value: " Lovelace", system: true } }` | Types at the cursor of the field that has the input focus, the way a keyboard does: it adds to the text (a selection is replaced). Put the focus there first, e.g. with a `tap` on the field. Waits for a field that takes text to get the focus, and fails when none does or when the field does not change. Takes `system: true`. Use `type` to replace a text or to name the field. |
 | `eraseText` | `{ eraseText: { id: Search.Field } }` | Clears a text field. |
 | `scroll` | `{ scroll: { id: Search.List, direction: down, distance: 600 } }` | Scrolls a container by a distance, see "Scrolling". |
 | `scrollUntilVisible` | `{ scrollUntilVisible: { id: Search.Result.40, direction: down, maxScrolls: 10, in: { id: Search.List } } }` | Scrolls until the element is completely visible, see "Scrolling". |
@@ -321,7 +322,7 @@ Put it in `gekko.yaml` for all tests or at the top of a test to override it. It 
 
 | | Android | iOS simulator | Web (Chromium, Firefox, WebKit) |
 |---|---|---|---|
-| All selector keys, `tap`, `doubleTap`, `longPress` (also with `point`), `type`, `eraseText`, `scroll`, `scrollUntilVisible`, `swipe`, `drag`, assertions, `waitForAnimationToEnd`, `wait`, `takeScreenshot`, `copyText`, `hideKeyboard`, `openLink`, `launchApp`, `stopApp`, `clearState`, `setDarkMode`, `setOrientation`, `repeat`, `use`, `system: true` on `tap`, `doubleTap`, `longPress`, `swipe` and `drag` | yes | yes | yes |
+| All selector keys, `tap`, `doubleTap`, `longPress` (also with `point`), `type`, `typeFocused`, `eraseText`, `scroll`, `scrollUntilVisible`, `swipe`, `drag`, assertions, `waitForAnimationToEnd`, `wait`, `takeScreenshot`, `copyText`, `hideKeyboard`, `openLink`, `launchApp`, `stopApp`, `clearState`, `setDarkMode`, `setOrientation`, `repeat`, `use`, `system: true` on `tap`, `doubleTap`, `longPress`, `swipe` and `drag` | yes | yes | yes |
 | `tap` with `point` | yes | no | no |
 | `back`, `pressKey`, `setAirplaneMode` | yes | no: the step fails ("is not supported") | yes (history back, keyboard, offline) |
 | `launchPackage`, `stopPackage` | yes | no | no |
