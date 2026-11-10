@@ -237,10 +237,8 @@ jobs:
           path: build/e2e-web
           if-no-files-found: ignore
 
-  # Slow and the most likely to flake: after a merge and before a release, not on every pull request
   ios-e2e:
     name: 'iOS end to end'
-    if: ${{ github.event_name != 'pull_request' }}
     runs-on: macos-15
     timeout-minutes: 75
     steps:
