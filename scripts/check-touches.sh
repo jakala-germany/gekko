@@ -5,16 +5,10 @@
 #     after the first. A finger that loses the touch slop (about 8 dp on Android, 12 pt on iOS) every time ends short.
 #   - swipe: a fast swipe flings the list on, so it moves it at least 1.5 times as far as a slow swipe of the same
 #     length (on the emulator: 2.3 to 2.7 times on Android, much more on iOS, where it reaches the end of the list).
-# Usage: scripts/check-touches.sh <log of a gekko run of examples/sample-tests> [--no-runner-drag]
-# --no-runner-drag leaves out the drag of the system runner: on iOS a long drag of the runner can fling the content on
-# (the agent, which scrolling uses, is exact).
+# Usage: scripts/check-touches.sh <log of a gekko run of examples/sample-tests>
 set -euo pipefail
 
-LOG="${1:?usage: scripts/check-touches.sh <log of a gekko run of examples/sample-tests> [--no-runner-drag]}"
-RUNNER_DRAG=yes
-if [ "${2:-}" = "--no-runner-drag" ]; then
-  RUNNER_DRAG=no
-fi
+LOG="${1:?usage: scripts/check-touches.sh <log of a gekko run of examples/sample-tests>}"
 TOLERANCE=4
 
 value() {
@@ -28,10 +22,6 @@ value() {
 }
 
 for kind in agent runner; do
-  if [ "$kind" = runner ] && [ "$RUNNER_DRAG" = no ]; then
-    echo "check-touches: runner drag left out"
-    continue
-  fi
   ten="$(value "${kind}Ten")"
   thirty="$(value "${kind}Thirty")"
   off=$((thirty - 3 * ten))
