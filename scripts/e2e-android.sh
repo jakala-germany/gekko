@@ -31,11 +31,12 @@ adb install -r sample-android/build/outputs/apk/debug/sample-android-debug.apk
 "$GEKKO" run --project examples/sample-tests --exclude-tags broken,ios-only,web-only \
   --junit "$OUT/junit.xml" --output "$OUT/results" 2>&1 | tee "$OUT/run.log"
 
-# The system runner reads a password field as bullets, so it cannot type at the cursor of one and says so
+# The system runner reads a password field as bullets, so it cannot type at the cursor of one and says so. It refuses as
+# soon as it sees the focus; the timeout only bounds the wait for the focus, which a slow runner can take seconds to give
 "$GEKKO" launch --project examples/sample-tests
 "$GEKKO" tap --project examples/sample-tests --id sample.password --system
 status=0
-refusal="$("$GEKKO" type-focused x --project examples/sample-tests --system --timeout 1000 2>&1)" || status=$?
+refusal="$("$GEKKO" type-focused x --project examples/sample-tests --system --timeout 10000 2>&1)" || status=$?
 if [ "$status" -ne 1 ] || ! grep -qi "password" <<<"$refusal"; then
   echo "the system runner must refuse to type into a password field with exit 1 and a message about it, got $status: $refusal" >&2
   exit 1
