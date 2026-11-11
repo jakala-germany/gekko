@@ -1,6 +1,7 @@
 package com.jakala.gekko.runner
 
 import android.accessibilityservice.AccessibilityServiceInfo
+import android.view.KeyEvent
 import android.view.View
 import android.view.ViewConfiguration
 import android.view.accessibility.AccessibilityNodeInfo
@@ -18,6 +19,7 @@ import com.jakala.gekko.protocol.Bounds
 import com.jakala.gekko.protocol.Command
 import com.jakala.gekko.protocol.ErrorKind
 import com.jakala.gekko.protocol.GekkoVersion
+import com.jakala.gekko.protocol.Keys
 import com.jakala.gekko.protocol.Protocol
 import com.jakala.gekko.protocol.Response
 import com.jakala.gekko.protocol.Selector
@@ -159,6 +161,7 @@ class SystemRunnerTest {
                     }
                 }
             is Command.TypeFocused -> typeFocused(command)
+            is Command.PressKey -> pressKey(command)
             is Command.Scroll -> scroll(command)
             is Command.SetOrientation -> setOrientation(command.landscape)
             is Command.SetLocation -> setLocation(command)
@@ -301,6 +304,68 @@ class SystemRunnerTest {
         }
     }
 
+    /**
+     * Presses a key as the system does, inside the app or not. The keys of a field wait for an element that takes text
+     * to have the focus, as [typeFocused] does; they are real key events, so a password field takes them too.
+     */
+    private fun pressKey(command: Command.PressKey): Response {
+        val key = command.key.lowercase()
+        val fieldCode = fieldKeyCode(key)
+        val press: () -> Boolean =
+            when {
+                // UiDevice answers false for a back or a home that worked on older Android (the window it sent the
+                // key to is gone by the time it looks), so the answer says nothing here
+                key == Keys.BACK -> ({ device.pressBack() || true })
+                key == Keys.HOME -> ({ device.pressHome() || true })
+                fieldCode != null -> ({ device.pressKeyCode(fieldCode) })
+                key.toIntOrNull() != null -> ({ device.pressKeyCode(key.toInt()) })
+                else -> return Response.Error("The system runner cannot press '${command.key}'", ErrorKind.UNSUPPORTED)
+            }
+        if (fieldCode != null) {
+            awaitFocusedField(command.timeoutMs)?.let {
+                return it
+            }
+        }
+        repeat(command.times) { done ->
+            if (done > 0 && fieldCode == null) {
+                device.waitForIdle(KEY_SETTLE_MS)
+            }
+            if (!press()) {
+                return Response.Error("The system refused press ${done + 1} of ${command.times}", ErrorKind.REJECTED)
+            }
+        }
+        return Response.Ok
+    }
+
+    private fun fieldKeyCode(key: String): Int? {
+        return when (key) {
+            Keys.ENTER -> KeyEvent.KEYCODE_ENTER
+            Keys.BACKSPACE -> KeyEvent.KEYCODE_DEL
+            Keys.TAB -> KeyEvent.KEYCODE_TAB
+            else -> null
+        }
+    }
+
+    /** Null once an element that takes text has the input focus, the rejection when none has it by [timeoutMs]. */
+    private fun awaitFocusedField(timeoutMs: Long): Response? {
+        val deadline = System.currentTimeMillis() + timeoutMs
+        var withoutText = false
+        while (true) {
+            val focus = roots().firstNotNullOfOrNull { it.findFocus(AccessibilityNodeInfo.FOCUS_INPUT) }
+            focus?.refresh()
+            if (focus != null && focus.isEditable) {
+                return null
+            }
+            withoutText = withoutText || focus != null
+            if (System.currentTimeMillis() > deadline) {
+                val message =
+                    if (withoutText) "The focused element does not take text" else "Nothing has the input focus"
+                return Response.Error(message, ErrorKind.REJECTED)
+            }
+            Thread.sleep(POLL_MS)
+        }
+    }
+
     private fun typeInto(node: AccessibilityNodeInfo, text: String): Response {
         if (text.isEmpty()) {
             return Response.Ok
@@ -420,6 +485,7 @@ class SystemRunnerTest {
         const val PROGRESS_BAR = "android.widget.ProgressBar"
         const val POLL_MS = 50L
         const val CHANGE_WAIT_MS = 1_000L
+        const val KEY_SETTLE_MS = 500L
 
         /** The commands this server answers with `unsupported`: the others are listed in its answer to `hello`. */
         val UNSUPPORTED_COMMANDS = setOf("screenshot", "hideKeyboard", "wheel", "setMocks", "clearMocks", "mockHits")

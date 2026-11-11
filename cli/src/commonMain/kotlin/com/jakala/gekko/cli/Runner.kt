@@ -3,6 +3,7 @@ package com.jakala.gekko.cli
 import com.jakala.gekko.protocol.Bounds
 import com.jakala.gekko.protocol.Command
 import com.jakala.gekko.protocol.ErrorKind
+import com.jakala.gekko.protocol.Keys
 import com.jakala.gekko.protocol.Response
 import com.jakala.gekko.protocol.ScrollDirection
 import com.jakala.gekko.protocol.Selector
@@ -979,14 +980,14 @@ class TestRunner(
             action.assertNotVisible != null ->
                 assertVisible(action.assertNotVisible.toSelector(platform), timeout, false, settle)
             action.wait != null -> delay(action.wait)
-            action.pressKey != null -> onDevice { device.pressKey(action.pressKey) }
+            action.pressKey != null -> pressKey(action.pressKey, timeout)
             action.doubleTap != null ->
                 touchGesture(
                     Command.DoubleTap(action.doubleTap.toSelector(platform), timeout, settleMs),
                     action.doubleTap.system,
                 )
             action.longPress != null -> longPress(action.longPress, timeout)
-            action.back == true -> onDevice { device.pressKey("back") }
+            action.back == true -> pressKey(PressKeySpec(Keys.BACK), timeout)
             action.openLink != null -> onDevice { device.openLink(action.openLink) }
             action.scrollUntilVisible != null -> scrollUntilVisible(action.scrollUntilVisible, timeout)
             action.eraseText != null ->
@@ -1037,6 +1038,14 @@ class TestRunner(
             return
         }
         expectOk(response)
+    }
+
+    /**
+     * The in-app agent presses the keys it can inside its own windows; for the others (`home`, a key code number, a key
+     * of an app that is not in front) it answers `unsupported`, and the system runner, which presses any key, gets it.
+     */
+    private suspend fun pressKey(spec: PressKeySpec, timeout: Long) {
+        expectOk(drivers.sendWithRunnerFallback(Command.PressKey(spec.key, spec.times, timeout), spec.system))
     }
 
     /** Device commands report problems as IllegalStateException; a test sees them as a failed step. */
@@ -1691,7 +1700,7 @@ class TestRunner(
                 "assert not visible ${action.assertNotVisible.element ?: action.assertNotVisible.toSelector(platform)}"
             action.assertPane != null -> "assert pane ${action.assertPane}"
             action.wait != null -> "wait ${action.wait}ms"
-            action.pressKey != null -> "press ${action.pressKey}"
+            action.pressKey != null -> "press ${action.pressKey.describe()}"
             action.openLink != null -> "open ${action.openLink}"
             action.use != null -> "use ${action.use}"
             action.doubleTap != null ->

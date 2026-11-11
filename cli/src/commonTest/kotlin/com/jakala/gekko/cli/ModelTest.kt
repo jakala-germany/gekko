@@ -385,6 +385,26 @@ class ModelTest {
     }
 
     @Test
+    fun parsesAKeyPressAsAStringOrAsAMap() {
+        val plain = Yamls.parse(Step.serializer(), "do: { pressKey: enter }")
+        val code = Yamls.parse(Step.serializer(), "do: { pressKey: 66 }")
+        val map = Yamls.parse(Step.serializer(), "do: { pressKey: { key: backspace, times: 2, system: true } }")
+
+        assertEquals(PressKeySpec("enter"), plain.action.pressKey)
+        assertEquals("66", code.action.pressKey?.key)
+        assertEquals(PressKeySpec("backspace", times = 2, system = true), map.action.pressKey)
+        assertEquals(listOf("pressKey"), map.action.names())
+        assertEquals("backspace ×2", map.action.pressKey?.describe())
+    }
+
+    @Test
+    fun rejectsAKeyPressWithoutAKeyOrWithoutAPress() {
+        assertFailsWith<Exception> { Yamls.parse(Step.serializer(), "do: { pressKey: { times: 2 } }") }
+        assertFailsWith<Exception> { Yamls.parse(Step.serializer(), "do: { pressKey: { key: enter, times: 0 } }") }
+        assertFailsWith<Exception> { Yamls.parse(Step.serializer(), "do: { pressKey: enter, tap: { id: b } }") }
+    }
+
+    @Test
     fun theTextOfTypingIntoTheFocusedFieldTakesVariables() {
         val step = Yamls.parse(Step.serializer(), "do: { typeFocused: { value: '\${name}' } }")
 
