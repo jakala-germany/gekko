@@ -48,9 +48,11 @@ struct ContentView: View {
         VStack(alignment: .leading, spacing: 12) {
             // Both fields share a row, so the rows below keep their place
             HStack {
+                // Return on the keyboard greets, as the button does
                 TextField("Name", text: $name)
                     .textFieldStyle(.roundedBorder)
                     .accessibilityIdentifier("sample.name")
+                    .onSubmit { greeting = "Hello \(name)" }
                 SecureField("Password", text: $password)
                     .textFieldStyle(.roundedBorder)
                     .accessibilityIdentifier("sample.password")

@@ -1,0 +1,15 @@
+name: Home leaves the app
+tags: [keys]
+steps:
+  - say: Press the home button, which only the system runner can
+    platform: [android, ios]
+    do: { pressKey: home }
+  - say: The app is not on the screen any more
+    platform: [android, ios]
+    do: { assertNotVisible: { id: sample.name } }
+  - say: Start the app again
+    platform: [android, ios]
+    do: { launchApp: {} }
+  - say: The app is back
+    platform: [android, ios]
+    do: { assertVisible: { id: sample.name } }

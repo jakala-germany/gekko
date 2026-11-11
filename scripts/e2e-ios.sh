@@ -26,6 +26,16 @@ xcrun simctl bootstatus "$UDID" -b
 # A drag moves the list exactly as far as the finger, a fast swipe flings it, a slow one does not
 ./scripts/check-touches.sh "$OUT/run.log"
 
+# iOS has no back key: pressing it fails with exit 1 and says so. The in-app agent hands the key to the system runner,
+# which refuses it as well
+"$GEKKO" launch --project examples/sample-tests --platform ios -s "$UDID"
+status=0
+refusal="$("$GEKKO" press-key back --project examples/sample-tests --platform ios -s "$UDID" 2>&1)" || status=$?
+if [ "$status" -ne 1 ] || ! grep -qi "no back key" <<<"$refusal"; then
+  echo "pressing back on iOS must fail with exit 1 and say there is no back key, got $status: $refusal" >&2
+  exit 1
+fi
+
 status=0
 "$GEKKO" run --project examples/sample-tests --platform ios -s "$UDID" --tags broken --output "$OUT/failing" || status=$?
 if [ "$status" -ne 1 ]; then

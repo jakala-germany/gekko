@@ -17,6 +17,8 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.Button
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
@@ -33,6 +35,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.testTagsAsResourceId
+import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import java.net.HttpURLConnection
@@ -63,13 +66,18 @@ private fun SampleApp() {
     val context = LocalContext.current
     // The first request is made while the app starts, so the end-to-end tests can mock what an app asks for at startup
     LaunchedEffect(Unit) { thread { startup = fetchWithOkHttp("$BACKEND/startup") } }
+    val greet = { greeting = "Hello $name" }
     Column(Modifier.padding(16.dp).semantics { testTagsAsResourceId = true }) {
         // Both fields share a row, so the rows below keep their place
         Row {
+            // Done on the keyboard (a pressed enter) greets, as the button does
             OutlinedTextField(
                 value = name,
                 onValueChange = { name = it },
                 label = { Text("Name") },
+                singleLine = true,
+                keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
+                keyboardActions = KeyboardActions(onDone = { greet() }),
                 modifier = Modifier.weight(1f).testTag("sample.name"),
             )
             OutlinedTextField(
@@ -82,9 +90,7 @@ private fun SampleApp() {
         }
         // The location UI shares the rows of the greeting, so the list below keeps its place
         Row {
-            Button(onClick = { greeting = "Hello $name" }, modifier = Modifier.testTag("sample.greet")) {
-                Text("Greet")
-            }
+            Button(onClick = { greet() }, modifier = Modifier.testTag("sample.greet")) { Text("Greet") }
             Button(onClick = { locate(context) { location = it } }, modifier = Modifier.testTag("sample.locate")) {
                 Text("Locate")
             }

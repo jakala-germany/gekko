@@ -1,0 +1,15 @@
+name: Back leaves the app
+tags: [keys, android-only]
+steps:
+  - say: Press back on the first screen of the app
+    platform: android
+    do: { back: true }
+  - say: The app is not on the screen any more
+    platform: android
+    do: { assertNotVisible: { id: sample.name } }
+  - say: Start the app again
+    platform: android
+    do: { launchApp: {} }
+  - say: The app is back
+    platform: android
+    do: { assertVisible: { id: sample.name } }

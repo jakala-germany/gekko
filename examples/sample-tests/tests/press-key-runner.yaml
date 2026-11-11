@@ -1,0 +1,21 @@
+name: The system runner presses keys
+tags: [keys]
+steps:
+  - say: Put the focus into the name field with a real touch
+    platform: [android, ios]
+    do: { tap: { id: sample.name, system: true } }
+  - say: Type the name at the cursor
+    platform: [android, ios]
+    do: { typeFocused: { value: Ada, system: true } }
+  - say: Erase two characters with real key events
+    platform: [android, ios]
+    do: { pressKey: { key: backspace, times: 2, system: true } }
+  - say: The field holds what is left
+    platform: [android, ios]
+    do: { assertVisible: { id: sample.name, text: "A" } }
+  - say: Submit the field with a real enter key
+    platform: [android, ios]
+    do: { pressKey: { key: enter, system: true } }
+  - say: The submit greeted
+    platform: [android, ios]
+    do: { assertVisible: { id: sample.greeting, text: "Hello A" } }
