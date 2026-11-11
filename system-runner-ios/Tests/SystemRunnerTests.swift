@@ -15,7 +15,7 @@ final class SystemRunnerTests: XCTestCase {
     /// The commands this runner serves, as `hello` lists them. Keep in sync with the cases of `execute`.
     private static let servedCommands = [
         "hello", "metrics", "tree", "foreground", "waitIdle", "tap", "doubleTap", "longPress", "type", "typeFocused",
-        "tapAt", "longPressAt", "scroll", "swipe", "drag", "setOrientation",
+        "pressKey", "tapAt", "longPressAt", "scroll", "swipe", "drag", "setOrientation",
     ]
 
     private let springboard = XCUIApplication(bundleIdentifier: "com.apple.springboard")
@@ -81,6 +81,7 @@ final class SystemRunnerTests: XCTestCase {
                 return self.ok()
             }
         case "typeFocused": return typeFocused(command)
+        case "pressKey": return pressKey(command)
         case "tapAt": return tapAt(command)
         case "longPressAt": return longPressAt(command)
         case "scroll": return scroll(command)
@@ -113,6 +114,8 @@ final class SystemRunnerTests: XCTestCase {
             let app = XCUIApplication(bundleIdentifier: id)
             if app.state == .runningForeground { return Scope(root: app, app: app) }
         }
+        // An app that is not in front (the home button was pressed) is not what is on the screen: the home screen is
+        if let target, target.state != .runningForeground { return Scope(root: springboard, app: springboard) }
         let app = target ?? springboard
         return Scope(root: app, app: app)
     }
@@ -269,16 +272,11 @@ final class SystemRunnerTests: XCTestCase {
     private func typeFocused(_ command: [String: Any]) -> [String: Any] {
         let text = command["text"] as? String ?? ""
         let scope = foremost()
-        let deadline = Date().addingTimeInterval(seconds(command["timeoutMs"]))
         typingIssues = []
         defer { typingIssues = nil }
-        var focused = focusedElement(in: scope)
-        while focused == nil {
-            if Date() > deadline { return error("Nothing has the input focus", ErrorKind.rejected) }
-            Thread.sleep(forTimeInterval: Self.pollSeconds)
-            focused = focusedElement(in: scope)
+        guard let field = awaitFocusedElement(in: scope, timeout: seconds(command["timeoutMs"])) else {
+            return error("Nothing has the input focus", ErrorKind.rejected)
         }
-        guard let field = focused else { return error("Nothing has the input focus", ErrorKind.rejected) }
         if text.isEmpty { return ok() }
         let before = field.value as? String
         scope.app.typeText(text)
@@ -293,6 +291,43 @@ final class SystemRunnerTests: XCTestCase {
             Thread.sleep(forTimeInterval: 0.1)
         } while Date() < changeDeadline
         return error("The focused field did not take the text", ErrorKind.rejected)
+    }
+
+    /// Presses a key as a keyboard does. The keys of a field wait for the keyboard focus as typeFocused does; home is the
+    /// hardware button, and there is no back key on iOS.
+    private func pressKey(_ command: [String: Any]) -> [String: Any] {
+        guard let name = (command["key"] as? String)?.lowercased() else { return error("pressKey needs a key", ErrorKind.unsupported) }
+        let times = max((command["times"] as? NSNumber)?.intValue ?? 1, 1)
+        let keys: [String: XCUIKeyboardKey] = ["enter": .return, "backspace": .delete, "tab": .tab]
+        if name == "home" {
+            for _ in 0 ..< times { XCUIDevice.shared.press(.home) }
+            return ok()
+        }
+        if name == "back" { return error("iOS has no back key", ErrorKind.unsupported) }
+        guard let key = keys[name] else { return error("The system runner cannot press '\(name)'", ErrorKind.unsupported) }
+        let scope = foremost()
+        typingIssues = []
+        defer { typingIssues = nil }
+        guard awaitFocusedElement(in: scope, timeout: seconds(command["timeoutMs"])) != nil else {
+            return error("Nothing has the input focus", ErrorKind.rejected)
+        }
+        scope.app.typeText(String(repeating: key.rawValue, count: times))
+        if let lost = typingIssues?.first {
+            return error("The input focus was lost before the key was pressed: \(lost)", ErrorKind.rejected)
+        }
+        return ok()
+    }
+
+    /// The element with the keyboard focus, once it has it: right after a tap the focus can still be on its way.
+    private func awaitFocusedElement(in scope: Scope, timeout: TimeInterval) -> XCUIElement? {
+        let deadline = Date().addingTimeInterval(timeout)
+        var focused = focusedElement(in: scope)
+        while focused == nil {
+            if Date() > deadline { return nil }
+            Thread.sleep(forTimeInterval: Self.pollSeconds)
+            focused = focusedElement(in: scope)
+        }
+        return focused
     }
 
     /// The element with the keyboard focus; no snapshot field has it, so it takes a query of its own.
