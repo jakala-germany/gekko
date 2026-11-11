@@ -276,7 +276,12 @@ class SystemRunnerTest {
         val deadline = System.currentTimeMillis() + command.timeoutMs
         var withoutText = false
         while (true) {
-            val focus = roots().firstNotNullOfOrNull { it.findFocus(AccessibilityNodeInfo.FOCUS_INPUT) }
+            // findFocus answers from the accessibility cache, which lags behind the batched text events of the app, so
+            // a field typed into a moment ago still shows its old text and cursor: refresh asks the app itself
+            val focus =
+                roots()
+                    .firstNotNullOfOrNull { it.findFocus(AccessibilityNodeInfo.FOCUS_INPUT) }
+                    ?.takeIf { it.refresh() && it.isFocused }
             if (focus != null && focus.isPassword && command.text.isNotEmpty()) {
                 // The text of a password field is bullets here, so the cursor cannot be honoured
                 return Response.Error(
