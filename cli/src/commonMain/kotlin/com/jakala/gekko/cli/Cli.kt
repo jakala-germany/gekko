@@ -17,6 +17,7 @@ import com.github.ajalt.clikt.parameters.types.int
 import com.github.ajalt.clikt.parameters.types.long
 import com.jakala.gekko.protocol.Command
 import com.jakala.gekko.protocol.GekkoVersion
+import com.jakala.gekko.protocol.Keys
 import com.jakala.gekko.protocol.Response
 import com.jakala.gekko.protocol.ScrollDirection
 import com.jakala.gekko.protocol.Selector
@@ -45,6 +46,7 @@ fun runCli(args: List<String>) {
                 TapCommand(),
                 TypeCommand(),
                 TypeFocusedCommand(),
+                PressKeyCommand(),
                 ScrollCommand(),
                 AssertCommand(),
                 ScreenshotCommand(),
@@ -311,6 +313,28 @@ private class TypeFocusedCommand : DeviceCommand("type-focused") {
 
     override fun run() {
         withDrivers { drivers, _, _ -> report(drivers.send(Command.TypeFocused(value, timeout), system)) }
+    }
+}
+
+private class PressKeyCommand : DeviceCommand("press-key") {
+    val key by argument(name = "KEY", help = "${Keys.all.joinToString()}, or an Android key code number")
+    val times by option("--times", help = "How often to press it").int().default(1)
+    val system by
+        option("--system", help = "Use the system runner (permission prompts, browser) instead of the in-app agent")
+            .flag()
+    val timeout by
+        option("--timeout", help = "Milliseconds to wait for a field with the focus")
+            .long()
+            .default(Command.DEFAULT_TIMEOUT_MS)
+
+    override fun help(context: Context): String {
+        return "Press a key: enter, backspace and tab go to the field that has the focus"
+    }
+
+    override fun run() {
+        withDrivers { drivers, _, _ ->
+            report(drivers.sendWithRunnerFallback(Command.PressKey(key, times, timeout), system))
+        }
     }
 }
 

@@ -325,8 +325,39 @@ class WebAgentClientTest {
 
         assertIs<Response.HelloResult>(hello)
         assertTrue("typeFocused" in hello.commands)
+        assertTrue("pressKey" in hello.commands)
         assertTrue("tap" in hello.commands)
         assertTrue("screenshot" !in hello.commands)
+    }
+
+    @Test
+    fun aKeyIsPressedAsOftenAsAskedWithTheNameOfTheBrowser() = runTest {
+        val bridge = FakeBridge({ page() })
+
+        val response = client(bridge).send(Command.PressKey("backspace", times = 2))
+
+        assertEquals(Response.Ok, response)
+        assertEquals(listOf("Backspace", "Backspace"), bridge.called("key").map { it["key"]!!.jsonPrimitive.content })
+    }
+
+    @Test
+    fun deleteStaysTheForwardDeleteOfTheBrowserAndOtherNamesGoThrough() = runTest {
+        val bridge = FakeBridge({ page() })
+
+        client(bridge).send(Command.PressKey("delete"))
+        client(bridge).send(Command.PressKey("Shift+A"))
+
+        assertEquals(listOf("Delete", "Shift+A"), bridge.called("key").map { it["key"]!!.jsonPrimitive.content })
+    }
+
+    @Test
+    fun backGoesBackInTheHistory() = runTest {
+        val bridge = FakeBridge({ page() })
+
+        assertEquals(Response.Ok, client(bridge).send(Command.PressKey("back")))
+
+        assertEquals(1, bridge.called("back").size)
+        assertTrue(bridge.called("key").isEmpty())
     }
 
     @Test

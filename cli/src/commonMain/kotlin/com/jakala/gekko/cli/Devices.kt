@@ -129,8 +129,6 @@ interface Recording {
 interface Device {
     fun screenshot(): ByteArray
 
-    fun pressKey(key: String)
-
     fun openLink(url: String)
 
     /** Host port (on 127.0.0.1) that reaches the in-app agent of this device; never shared between devices. */
@@ -407,18 +405,6 @@ class AdbDevice(val serial: String?) : Device {
             ?: error("adb could not forward $socket of ${serial ?: "the device"}: $output")
     }
 
-    override fun pressKey(key: String) {
-        val code =
-            when (key.lowercase()) {
-                "back" -> "4"
-                "home" -> "3"
-                "enter" -> "66"
-                "tab" -> "61"
-                else -> key
-            }
-        shell("input", "keyevent", code)
-    }
-
     override fun openLink(url: String) {
         shell("am", "start", "-a", "android.intent.action.VIEW", "-d", url)
     }
@@ -429,7 +415,7 @@ class AdbDevice(val serial: String?) : Device {
 
     override fun hideKeyboard() {
         if (shell("dumpsys", "input_method").text.contains("mInputShown=true")) {
-            pressKey("back")
+            shell("input", "keyevent", KEYCODE_BACK)
         }
     }
 
@@ -716,6 +702,8 @@ class AdbDevice(val serial: String?) : Device {
     }
 
     companion object {
+        private const val KEYCODE_BACK = "4"
+
         /** Below this API level `adb shell` returns no exit codes and has no `cmd`, which the CLI relies on. */
         const val MIN_API = 24
 
@@ -784,6 +772,16 @@ class Drivers(
     }
 
     /**
+     * Sends [command] as [send] does; a command the in-app agent answers with `unsupported` (a key it cannot press)
+     * goes to the system runner, which can do more than the agent can inside the app.
+     */
+    suspend fun sendWithRunnerFallback(command: Command, forceSystem: Boolean = false): Response {
+        val response = send(command, forceSystem)
+        val refused = response is Response.Error && response.kind == ErrorKind.UNSUPPORTED
+        return if (refused && !forceSystem) send(command, forceSystem = true) else response
+    }
+
+    /**
      * The agent answers [Response.NotForeground] by itself when the app is not in front, so the usual case costs one
      * request instead of a foreground check plus the command.
      */
@@ -847,6 +845,8 @@ class Drivers(
             is Command.LongPress -> holdMs + timeoutMs
             is Command.Type -> timeoutMs
             is Command.TypeFocused -> timeoutMs
+            // The agent waits for the focus once, and lets the app settle between two presses of a back
+            is Command.PressKey -> timeoutMs + times * KEY_PRESS_BUDGET_MS
             is Command.Scroll -> timeoutMs
             is Command.WaitFor -> timeoutMs
             is Command.WaitIdle -> timeoutMs
@@ -975,5 +975,6 @@ class Drivers(
         private const val AGENT_ANSWER_MARGIN_MS = 10_000L
         private const val FOREGROUND_GRACE_ATTEMPTS = 10
         private const val FOREGROUND_GRACE_POLL_MS = 100L
+        private const val KEY_PRESS_BUDGET_MS = 1_000L
     }
 }

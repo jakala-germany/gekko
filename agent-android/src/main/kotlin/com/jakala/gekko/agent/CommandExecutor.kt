@@ -1,6 +1,7 @@
 package com.jakala.gekko.agent
 
 import android.app.Application
+import android.os.Build
 import android.os.SystemClock
 import android.view.MotionEvent
 import android.view.View
@@ -55,6 +56,7 @@ internal class CommandExecutor(private val application: Application, private val
             is Command.LongPress -> longPress(command)
             is Command.Type -> type(command)
             is Command.TypeFocused -> typeFocused(command)
+            is Command.PressKey -> pressKey(command)
             is Command.Scroll -> scroll(command)
             is Command.Swipe -> swipe(command)
             is Command.Drag -> drag(command)
@@ -223,13 +225,24 @@ internal class CommandExecutor(private val application: Application, private val
 
     /** Waits for an element with the input focus, then types at its cursor and sees whether the field took it. */
     private fun typeFocused(command: Command.TypeFocused): Response {
-        val deadline = SystemClock.uptimeMillis() + command.timeoutMs
-        idle.await(minOf(command.timeoutMs, IDLE_WAIT_MS))
+        return withFocusedField(command.timeoutMs, needsText = command.text.isNotEmpty()) { focus ->
+            typeInto(focus, command.text)
+        }
+    }
+
+    /**
+     * Waits up to [timeoutMs] for an element with the input focus (right after a tap it can still be on its way), then
+     * runs [action] on it. Rejects when none has it by then: [needsText] tells whether an element that takes no text
+     * counts as none.
+     */
+    private fun withFocusedField(timeoutMs: Long, needsText: Boolean, action: (Element) -> Response): Response {
+        val deadline = SystemClock.uptimeMillis() + timeoutMs
+        idle.await(minOf(timeoutMs, IDLE_WAIT_MS))
         var withoutText = false
         while (true) {
             val focus = MainThread.run { focusedElement() }
-            if (focus != null && (focus.textInput != null || command.text.isEmpty())) {
-                return typeInto(focus, command.text)
+            if (focus != null && (focus.textInput != null || !needsText)) {
+                return action(focus)
             }
             withoutText = withoutText || focus != null
             if (SystemClock.uptimeMillis() > deadline) {
@@ -239,6 +252,58 @@ internal class CommandExecutor(private val application: Application, private val
             }
             Thread.sleep(POLL_MS)
         }
+    }
+
+    private fun pressKey(command: Command.PressKey): Response {
+        val code = KeyPresses.fieldKeyCode(command.key)
+        return when {
+            code != null ->
+                withFocusedField(command.timeoutMs, needsText = true) { focus ->
+                    pressTimes(command.times, settle = false) { KeyPresses.press(focus.rootView, code) }
+                }
+            KeyPresses.isBack(command.key) -> pressBack(command)
+            else -> unsupported("The in-app agent cannot press '${command.key}'; the system runner can")
+        }
+    }
+
+    /**
+     * From Android 13 an app takes back through callbacks (predictive back) that a key event handed to its window does
+     * not reach: the key is handled and nothing happens. The system runner presses the real key there.
+     */
+    private fun pressBack(command: Command.PressKey): Response {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            return unsupported(
+                "Back reaches an app through callbacks on Android 13 and newer; the system runner presses it"
+            )
+        }
+        idle.await(minOf(command.timeoutMs, IDLE_WAIT_MS))
+        return pressTimes(command.times, settle = true) {
+            val window = MainThread.run {
+                WindowRoots.all().lastOrNull { it.hasWindowFocus() && it.isAttachedToWindow }
+            }
+            window != null && KeyPresses.back(window)
+        }
+    }
+
+    /**
+     * Presses [times] times, letting the app settle between two presses when [settle] (a back can change the screen). A
+     * press nothing took (the app left the front) answers `unsupported` before the first, so the CLI asks the system
+     * runner, and `rejected` after some were delivered.
+     */
+    private fun pressTimes(times: Int, settle: Boolean, press: () -> Boolean): Response {
+        repeat(times) { done ->
+            if (done > 0 && settle) {
+                idle.await(IDLE_WAIT_MS)
+            }
+            if (!press()) {
+                return if (done == 0) {
+                    unsupported("The app did not take the key; the system runner can press it")
+                } else {
+                    rejected("The app did not take press ${done + 1} of $times")
+                }
+            }
+        }
+        return Response.Ok
     }
 
     /** The deepest element that has the focus in the windows a person can reach. */

@@ -118,14 +118,6 @@ class WebDevice(private val name: String, private val config: GekkoConfig, priva
         return Base64.decode(call("screenshot")["png"]?.jsonPrimitive?.content.orEmpty())
     }
 
-    override fun pressKey(key: String) {
-        if (key.lowercase() == "back") {
-            call("back")
-            return
-        }
-        call("key", buildJsonObject { put("key", JsonPrimitive(KEYS[key.lowercase()] ?: key)) })
-    }
-
     /** An address without a scheme is a path of the page when it starts like one, otherwise a web address. */
     override fun openLink(url: String) {
         val absolute = url.contains("://") || url.startsWith("about:") || url.startsWith("data:")
@@ -336,25 +328,5 @@ class WebDevice(private val name: String, private val config: GekkoConfig, priva
     override fun consoleLog(): String? {
         if (!ready) return null
         return call("console", buildJsonObject { put("clear", JsonPrimitive(true)) })["text"]?.jsonPrimitive?.content
-    }
-
-    private companion object {
-        val KEYS =
-            mapOf(
-                "enter" to "Enter",
-                "backspace" to "Backspace",
-                "delete" to "Delete",
-                "tab" to "Tab",
-                "escape" to "Escape",
-                "space" to "Space",
-                "home" to "Home",
-                "end" to "End",
-                "pageup" to "PageUp",
-                "pagedown" to "PageDown",
-                "up" to "ArrowUp",
-                "down" to "ArrowDown",
-                "left" to "ArrowLeft",
-                "right" to "ArrowRight",
-            )
     }
 }

@@ -164,6 +164,9 @@ object ScrollUntilSpecSerializer :
         { ScrollUntilSpec(element = it) },
     )
 
+object PressKeySpecSerializer :
+    ElementShorthandSerializer<PressKeySpec>("PressKeySpec", PressKeySpec.serializer(), { PressKeySpec(key = it) })
+
 object LongPressSpecSerializer :
     ElementShorthandSerializer<LongPressSpec>(
         "LongPressSpec",
@@ -374,6 +377,23 @@ data class SwipeSpec(
 data class TypeFocusedSpec(val value: String, val system: Boolean = false) {
     init {
         require(value.isNotEmpty()) { "typeFocused.value must not be empty; eraseText clears a field" }
+    }
+}
+
+/**
+ * Presses [key] [times] times: `enter`, `backspace`, `tab`, `back`, `home`, an Android key code number, or on the web
+ * any Playwright key name. The keys that go to a field wait for the field that has the focus. [system] sends it to the
+ * system runner instead of the in-app agent, which presses every key, inside the app or not.
+ */
+@Serializable
+data class PressKeySpec(val key: String, val times: Int = 1, val system: Boolean = false) {
+    init {
+        require(key.isNotBlank()) { "pressKey.key must not be empty" }
+        require(times >= 1) { "pressKey.times must be at least 1, was $times" }
+    }
+
+    fun describe(): String {
+        return if (times == 1) key else "$key ×$times"
     }
 }
 
@@ -626,7 +646,8 @@ data class Action(
     @Serializable(with = SelectorSpecSerializer::class) val assertVisible: SelectorSpec? = null,
     @Serializable(with = SelectorSpecSerializer::class) val assertNotVisible: SelectorSpec? = null,
     val wait: Long? = null,
-    val pressKey: String? = null,
+    /** Presses a key, `times` times: `pressKey: enter`, or `pressKey: { key: backspace, times: 2 }`. */
+    @Serializable(with = PressKeySpecSerializer::class) val pressKey: PressKeySpec? = null,
     val openLink: String? = null,
     val use: String? = null,
     val with: Map<String, String> = emptyMap(),
@@ -638,7 +659,7 @@ data class Action(
     @Serializable(with = ScrollUntilSpecSerializer::class) val scrollUntilVisible: ScrollUntilSpec? = null,
     /** Clears a text field. */
     @Serializable(with = SelectorSpecSerializer::class) val eraseText: SelectorSpec? = null,
-    /** Presses the system back button (Android). */
+    /** Presses the system back button (Android) or goes back in the history (web); iOS has no back key. */
     val back: Boolean? = null,
     val repeat: RepeatSpec? = null,
     /** Starts the app (again), optionally from cleared data. */

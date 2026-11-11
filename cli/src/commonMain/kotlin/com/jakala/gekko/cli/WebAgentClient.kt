@@ -13,6 +13,7 @@ import com.jakala.gekko.protocol.Bounds
 import com.jakala.gekko.protocol.Command
 import com.jakala.gekko.protocol.ErrorKind
 import com.jakala.gekko.protocol.GekkoVersion
+import com.jakala.gekko.protocol.Keys
 import com.jakala.gekko.protocol.MockHit
 import com.jakala.gekko.protocol.MockRule
 import com.jakala.gekko.protocol.Protocol
@@ -167,8 +168,21 @@ internal class WebAgentClient(
                 click(command.selector, command.timeoutMs, command.settleMs, count = 1, holdMs = command.holdMs)
             is Command.Type -> type(command)
             is Command.TypeFocused -> typeFocused(command)
+            is Command.PressKey -> pressKey(command)
             is Command.Scroll -> scroll(command)
         }
+    }
+
+    /** A browser has no keyboard focus to wait for: the key goes to the focused element, or to the page. */
+    private suspend fun pressKey(command: Command.PressKey): Response {
+        repeat(command.times) {
+            if (command.key.lowercase() == Keys.BACK) {
+                bridge.call("back")
+            } else {
+                bridge.call("key", buildJsonObject { put("key", JsonPrimitive(WebKeys.of(command.key))) })
+            }
+        }
+        return Response.Ok
     }
 
     private fun unsupported(message: String): Response {

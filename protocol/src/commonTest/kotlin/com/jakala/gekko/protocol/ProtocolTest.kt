@@ -2,6 +2,7 @@ package com.jakala.gekko.protocol
 
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFailsWith
 import kotlin.test.assertFalse
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
@@ -162,6 +163,26 @@ class ProtocolTest {
     }
 
     @Test
+    fun pressKeyRoundTripsWithItsWireNameAndDefaults() {
+        val command: Command = Command.PressKey(Keys.BACKSPACE, times = 5, timeoutMs = 2_000)
+
+        assertEquals(command, json.decodeFromString<Command>(json.encodeToString(command)))
+        assertTrue(json.encodeToString(command).contains("\"type\":\"pressKey\""))
+        assertEquals(
+            Command.PressKey("enter", 1, Command.DEFAULT_TIMEOUT_MS),
+            json.decodeFromString<Command>("""{"type":"pressKey","key":"enter"}"""),
+        )
+    }
+
+    @Test
+    fun pressKeyNeedsAtLeastOnePress() {
+        assertFailsWith<IllegalArgumentException> { Command.PressKey(Keys.ENTER, times = 0) }
+        assertFailsWith<IllegalArgumentException> {
+            json.decodeFromString<Command>("""{"type":"pressKey","key":"enter","times":0}""")
+        }
+    }
+
+    @Test
     fun theFocusOfANodeOnlyTravelsWhenItHasIt() {
         val json = Json { encodeDefaults = true }
         val plain = UiNode(bounds = Bounds(0, 0, 1, 1))
@@ -196,7 +217,9 @@ class ProtocolTest {
     fun theCommandNamesAreTheWireNamesOfEveryCommand() {
         val names = Command.names()
 
-        assertTrue(names.containsAll(listOf("hello", "tree", "tap", "type", "typeFocused", "drag", "mockHits")))
+        assertTrue(
+            names.containsAll(listOf("hello", "tree", "tap", "type", "typeFocused", "pressKey", "drag", "mockHits"))
+        )
         assertEquals(names.size, names.toSet().size)
     }
 }

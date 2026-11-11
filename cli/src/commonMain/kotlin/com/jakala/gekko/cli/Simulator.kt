@@ -36,10 +36,6 @@ class SimctlDevice(private val requestedUdid: String?) : Device {
         return runProcess(listOf("cat", file), mergeStderr = false).stdout
     }
 
-    override fun pressKey(key: String) {
-        error("pressKey '$key' is not supported on iOS simulators")
-    }
-
     override fun openLink(url: String) {
         val result = simctl("openurl", udid, url)
         check(result.exitCode == 0) { "Opening $url failed: ${result.text}" }

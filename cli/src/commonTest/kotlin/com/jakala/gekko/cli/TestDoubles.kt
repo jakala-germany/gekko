@@ -78,8 +78,6 @@ internal class FakeDevice(
         return ByteArray(0)
     }
 
-    override fun pressKey(key: String) {}
-
     override fun openLink(url: String) {}
 
     override fun agentPort(config: GekkoConfig): Int {

@@ -63,6 +63,22 @@ sealed interface Command {
     data class TypeFocused(val text: String, val timeoutMs: Long = DEFAULT_TIMEOUT_MS) : Command
 
     /**
+     * Presses [key] [times] times. [key] is one of [Keys.ENTER], [Keys.BACKSPACE] (erases to the left; the web's
+     * forward `delete` is not this), [Keys.TAB], [Keys.BACK], [Keys.HOME], or an Android key code number (`"66"`). The
+     * keys that go to a field (enter, backspace, tab) wait up to [timeoutMs] for an element that takes text to have the
+     * focus and answer `error` with kind `rejected` when none has it by then. Answers `ok` once the presses are
+     * delivered, and `error` with kind `unsupported` for a key the platform does not have (`back` on iOS, `home` inside
+     * the app) or this server cannot press: the CLI then asks the system runner, which can press every key.
+     */
+    @Serializable
+    @SerialName("pressKey")
+    data class PressKey(val key: String, val times: Int = 1, val timeoutMs: Long = DEFAULT_TIMEOUT_MS) : Command {
+        init {
+            require(times >= 1) { "pressKey.times must be at least 1, was $times" }
+        }
+    }
+
+    /**
      * Scrolls the scrollable container of the element by [distanceDp]. [direction] is where the wanted content is (see
      * [ScrollDirection]): `down` reveals content below, `start` and `end` follow the layout direction of the container.
      */
@@ -178,4 +194,18 @@ object ScrollDirection {
     const val RIGHT = "right"
 
     val all = listOf(DOWN, UP, START, END, LEFT, RIGHT)
+}
+
+/** The named keys of [Command.PressKey]; a key code number (`"66"`) is the Android alternative. */
+object Keys {
+    const val ENTER = "enter"
+    const val BACKSPACE = "backspace"
+    const val TAB = "tab"
+    const val BACK = "back"
+    const val HOME = "home"
+
+    /** The keys that go to the field that has the input focus. */
+    val field = listOf(ENTER, BACKSPACE, TAB)
+
+    val all = listOf(ENTER, BACKSPACE, TAB, BACK, HOME)
 }
