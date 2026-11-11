@@ -64,6 +64,8 @@
     $('password').addEventListener('input', () => { $('password-length').textContent = 'Password: ' + $('password').value.length })
 
     $('greet').addEventListener('click', () => { $('greeting').textContent = 'Hello ' + $('name').value })
+    // Enter in the field greets, as the button does
+    $('name').addEventListener('keydown', (event) => { if (event.key === 'Enter') $('greet').click() })
 
     $('locate').addEventListener('click', () => {
       navigator.geolocation.getCurrentPosition(

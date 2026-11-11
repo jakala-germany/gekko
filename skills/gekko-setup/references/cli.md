@@ -32,6 +32,7 @@ Without `-s`, Android uses the one attached device, iOS the one booted simulator
 | `gekko tap SELECTOR` | Tap an element; when the in-app agent's accessibility tap is not handled, the tap is repeated as a real touch through the system runner |
 | `gekko type SELECTOR "text"` | Type into an element (replaces its text) |
 | `gekko type-focused "text"` | Type at the cursor of the field that has the focus (adds to its text); waits up to `--timeout` for a field to get the focus, `--system` uses the system runner |
+| `gekko press-key KEY [--times N]` | Press a key: `enter`, `backspace` (erases to the left), `tab`, `back`, `home` or an Android key code number. `enter`, `backspace` and `tab` go to the field that has the focus and wait up to `--timeout` for one; a key the in-app agent cannot press goes to the system runner, `--system` uses it at once |
 | `gekko scroll SELECTOR [--direction D] [--distance DP]` | Scroll the container of an element; `--direction` is where the wanted content is: `down` (default), `up`, `start`, `end`, `left`, `right`; `--distance` in dp, points on iOS, CSS pixels on the web (default 400) |
 | `gekko assert SELECTOR [--gone]` | Wait until the element is visible (or, with `--gone`, not visible); exit 1 when it is not within `--timeout` |
 | `gekko screenshot FILE` | Save a screenshot as PNG |

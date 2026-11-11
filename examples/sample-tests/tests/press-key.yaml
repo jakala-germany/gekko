@@ -1,0 +1,15 @@
+name: Keys erase text and submit a field
+tags: [keys]
+steps:
+  - say: Put the focus into the name field by tapping it
+    do: { tap: { id: sample.name } }
+  - say: Type the name at the cursor
+    do: { typeFocused: { value: Ada } }
+  - say: Erase two characters with one request
+    do: { pressKey: { key: backspace, times: 2 } }
+  - say: The field holds what is left
+    do: { assertVisible: { id: sample.name, text: "A" } }
+  - say: Submit the field with the enter key
+    do: { pressKey: enter }
+  - say: The submit greeted
+    do: { assertVisible: { id: sample.greeting, text: "Hello A" } }
