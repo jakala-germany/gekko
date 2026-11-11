@@ -116,6 +116,31 @@ enum ElementActions {
         return .unchanged
     }
 
+    /// The keys that go to the field that has the focus.
+    enum FieldKey: String {
+        case enter
+        case backspace
+        case tab
+    }
+
+    /// Sends `key` `times` times to the first responder, the path the keyboard takes: a return reaches the delegate and
+    /// the submit action of the field (a text view takes a new line), a backspace erases before the cursor, also in a
+    /// secure field. A tab types a tab character: the software keyboard has no key that moves the focus.
+    static func pressFieldKey(_ key: FieldKey, times: Int) -> FocusTyping {
+        guard let view = TreeReader.focusedView() else { return .nothingFocused }
+        guard let input = view as? UIKeyInput else { return .notEditable }
+        for _ in 0 ..< times {
+            switch key {
+            case .enter: input.insertText("\n")
+            case .backspace: input.deleteBackward()
+            case .tab: input.insertText("\t")
+            }
+        }
+        // The app reacts a moment later (a submit changes the screen, a binding the state)
+        spin(changePollSeconds)
+        return .typed
+    }
+
     private static func contents(of view: UIView) -> String? {
         if let field = view as? UITextField { return field.text ?? "" }
         if let textView = view as? UITextView { return textView.text ?? "" }

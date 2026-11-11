@@ -10,8 +10,8 @@ final class CommandExecutor {
     private static let protocolVersion = 2
     /// The commands this agent serves, as `hello` lists them. Keep in sync with the cases of `execute`.
     private static let servedCommands = [
-        "hello", "metrics", "tree", "foreground", "waitIdle", "tap", "tapAt", "type", "typeFocused", "scroll", "drag",
-        "hideKeyboard", "setMocks", "clearMocks", "mockHits",
+        "hello", "metrics", "tree", "foreground", "waitIdle", "tap", "tapAt", "type", "typeFocused", "pressKey", "scroll",
+        "drag", "hideKeyboard", "setMocks", "clearMocks", "mockHits",
     ]
     /// Set to 0 to skip checking that a tap changed anything.
     private static let verifyTaps = ProcessInfo.processInfo.environment["GEKKO_TAP_VERIFY"] != "0"
@@ -36,6 +36,7 @@ final class CommandExecutor {
         case "tapAt": return tapAt(command)
         case "type": return typeText(command)
         case "typeFocused": return typeFocused(command)
+        case "pressKey": return pressKey(command)
         case "scroll": return scroll(command)
         case "drag": return drag(command)
         case "hideKeyboard": return hideKeyboard()
@@ -121,6 +122,30 @@ final class CommandExecutor {
             switch onMain({ ElementActions.typeAtFocus(text) }) {
             case .typed: return ok()
             case .unchanged: return failure("The focused field did not take the text", ErrorKind.rejected)
+            case .notEditable: reason = "The focused element does not take text"
+            case .nothingFocused: reason = "Nothing has the input focus"
+            }
+            if Date() > deadline { return failure(reason, ErrorKind.rejected) }
+            Thread.sleep(forTimeInterval: Self.pollSeconds)
+        }
+    }
+
+    /// The keys of a field go to the first responder, once an element that takes text has the focus; `back` does not exist
+    /// on iOS and `home` is outside the app, so those are the system runner's, as is anything else.
+    private func pressKey(_ command: [String: Any]) -> [String: Any] {
+        guard let name = (command["key"] as? String)?.lowercased() else { return failure("pressKey needs a key", ErrorKind.unsupported) }
+        if name == "back" { return failure("iOS has no back key", ErrorKind.unsupported) }
+        guard let key = ElementActions.FieldKey(rawValue: name) else {
+            return failure("The in-app agent cannot press '\(name)'; the system runner can", ErrorKind.unsupported)
+        }
+        let times = max((command["times"] as? NSNumber)?.intValue ?? 1, 1)
+        let timeout = seconds(command["timeoutMs"])
+        _ = waitIdle(timeout: min(timeout, Self.idleWaitSeconds))
+        let deadline = Date().addingTimeInterval(timeout)
+        while true {
+            let reason: String
+            switch onMain({ ElementActions.pressFieldKey(key, times: times) }) {
+            case .typed, .unchanged: return ok()
             case .notEditable: reason = "The focused element does not take text"
             case .nothingFocused: reason = "Nothing has the input focus"
             }
