@@ -398,6 +398,47 @@ class ModelTest {
     }
 
     @Test
+    fun parsesAKeyPressUntilAnElementHasTheFocus() {
+        val spelled =
+            Yamls.parse(Step.serializer(), "do: { pressKey: { key: down, until: { id: row.sports }, max: 5 } }")
+        val shorthand = Yamls.parse(Step.serializer(), "do: { pressKey: { key: down, until: row.sports } }")
+
+        val spec = spelled.action.pressKey!!
+        assertEquals(PlatformId(shared = "row.sports"), spec.until!!.id)
+        assertEquals(5, spec.limit)
+        assertEquals("down until row.sports has the focus", spec.describe())
+        assertEquals(PressKeySpec.DEFAULT_MAX_PRESSES, shorthand.action.pressKey!!.limit)
+        assertEquals("row.sports", shorthand.action.pressKey!!.until!!.element)
+        assertEquals(listOf(PlatformId(shared = "row.sports")), spelled.action.platformIds())
+    }
+
+    @Test
+    fun aKeyPressEitherCountsOrWaitsForTheFocus() {
+        fun rejection(yaml: String): String {
+            return assertFailsWith<Exception> { Yamls.parse(Step.serializer(), yaml) }.message.orEmpty()
+        }
+
+        assertTrue(rejection("do: { pressKey: { key: down, times: 2, until: { id: x } } }").contains("either times"))
+        assertTrue(rejection("do: { pressKey: { key: down, max: 3 } }").contains("only goes with until"))
+        assertTrue(rejection("do: { pressKey: { key: down, until: { id: x }, max: 0 } }").contains("at least 1"))
+    }
+
+    @Test
+    fun parsesAssertFocusedWithTheKeysOfASelector() {
+        val spelled = Yamls.parse(Step.serializer(), "do: { assertFocused: { id: home.teaser, index: 1 } }")
+        val shorthand = Yamls.parse(Step.serializer(), "do: { assertFocused: home.teaser }")
+
+        assertEquals(listOf("assertFocused"), spelled.action.names())
+        assertEquals(1, spelled.action.assertFocused!!.index)
+        assertEquals(listOf(PlatformId(shared = "home.teaser")), spelled.action.platformIds())
+        assertEquals("home.teaser", shorthand.action.assertFocused!!.element)
+        assertFailsWith<Exception> { Yamls.parse(Step.serializer(), "do: { assertFocused: { index: 1 } }") }
+        assertFailsWith<Exception> {
+            Yamls.parse(Step.serializer(), "do: { assertFocused: { id: a }, assertVisible: { id: a } }")
+        }
+    }
+
+    @Test
     fun rejectsAKeyPressWithoutAKeyOrWithoutAPress() {
         assertFailsWith<Exception> { Yamls.parse(Step.serializer(), "do: { pressKey: { times: 2 } }") }
         assertFailsWith<Exception> { Yamls.parse(Step.serializer(), "do: { pressKey: { key: enter, times: 0 } }") }

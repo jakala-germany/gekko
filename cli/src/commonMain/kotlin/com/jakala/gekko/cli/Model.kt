@@ -381,19 +381,54 @@ data class TypeFocusedSpec(val value: String, val system: Boolean = false) {
 }
 
 /**
- * Presses [key] [times] times: `enter`, `backspace`, `tab`, `back`, `home`, an Android key code number, or on the web
- * any Playwright key name. The keys that go to a field wait for the field that has the focus. [system] sends it to the
- * system runner instead of the in-app agent, which presses every key, inside the app or not.
+ * Presses [key] [times] times: `enter`, `backspace`, `tab`, `back`, `home`, a button of a TV remote (`up`, `down`,
+ * `left`, `right`, `select`, `playPause`, `menu`), an Android key code number, or on the web any Playwright key name.
+ * The keys that go to a field wait for the field that has the focus. [system] sends it to the system runner instead of
+ * the in-app agent, which presses every key, inside the app or not.
+ *
+ * With [until] the key is pressed until that element has the focus, at most [max] times ([DEFAULT_MAX_PRESSES] when not
+ * given), and the step fails as soon as a press did not move the focus. It goes with a button that moves the focus, not
+ * with [times].
  */
 @Serializable
-data class PressKeySpec(val key: String, val times: Int = 1, val system: Boolean = false) {
+data class PressKeySpec(
+    val key: String,
+    val times: Int? = null,
+    val system: Boolean = false,
+    @Serializable(with = SelectorSpecSerializer::class) val until: SelectorSpec? = null,
+    val max: Int? = null,
+) {
     init {
         require(key.isNotBlank()) { "pressKey.key must not be empty" }
-        require(times >= 1) { "pressKey.times must be at least 1, was $times" }
+        require(times == null || times >= 1) { "pressKey.times must be at least 1, was $times" }
+        require(until == null || times == null) {
+            "pressKey takes either times or until: until presses until the element has the focus"
+        }
+        require(max == null || until != null) { "pressKey.max only goes with until" }
+        require(max == null || max >= 1) { "pressKey.max must be at least 1, was $max" }
     }
 
+    /** How often the key is pressed without [until]. */
+    val count: Int
+        get() = times ?: 1
+
+    /** The most presses [until] gets. */
+    val limit: Int
+        get() = max ?: DEFAULT_MAX_PRESSES
+
     fun describe(): String {
-        return if (times == 1) key else "$key ×$times"
+        val target = until?.let {
+            it.element ?: it.id?.let { id -> id.shared ?: id.android ?: id.ios ?: id.web } ?: it.text
+        }
+        return when {
+            until != null -> "$key until ${target ?: "the element"} has the focus"
+            count == 1 -> key
+            else -> "$key ×$count"
+        }
+    }
+
+    companion object {
+        const val DEFAULT_MAX_PRESSES = 20
     }
 }
 
@@ -645,8 +680,13 @@ data class Action(
     val drag: DragSpec? = null,
     @Serializable(with = SelectorSpecSerializer::class) val assertVisible: SelectorSpec? = null,
     @Serializable(with = SelectorSpecSerializer::class) val assertNotVisible: SelectorSpec? = null,
+    /** Passes when the element has the focus (a TV remote moves it): `assertFocused: { id: home.teaser, index: 1 }`. */
+    @Serializable(with = SelectorSpecSerializer::class) val assertFocused: SelectorSpec? = null,
     val wait: Long? = null,
-    /** Presses a key, `times` times: `pressKey: enter`, or `pressKey: { key: backspace, times: 2 }`. */
+    /**
+     * Presses a key, `times` times: `pressKey: enter`, or `pressKey: { key: backspace, times: 2 }`; with `until` as
+     * often as it takes for an element to have the focus: `pressKey: { key: down, until: { id: row.sports } }`.
+     */
     @Serializable(with = PressKeySpecSerializer::class) val pressKey: PressKeySpec? = null,
     val openLink: String? = null,
     val use: String? = null,
@@ -734,6 +774,7 @@ data class Action(
             "drag".takeIf { drag != null },
             "assertVisible".takeIf { assertVisible != null },
             "assertNotVisible".takeIf { assertNotVisible != null },
+            "assertFocused".takeIf { assertFocused != null },
             "wait".takeIf { wait != null },
             "pressKey".takeIf { pressKey != null },
             "openLink".takeIf { openLink != null },
@@ -775,6 +816,8 @@ data class Action(
                 drag?.from?.let { listOfNotNull(it.id, it.within) },
                 assertVisible?.let { listOfNotNull(it.id, it.within) },
                 assertNotVisible?.let { listOfNotNull(it.id, it.within) },
+                assertFocused?.let { listOfNotNull(it.id, it.within) },
+                pressKey?.until?.let { listOfNotNull(it.id, it.within) },
                 doubleTap?.let { listOfNotNull(it.id, it.within) },
                 longPress?.let { listOfNotNull(it.id, it.within) },
                 scrollUntilVisible?.let {

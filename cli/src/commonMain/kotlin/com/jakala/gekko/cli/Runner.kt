@@ -286,6 +286,7 @@ class TestRunner(
             clock = { device.deviceTime() },
         )
     private val settleMs = project.config.settleMs
+    private val focus = FocusWaiter(drivers, settleMs)
 
     /** The pane whose action is running: its element names are written without the pane. */
     private var scope: String? = null
@@ -732,6 +733,12 @@ class TestRunner(
         action.assertVisible?.let {
             return it.toSelector(platform)
         }
+        action.assertFocused?.let {
+            return it.toSelector(platform)
+        }
+        action.pressKey?.until?.let {
+            return it.toSelector(platform)
+        }
         action.type?.let {
             return it.selector(platform)
         }
@@ -979,6 +986,7 @@ class TestRunner(
                 assertVisible(action.assertVisible.toSelector(platform), timeout, true, settle)
             action.assertNotVisible != null ->
                 assertVisible(action.assertNotVisible.toSelector(platform), timeout, false, settle)
+            action.assertFocused != null -> assertFocused(action.assertFocused.toSelector(platform), timeout, settle)
             action.wait != null -> delay(action.wait)
             action.pressKey != null -> pressKey(action.pressKey, timeout)
             action.doubleTap != null ->
@@ -1045,7 +1053,19 @@ class TestRunner(
      * of an app that is not in front) it answers `unsupported`, and the system runner, which presses any key, gets it.
      */
     private suspend fun pressKey(spec: PressKeySpec, timeout: Long) {
-        expectOk(drivers.sendWithRunnerFallback(Command.PressKey(spec.key, spec.times, timeout), spec.system))
+        val until = spec.until
+        if (until == null) {
+            expectOk(drivers.sendWithRunnerFallback(Command.PressKey(spec.key, spec.count, timeout), spec.system))
+            return
+        }
+        focus.pressUntil(spec.key, until.toSelector(platform), spec.limit, timeout, spec.system)?.let {
+            throw StepFailure(it)
+        }
+    }
+
+    /** Passes once the element has the focus, which a remote moves; the failure names where the focus is. */
+    private suspend fun assertFocused(selector: Selector, timeout: Long, settle: Boolean) {
+        focus.awaitFocus(selector, timeout, settle)?.let { throw StepFailure(it) }
     }
 
     /** Device commands report problems as IllegalStateException; a test sees them as a failed step. */
@@ -1698,6 +1718,8 @@ class TestRunner(
                 "assert visible ${action.assertVisible.element ?: action.assertVisible.toSelector(platform)}"
             action.assertNotVisible != null ->
                 "assert not visible ${action.assertNotVisible.element ?: action.assertNotVisible.toSelector(platform)}"
+            action.assertFocused != null ->
+                "assert focused ${action.assertFocused.element ?: action.assertFocused.toSelector(platform)}"
             action.assertPane != null -> "assert pane ${action.assertPane}"
             action.wait != null -> "wait ${action.wait}ms"
             action.pressKey != null -> "press ${action.pressKey.describe()}"

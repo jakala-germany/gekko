@@ -123,6 +123,94 @@ class RunnerTest {
             do: { setLocation: { latitude: 53.5511, longitude: 9.9937 } }
         """
 
+    /** Three teasers side by side, the one at [focus] has the focus. */
+    private fun teaserRow(focus: Int): List<UiNode> {
+        val cards =
+            (0 until 3).map { index ->
+                UiNode(
+                    id = "home.teaser",
+                    text = "Teaser $index",
+                    bounds = Bounds(index * 100, 100, index * 100 + 90, 160),
+                    focused = index == focus,
+                    actions = listOf("click"),
+                )
+            }
+        return listOf(UiNode(bounds = Bounds(0, 0, 400, 300), children = cards))
+    }
+
+    /** An app with a row of teasers: every press of a key moves the focus one teaser on. */
+    private fun remoteAgent(seen: MutableList<Command>, focus: IntArray): FakeClient {
+        return FakeClient { command ->
+            seen += command
+            when (command) {
+                Command.Foreground -> Response.ForegroundResult(true)
+                Command.Tree -> Response.TreeResult(teaserRow(focus[0]))
+                is Command.PressKey -> {
+                    focus[0] = minOf(focus[0] + 1, 2)
+                    Response.Ok
+                }
+                else -> Response.Ok
+            }
+        }
+    }
+
+    @Test
+    fun aTestMovesTheFocusWithTheRemoteAndChecksIt() = runTest {
+        val seen = mutableListOf<Command>()
+        val runner = runner(Platform.Android, remoteAgent(seen, intArrayOf(0)), suggestIds = false)
+
+        val result =
+            runner.run(
+                test(
+                    """
+                    name: Remote
+                    steps:
+                      - do: { assertFocused: { id: home.teaser } }
+                      - do: { pressKey: { key: right, until: { id: home.teaser, index: 2 } } }
+                      - do: { assertFocused: { id: home.teaser, index: 2 } }
+                    """
+                ),
+                "tests/remote.yaml",
+            )
+
+        assertNull(result.failure)
+        assertEquals(listOf("right", "right"), seen.filterIsInstance<Command.PressKey>().map { it.key })
+        assertEquals(
+            listOf(
+                "assert focused Selector(id=home.teaser)",
+                "press right until home.teaser has the focus",
+                "assert focused Selector(id=home.teaser, index=2)",
+            ),
+            result.steps.map { it.description }.takeLast(3),
+        )
+    }
+
+    @Test
+    fun aFocusOnAnotherElementFailsTheStepAndSaysWhereItIs() = runTest {
+        val runner = runner(Platform.Android, remoteAgent(mutableListOf(), intArrayOf(0)), suggestIds = false)
+
+        val result =
+            runner.run(
+                test(
+                    """
+                    name: Remote
+                    steps:
+                      - say: The second teaser has the focus
+                        do: { assertFocused: { id: home.teaser, index: 1 } }
+                        timeout: 100
+                    """
+                ),
+                "tests/remote.yaml",
+            )
+
+        assertTrue(
+            result.failure!!.contains(
+                "Expected focused: Selector(id=home.teaser, index=1) (focus is on home.teaser \"Teaser 0\")"
+            ),
+            result.failure,
+        )
+    }
+
     @Test
     fun anEmulatorTakesTheLocationFromItsConsole() = runTest {
         val device = FakeDevice(supportsWaitFor = true)

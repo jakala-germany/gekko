@@ -35,6 +35,8 @@ internal fun Action.resolved(resolve: (String) -> String): Action {
         swipe = swipe?.copy(from = swipe.from?.resolved(resolve)),
         assertVisible = assertVisible?.resolved(resolve),
         assertNotVisible = assertNotVisible?.resolved(resolve),
+        assertFocused = assertFocused?.resolved(resolve),
+        pressKey = pressKey?.copy(until = pressKey.until?.resolved(resolve)),
         openLink = openLink?.let(resolve),
         with = with.mapValues { resolve(it.value) },
         doubleTap = doubleTap?.resolved(resolve),
