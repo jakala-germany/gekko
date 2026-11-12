@@ -2,7 +2,19 @@
 
 ## [Snapshot]
 
-[Snapshot]: https://github.com/jakala-germany/gekko/compare/1.3.0...HEAD
+[Snapshot]: https://github.com/jakala-germany/gekko/compare/1.4.0...HEAD
+
+**New**
+
+- Upcoming additions go here
+
+**Changed**
+
+- Upcoming changes go here
+
+## [1.4.0]
+
+[1.4.0]: https://github.com/jakala-germany/gekko/compare/1.3.0...1.4.0
 
 **New**
 
@@ -17,7 +29,6 @@
 - `scripts/install.ps1` installs the Windows binary and the Android runner to `~\.gekko\bin` (added to the user `PATH`) and removes them again with `-Uninstall`; `scripts/install.sh` hands over to it in Git Bash
 - The CLI starts every program without a shell and without `perl`: the time limit, the standard input and the working directory are part of the call. Heal prompts reach `claude` and `opencode` on their standard input, and the web bridge is started detached by the CLI itself
 - `gradlew.bat`, `.gitattributes` (LF everywhere) and a Windows job in CI that tests the Windows binary and, after a merge, runs the web sample tests
-- Upcoming additions go here
 
 **Security**
 
@@ -35,7 +46,6 @@
 - Android: the system runner holds a `longPress` for `holdMs` and makes `swipe` and `scroll` in a fraction of a second ([#31](https://github.com/jakala-germany/gekko/issues/31)). It stepped through `UiDevice.swipe`, which waits for a frame of the runner's own process (it draws nothing) after every step, so a step took far longer than the 5 ms it was meant to: a long press of 700 ms lasted several seconds (17.8 s on one emulator) and a swipe moved too slowly to fling. The runner now injects the touches with event times of its own, and a `scroll` through it moves the content by its distance and stops (the finger no longer loses the touch slop). A `swipe` through the runner now flings as it does through the agent, so a test that swiped through it may scroll further than before
 - `swipe` honours `durationMs` on every platform ([#34](https://github.com/jakala-germany/gekko/issues/34)): the Android agent moves once per frame over the duration, the Android runner (see above) and the iOS runner take as long as asked, and a short swipe flings while a long one barely moves the content past the finger. The iOS agent cannot make a fling (it set the scroll offset, whatever the duration), so on iOS a `swipe` is now a real touch of the system runner and takes about a second more
 - `scrollUntilVisible` drags instead of swiping ([#34](https://github.com/jakala-germany/gekko/issues/34)): it moves the list by half a viewport per step and lets go, so a fling can no longer carry it past the element, and its nudge near a sticky bar is exact. A fling used to cover more ground on Android, so a very long list may need a higher `maxScrolls`. The web still turns the mouse wheel
-- Upcoming changes go here
 
 **Fixed**
 
