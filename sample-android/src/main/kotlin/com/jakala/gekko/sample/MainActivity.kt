@@ -2,6 +2,7 @@ package com.jakala.gekko.sample
 
 import android.annotation.SuppressLint
 import android.content.Context
+import android.content.pm.PackageManager
 import android.location.Location
 import android.location.LocationListener
 import android.location.LocationManager
@@ -48,7 +49,14 @@ import okhttp3.Request
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        setContent { SampleApp() }
+        val television = isTelevision()
+        setContent { if (television) TvSample() else SampleApp() }
+    }
+
+    /** A TV shows the screen of a TV app; `screen=tv` as a start argument shows it on any device. */
+    private fun isTelevision(): Boolean {
+        return packageManager.hasSystemFeature(PackageManager.FEATURE_LEANBACK) ||
+            intent.getStringExtra("screen") == "tv"
     }
 }
 

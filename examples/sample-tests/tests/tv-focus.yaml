@@ -1,0 +1,19 @@
+name: TV the remote moves the focus and opens a teaser
+tags: [tv]
+steps:
+  - say: The first teaser has the focus after the app started
+    do: { assertFocused: { id: sample.teaser.1 } }
+  - say: Move one teaser to the right
+    do: { pressKey: right }
+  - say: The second teaser has the focus now
+    do: { assertFocused: { id: sample.teaser.2 } }
+  - say: Go down to the last row
+    do: { pressKey: { key: down, until: { id: sample.teaser.8 }, max: 5 } }
+  - say: Open the teaser with the select button
+    do: { pressKey: select }
+  - say: The eighth teaser was opened
+    do: { assertVisible: { id: sample.teaser.opened, text: "Opened: 8" } }
+  - say: Go up two rows at once
+    do: { pressKey: { key: up, times: 2 } }
+  - say: The second teaser has the focus again
+    do: { assertFocused: { id: sample.teaser.2 } }
