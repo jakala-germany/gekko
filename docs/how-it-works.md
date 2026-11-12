@@ -118,6 +118,7 @@ A folder with a `group.yaml` is a group: its `setup:` flows (a login) run once i
 ## Limits
 
 - iOS works on **simulators only**; real devices are not supported yet.
+- A TV (Android TV / Google TV, Apple TV simulators) is driven with the remote: there is no touch, so `tap`, `scroll`, `swipe`, `drag`, `longPress` and `doubleTap` fail there and `type` needs the focus on the field. The remote buttons are pressed by the system runner (an app cannot inject key events into its own window): on Android through UiAutomator key codes, on tvOS through `XCUIRemote`, which needs the system runner for the tvOS simulator. Where the focus is comes from the same tree as everything else (`focused`); the iOS agent reads it from the focus engine on an Apple TV and from the keyboard focus on an iPhone.
 - The agent needs ids. Missing ids can be worked around with `--heal`, but the durable fix is a tag or identifier in the app (a `data-testid` on the web).
 - On iOS a tap through accessibility can be a no-op for SwiftUI tap gestures. Retries (`attempts` with `until`) and `--heal` use a real touch through the system runner.
 - `launchPackage` and `stopPackage` are Android only; `setAirplaneMode` works on Android and the web, not on iOS simulators, and `back` and a `pressKey` with a key code do not work on iOS simulators either (`enter`, `backspace`, `tab` and `home` do). Limit such steps with `platform: android` or a list such as `platform: [android, web]`.

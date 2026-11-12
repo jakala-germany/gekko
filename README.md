@@ -18,6 +18,7 @@ https://github.com/user-attachments/assets/221b71c0-87d5-4141-b0df-c3e5ea8f4fcd
 ## What it does
 
 - **Fast.** On Android and iOS an in-app agent reads the UI tree directly and taps through accessibility actions; on the web a script injected into the page does the same: steps take 10 ms to about 1 s.
+- **TV apps.** Android TV / Google TV and Apple TV simulators are driven with the remote: `pressKey: down`, `assertFocused`, and `pressKey` with `until` to move the focus to an element (and to find a focus trap). See [TV](skills/gekko-author/references/format.md#tv-android-tv-apple-tv).
 - **Write once.** One test file, shared ids, optional `platform:` on steps (one name or a list), `do` or `until` where the platforms differ.
 - **Reusable flows.** Login or onboarding is defined once and reused with `use:`. A folder with a `group.yaml` makes its tests share one login: the setup flows run once, the tests follow in one session, and a failed setup skips them.
 - **Panes.** A screen is written once, in `panes/login.yaml`: its elements (one selector, or one per platform), what proves it is shown and the actions you do on it. Tests say `tap: login.submit`, `assertPane: login` or `use: login.signIn`, so a renamed id is fixed in one file, not in every test. See [panes](skills/gekko-author/references/format.md#panes).
