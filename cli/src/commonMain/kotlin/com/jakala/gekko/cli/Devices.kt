@@ -225,8 +225,7 @@ interface Device {
 
     /** The clock of the device for `${now(...)}`; unless a device has a clock of its own, the one of this computer. */
     fun deviceTime(): DeviceTime {
-        val offset = runCatching { parseUtcOffset(runProcess(listOf("date", "+%z")).text) }.getOrNull() ?: 0
-        return DeviceTime(nowMillis(), offset)
+        return DeviceTime(nowMillis(), hostUtcOffsetMinutes())
     }
 
     /**
@@ -475,7 +474,7 @@ class AdbDevice(val serial: String?) : Device {
             }
         } finally {
             shell("rm", "-rf", remoteDirectory)
-            runProcess(listOf("rm", "-rf", localDirectory))
+            removeRecursively(localDirectory)
         }
     }
 

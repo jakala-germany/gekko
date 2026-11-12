@@ -31,10 +31,17 @@ How the CLI, the in-app agent, the system runner and the web bridge fit together
 
 From zero to a first passing test on an Android app. You need `adb` and a running emulator or device (API 24 or newer).
 
-1. **Install the CLI** (macOS arm64 or Linux x64) and put `~/.local/bin` on your `PATH`:
+1. **Install the CLI** (macOS arm64, Linux x64 or Windows x64) and put `~/.local/bin` on your `PATH`:
 
    ```bash
    curl -fsSL https://raw.githubusercontent.com/jakala-germany/gekko/1.3.0/scripts/install.sh | bash -s -- 1.3.0
+   gekko --version
+   ```
+
+   On Windows (not released yet: the first release after 1.3.0) run this in PowerShell instead; it installs to `%USERPROFILE%\.gekko\bin` and adds that folder to your `PATH`, so open a new terminal afterwards. In Git Bash the `curl ... | bash` command above works too and hands over to `install.ps1`:
+
+   ```powershell
+   & ([scriptblock]::Create((irm https://raw.githubusercontent.com/jakala-germany/gekko/main/scripts/install.ps1))) -Version latest
    gekko --version
    ```
 
@@ -230,8 +237,8 @@ Workflow templates for pull requests, nightly runs and an app repository are in 
 
 ## Requirements
 
-- **Host:** macOS arm64 or Linux x64 (iOS needs macOS). The CLI is a native binary and needs no JVM; it uses `unzip` and `perl`.
-- **Android:** `adb`; the agent needs minSdk 21, the emulator or device that runs the tests API 24 (Android 7.0) or newer.
+- **Host:** macOS arm64, Linux x64 or Windows x64 (iOS needs macOS). The CLI is a native binary and needs no JVM, no Perl and no shell; `--heal api` uses `curl` (Windows 10 and newer ship it). On Windows `~/.gekko` is `%USERPROFILE%\.gekko`.
+- **Android:** `adb` (on Windows the platform-tools of the Android SDK on your `PATH`); the agent needs minSdk 21, the emulator or device that runs the tests API 24 (Android 7.0) or newer.
 - **iOS:** simulators only, iOS 15 or newer, Xcode with a simulator.
 - **Web:** Node.js 18 or newer; `gekko install --platform web` downloads Playwright and the browsers (on Linux CI add `--with-deps`).
 - **Compatibility:** semver from 1.0 for the YAML format, `gekko.yaml`, the CLI and the Gradle plugin; details in the [CLI reference](skills/gekko-setup/references/cli.md).

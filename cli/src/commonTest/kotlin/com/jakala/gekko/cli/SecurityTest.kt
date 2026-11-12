@@ -22,12 +22,14 @@ class SecurityTest {
 
     @Test
     fun aTestReadsOnlyTheVariablesGekkoYamlDeclares() {
-        val access = EnvAccess(setOf("HOME"), emptyMap())
-        assertTrue(Yamls.substitute("user: \"\${env.HOME}\"", emptyMap(), access).startsWith("user: \""))
+        // A variable that every host has (and that is not a secret): the home of the user
+        val home = if (isWindowsHost) "USERPROFILE" else "HOME"
+        val access = EnvAccess(setOf(home), emptyMap())
+        assertTrue(Yamls.substitute("user: \"\${env.$home}\"", emptyMap(), access).startsWith("user: \""))
         val error =
             assertFailsWith<IllegalArgumentException> { Yamls.substitute("x: \"\${env.PATH}\"", emptyMap(), access) }
         assertTrue(error.message.orEmpty().contains("declare PATH"))
-        assertFailsWith<IllegalArgumentException> { Yamls.substitute("x: \"\${env.HOME}\"", emptyMap()) }
+        assertFailsWith<IllegalArgumentException> { Yamls.substitute("x: \"\${env.$home}\"", emptyMap()) }
     }
 
     @Test
@@ -36,10 +38,20 @@ class SecurityTest {
         val second = createPrivateDirectory("gekko-test")
         try {
             assertNotEquals(first, second)
-            assertTrue(first.startsWith("/tmp/gekko-test-"))
-            assertTrue(runProcess(listOf("ls", "-ld", first)).text.startsWith("drwx------"))
+            assertTrue(first.startsWith("${tempDirectory()}/gekko-test-"))
+            if (isWindowsHost) {
+                // The DACL names the current user and nobody else: no SYSTEM, no administrators, no group of users
+                val acl = runProcess(listOf("icacls", first.replace('/', '\\'))).text
+                assertTrue(acl.contains("(F)"), acl)
+                for (other in listOf("BUILTIN\\Administrators", "NT AUTHORITY\\SYSTEM", "BUILTIN\\Users", "Everyone")) {
+                    assertFalse(acl.contains(other), acl)
+                }
+            } else {
+                assertTrue(runProcess(listOf("ls", "-ld", first)).text.startsWith("drwx------"))
+            }
         } finally {
-            runProcess(listOf("rm", "-rf", first, second))
+            removeRecursively(first)
+            removeRecursively(second)
         }
     }
 
@@ -47,7 +59,12 @@ class SecurityTest {
     fun theSecretsOfGekkoAndCiCannotBeDeclared() {
         for (name in listOf("GEKKO_LLM_API_KEY", "GITHUB_TOKEN", "OP_SERVICE_ACCOUNT_TOKEN", "ACTIONS_RUNTIME_TOKEN")) {
             assertFailsWith<IllegalArgumentException>(name) { EnvAccess(setOf(name), emptyMap()) }
+            // Windows finds a variable whatever its case is, so a spelling in lower case is the same secret there
+            assertFailsWith<IllegalArgumentException>(name.lowercase()) {
+                EnvAccess(setOf(name.lowercase()), emptyMap())
+            }
         }
+        assertFailsWith<IllegalArgumentException> { EnvAccess(setOf("Gekko_Llm_Api_Key"), emptyMap()) }
         assertFailsWith<IllegalArgumentException> { EnvAccess(setOf("not a name"), emptyMap()) }
     }
 

@@ -17,7 +17,7 @@ class GroupTest {
 
     private fun project(files: Map<String, String>): Project {
         // Every test starts from an empty folder: files of an earlier test must not become tests or groups of this one
-        runProcess(listOf("rm", "-rf", root))
+        removeRecursively(root)
         files.forEach { (name, text) ->
             makeDirs("$root/${name.substringBeforeLast('/')}")
             writeTextFile("$root/$name", text.trimIndent())

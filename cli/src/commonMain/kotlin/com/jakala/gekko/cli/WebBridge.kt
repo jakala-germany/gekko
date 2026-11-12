@@ -20,10 +20,7 @@ import kotlinx.serialization.json.jsonPrimitive
 /** Where gekko keeps what the web platform needs: Playwright, the scripts of a session and the list of sessions. */
 object WebHome {
     fun directory(): String {
-        val home =
-            env("GEKKO_HOME")
-                ?: env("HOME")?.let { "$it/.gekko" }
-                ?: error("HOME is not set; gekko keeps its files in ~/.gekko")
+        val home = gekkoHome() ?: error("HOME (USERPROFILE on Windows) is not set; gekko keeps its files in ~/.gekko")
         return "$home/web"
     }
 }
@@ -67,7 +64,7 @@ object WebSessions {
                     Json.parseToJsonElement(readTextFile(file)).jsonObject["pid"]?.jsonPrimitive?.content
                 }
                     .getOrNull()
-                name.takeIf { isWebId(it) && pid != null && runProcess(listOf("kill", "-0", pid)).exitCode == 0 }
+                name.takeIf { isWebId(it) && pid?.toLongOrNull()?.let { id -> isProcessAlive(id) } == true }
             }
             .sorted()
     }
@@ -82,6 +79,21 @@ object WebInstall {
 
     fun node(): String {
         return env("GEKKO_NODE") ?: "node"
+    }
+
+    /**
+     * npm as a command. On Windows `npm` is a `.cmd` file that only runs through cmd.exe, so it is started as `node
+     * npm-cli.js` when that script sits next to node.exe (where the Node.js installers put it).
+     */
+    fun npm(): List<String> {
+        if (isWindowsHost) {
+            val program = resolveWindowsProgram(node(), env("PATH"), env("PATHEXT"), ::fileExists)
+            val script = program?.let { slashes(it).substringBeforeLast('/') + "/node_modules/npm/bin/npm-cli.js" }
+            if (program != null && script != null && fileExists(script)) {
+                return listOf(program, script)
+            }
+        }
+        return listOf("npm")
     }
 
     /** The directory whose node_modules hold Playwright: `web.playwright`, `GEKKO_PLAYWRIGHT_DIR` or gekko's own. */
@@ -135,7 +147,7 @@ object WebInstall {
             )
             val npm =
                 runProcess(
-                    listOf("npm", "install", "--prefix", directory, "--no-audit", "--no-fund", "--loglevel=error"),
+                    npm() + listOf("install", "--prefix", directory, "--no-audit", "--no-fund", "--loglevel=error"),
                     timeoutSeconds = INSTALL_TIMEOUT_SECONDS,
                 )
             check(npm.exitCode == 0) { "npm install playwright failed: ${npm.text.takeLast(2_000)}" }
@@ -300,6 +312,8 @@ class WebBridge(
 
     /** The process of this session's bridge when its session file names one that really runs a bridge on [port]. */
     private fun ownBridgePid(): String? {
+        // There is no gekko from before the signed protocol on Windows, and no `ps` or `kill` there either
+        if (isWindowsHost) return null
         val file = WebSessions.sessionFile(name)
         if (!fileExists(file)) return null
         val pid =
@@ -326,25 +340,28 @@ class WebBridge(
         makeDirs("${WebHome.directory()}/sessions")
         makeDirs("${WebHome.directory()}/logs")
         val logFile = "${WebHome.directory()}/logs/$name.log"
-        runProcess(
-            listOf(
-                "sh",
-                "-c",
-                "nohup \"\$@\" >\"\$GEKKO_BRIDGE_LOG\" 2>&1 </dev/null &",
-                "gekko",
-                WebInstall.node(),
-                "$scripts/bridge.mjs",
-                "--port",
-                "$port",
-                "--version",
-                version,
-                "--playwright-dir",
-                playwright,
-                "--session",
-                WebSessions.sessionFile(name),
-            ),
-            environment = mapOf("GEKKO_BRIDGE_TOKEN" to UserToken.value, "GEKKO_BRIDGE_LOG" to logFile),
-        )
+        // Every start has a log of its own: the hint after a failure must not come from an earlier one
+        runCatching { writeTextFile(logFile, "") }
+        val started =
+            spawnDetached(
+                listOf(
+                    WebInstall.node(),
+                    "$scripts/bridge.mjs",
+                    "--port",
+                    "$port",
+                    "--version",
+                    version,
+                    "--playwright-dir",
+                    playwright,
+                    "--session",
+                    WebSessions.sessionFile(name),
+                ),
+                environment = mapOf("GEKKO_BRIDGE_TOKEN" to UserToken.value),
+                logFile = logFile,
+            )
+        if (!started) {
+            throw InfrastructureException("The web bridge could not be started: `${WebInstall.node()}` is not runnable")
+        }
         val deadline = nowMillis() + START_TIMEOUT_MS
         while (nowMillis() < deadline) {
             if (hello() != null) return

@@ -576,7 +576,7 @@ data class MockSpec(
     }
 
     private fun isInsideFolder(path: String): Boolean {
-        return !path.startsWith("/") && path.split('/', '\\').none { it == ".." }
+        return !isAbsolutePath(path) && path.split('/', '\\').none { it == ".." }
     }
 }
 
@@ -1028,12 +1028,23 @@ data class GekkoConfig(
 )
 
 private fun String.relativeTo(root: String): String {
-    return if (startsWith("/") || this == InstalledRunners.INSTALLED) this else "$root/$this"
+    return if (isAbsolutePath(this) || this == InstalledRunners.INSTALLED) this else "$root/$this"
+}
+
+/**
+ * Whether a path starts at the root: `/x` (also `\x`), `C:/x` and `C:\x`, `//server/share`. On Windows `C:x` is a path
+ * on a drive (relative to a directory of that drive), which no project folder may use either, so it counts as absolute
+ * there; on the other hosts it is a file name like any other.
+ */
+fun isAbsolutePath(path: String): Boolean {
+    if (path.startsWith("/") || path.startsWith("\\")) return true
+    val onDrive = path.length >= 2 && path[1] == ':' && path[0].isLetter()
+    return onDrive && (isWindowsHost || (path.length >= 3 && (path[2] == '/' || path[2] == '\\')))
 }
 
 /** Paths handed to other processes (e.g. DYLD_INSERT_LIBRARIES) must not depend on that process's working directory. */
 fun absolutePath(path: String, currentDirectory: String): String {
-    if (path.startsWith("/")) return path
+    if (isAbsolutePath(path)) return path
     val relative = path.removePrefix("./").trimEnd('/')
     return if (relative.isEmpty() || relative == ".") currentDirectory else "$currentDirectory/$relative"
 }

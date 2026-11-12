@@ -9,7 +9,8 @@ class EnvAccess(private val declared: Set<String>, private val dotEnv: Map<Strin
     init {
         declared.forEach { name ->
             require(NAME.matches(name)) { "env: '$name' is not a variable name (letters, digits and _)" }
-            require(REFUSED_PREFIXES.none { name.startsWith(it) }) {
+            // Without regard to case: Windows looks variables up that way, so `github_token` is `GITHUB_TOKEN` there
+            require(REFUSED_PREFIXES.none { name.uppercase().startsWith(it) }) {
                 "env: $name belongs to gekko or to CI and cannot be used in tests"
             }
         }

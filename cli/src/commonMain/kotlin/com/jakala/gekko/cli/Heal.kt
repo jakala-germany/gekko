@@ -16,23 +16,39 @@ interface LlmClient {
 }
 
 /**
- * A fresh private directory (mode 0700) for one model call and a time limit: a model CLI started in a shared directory
- * like /tmp would load project settings, hooks and MCP servers that another local user planted there.
+ * A fresh private directory (owner only) for one model call: a model CLI started in a shared directory like /tmp would
+ * load project settings, hooks and MCP servers that another local user planted there. It is deleted afterwards.
  */
-private const val PRIVATE_DIRECTORY = "dir=\$(mktemp -d) && cd \"\$dir\" && trap 'rm -rf \"\$dir\"' EXIT"
+private fun <T> inPrivateDirectory(block: (directory: String) -> T): T {
+    val directory = createPrivateDirectory("gekko-heal")
+    try {
+        return block(directory)
+    } finally {
+        removeRecursively(directory)
+    }
+}
 
 private const val MODEL_TIMEOUT_SECONDS = 180
 
+/**
+ * The prompt goes to the program on its standard input, never as an argument: it holds text from the screen of the app
+ * under test, which can have line breaks and quotes in it and must not be interpreted by anything on the way (a `.cmd`
+ * file on Windows cannot take such arguments at all).
+ */
 private fun runModelCli(
-    script: String,
-    arguments: List<String>,
+    command: List<String>,
+    input: String,
+    directory: String,
     environment: Map<String, String> = emptyMap(),
 ): String {
     val result =
         runProcess(
-            listOf("sh", "-c", "$PRIVATE_DIRECTORY; $script", "gekko") + arguments,
+            command,
             mergeStderr = false,
             environment = environment,
+            timeoutSeconds = MODEL_TIMEOUT_SECONDS,
+            workingDirectory = directory,
+            stdin = input.encodeToByteArray(),
         )
     check(result.exitCode == 0) { "model CLI failed (exit ${result.exitCode})" }
     return result.text
@@ -44,11 +60,28 @@ private fun runModelCli(
  */
 class ClaudeCliClient(private val model: String = env("GEKKO_HEAL_MODEL") ?: "haiku") : LlmClient {
     override suspend fun complete(system: String, user: String): String {
-        val script =
-            "perl -e 'alarm shift; exec @ARGV' $MODEL_TIMEOUT_SECONDS claude -p \"\$1\" --append-system-prompt \"\$2\" " +
-                "--tools '' --no-session-persistence --setting-sources user --strict-mcp-config " +
-                "--mcp-config '{\"mcpServers\":{}}' --model \"\$3\" < /dev/null"
-        return runModelCli(script, listOf(user, system, model))
+        return inPrivateDirectory { directory ->
+            writeTextFile("$directory/system.txt", system)
+            writeTextFile("$directory/mcp.json", """{"mcpServers":{}}""")
+            val claude =
+                listOf(
+                    "claude",
+                    "-p",
+                    "--append-system-prompt-file",
+                    "$directory/system.txt",
+                    "--tools",
+                    "",
+                    "--no-session-persistence",
+                    "--setting-sources",
+                    "user",
+                    "--strict-mcp-config",
+                    "--mcp-config",
+                    "$directory/mcp.json",
+                    "--model",
+                    model,
+                )
+            runModelCli(claude, user, directory)
+        }
     }
 }
 
@@ -67,10 +100,8 @@ class OpenCodeCliClient(
 ) : LlmClient {
     override suspend fun complete(system: String, user: String): String {
         val modelArguments = if (model.isNullOrBlank()) emptyList() else listOf("-m", model)
-        val opencode =
-            listOf(command, "run", "--standalone", "--agent", agent ?: HEAL_AGENT) + modelArguments + "$system\n\n$user"
-        val script = "perl -e 'alarm shift; exec @ARGV' $MODEL_TIMEOUT_SECONDS \"\$@\" < /dev/null"
-        return runModelCli(script, opencode, environment())
+        val opencode = listOf(command, "run", "--standalone", "--agent", agent ?: HEAL_AGENT) + modelArguments
+        return inPrivateDirectory { directory -> runModelCli(opencode, "$system\n\n$user", directory, environment()) }
     }
 
     internal fun environment(): Map<String, String> {
@@ -91,30 +122,54 @@ class OpenCodeCliClient(
 class HttpAnswer(val status: Int, val body: String)
 
 /**
- * The request goes through `curl`: the native binary has no TLS of its own, and every machine that runs gekko has curl.
- * The key and the CA file (`GEKKO_LLM_CA_CERT`, for a private CA) reach curl through a configuration file in a private
- * directory, never through its command line; a line break cannot start another option.
+ * The request goes through `curl`: the native binary has no TLS of its own, and every machine that runs gekko has curl
+ * (Windows 10 and newer ship curl.exe). The key and the CA file (`GEKKO_LLM_CA_CERT`, for a private CA) reach curl
+ * through a configuration file in a private directory, never through its command line; a line break cannot start
+ * another option.
  */
-private const val CURL_SCRIPT =
-    "umask 077; " +
-        "escape() { printf '%s' \"\$1\" | tr -d '\\r\\n' | sed 's/[\\\\\"]/\\\\&/g'; }; " +
-        "{ [ -z \"\${GEKKO_LLM_API_KEY:-}\" ] || printf 'header = \"Authorization: Bearer %s\"\\n' \"\$(escape \"\$GEKKO_LLM_API_KEY\")\"; " +
-        "[ -z \"\${GEKKO_LLM_CA_CERT:-}\" ] || printf 'cacert = \"%s\"\\n' \"\$(escape \"\$GEKKO_LLM_CA_CERT\")\"; } > curl.cfg; " +
-        "printf '%s' \"\$2\" | curl -sS --max-time $MODEL_TIMEOUT_SECONDS --config curl.cfg " +
-        "--header 'Content-Type: application/json' --data-binary @- --write-out '\\n%{http_code}' \"\$1\""
-
 private fun postWithCurl(url: String, body: String): HttpAnswer {
-    val result =
-        runProcess(
-            listOf("sh", "-c", "$PRIVATE_DIRECTORY; $CURL_SCRIPT", "gekko", url, body),
-            mergeStderr = false,
-            timeoutSeconds = MODEL_TIMEOUT_SECONDS + 20,
-        )
-    check(result.exitCode == 0) { "the model endpoint is not reachable: ${curlProblem(result.exitCode)}" }
-    val text = result.stdout.decodeToString()
-    val status = text.substringAfterLast('\n').trim().toIntOrNull()
-    checkNotNull(status) { "the model endpoint sent no HTTP status" }
-    return HttpAnswer(status, text.substringBeforeLast('\n'))
+    return inPrivateDirectory { directory ->
+        val configuration = "$directory/curl.cfg"
+        val lines = StringBuilder()
+        env("GEKKO_LLM_API_KEY")
+            ?.takeIf { it.isNotEmpty() }
+            ?.let { lines.append("header = \"Authorization: Bearer ${curlEscape(it)}\"\n") }
+        env("GEKKO_LLM_CA_CERT")?.takeIf { it.isNotEmpty() }?.let { lines.append("cacert = \"${curlEscape(it)}\"\n") }
+        writeTextFile(configuration, lines.toString())
+        restrictToOwner(configuration)
+        val result =
+            runProcess(
+                listOf(
+                    "curl",
+                    "-sS",
+                    "--max-time",
+                    "$MODEL_TIMEOUT_SECONDS",
+                    "--config",
+                    configuration,
+                    "--header",
+                    "Content-Type: application/json",
+                    "--data-binary",
+                    "@-",
+                    "--write-out",
+                    "\\n%{http_code}",
+                    url,
+                ),
+                mergeStderr = false,
+                timeoutSeconds = MODEL_TIMEOUT_SECONDS + 20,
+                workingDirectory = directory,
+                stdin = body.encodeToByteArray(),
+            )
+        check(result.exitCode == 0) { "the model endpoint is not reachable: ${curlProblem(result.exitCode)}" }
+        val text = result.stdout.decodeToString()
+        val status = text.substringAfterLast('\n').trim().toIntOrNull()
+        checkNotNull(status) { "the model endpoint sent no HTTP status" }
+        HttpAnswer(status, text.substringBeforeLast('\n'))
+    }
+}
+
+/** A value inside the quotes of a curl configuration file: no line break, `\` and `"` escaped. */
+internal fun curlEscape(value: String): String {
+    return value.filter { it != '\r' && it != '\n' }.replace("\\", "\\\\").replace("\"", "\\\"")
 }
 
 /** What the exit code of curl means for the person who set up `GEKKO_LLM_BASE_URL`. */
@@ -205,7 +260,7 @@ object LlmClients {
     }
 
     private fun onPath(command: String): Boolean {
-        return runProcess(listOf("sh", "-c", "command -v \"\$1\"", "gekko", command)).exitCode == 0
+        return findOnPath(command) != null
     }
 
     /**

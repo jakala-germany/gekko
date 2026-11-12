@@ -1,0 +1,530 @@
+package = com.jakala.gekko.host
+headers = errno.h fcntl.h poll.h pthread.h signal.h stdio.h stdlib.h string.h time.h unistd.h sys/stat.h sys/types.h sys/wait.h
+compilerOpts = -D_GNU_SOURCE
+---
+
+/*
+ * The host layer of gekko on macOS and Linux: running programs without a shell, with a time limit, and the few
+ * operating system calls the CLI needs. host-windows.def has the same functions for Windows; the Kotlin side
+ * (HostNative.kt) is shared, so the two files must keep the same signatures.
+ */
+
+extern char **environ;
+
+static void gekko_free(void *pointer) {
+    free(pointer);
+}
+
+static char *gekko_getenv(const char *name) {
+    const char *value = getenv(name);
+    return value == NULL ? NULL : strdup(value);
+}
+
+static char *gekko_getcwd(void) {
+    return getcwd(NULL, 0);
+}
+
+static char *gekko_temp_dir(void) {
+    return strdup("/tmp");
+}
+
+static void gekko_init_host(void) {
+}
+
+static int gekko_utc_offset_minutes(void) {
+    time_t now = time(NULL);
+    struct tm local;
+    if (localtime_r(&now, &local) == NULL) {
+        return 0;
+    }
+    return (int) (local.tm_gmtoff / 60);
+}
+
+static int gekko_random_bytes(char *buffer, int count) {
+    int descriptor = open("/dev/urandom", O_RDONLY);
+    if (descriptor < 0) {
+        return -1;
+    }
+    int done = 0;
+    while (done < count) {
+        ssize_t got = read(descriptor, buffer + done, (size_t) (count - done));
+        if (got <= 0) {
+            if (got < 0 && errno == EINTR) {
+                continue;
+            }
+            close(descriptor);
+            return -1;
+        }
+        done += (int) got;
+    }
+    close(descriptor);
+    return 0;
+}
+
+static int gekko_restrict_to_owner(const char *path, int is_directory) {
+    return chmod(path, is_directory ? 0700 : 0600);
+}
+
+/* A regular file that the user can execute. */
+static int gekko_is_executable_file(const char *path) {
+    struct stat info;
+    return stat(path, &info) == 0 && S_ISREG(info.st_mode) && access(path, X_OK) == 0;
+}
+
+static int gekko_is_alive(long long pid) {
+    return pid > 0 && kill((pid_t) pid, 0) == 0;
+}
+
+static long long gekko_pid(void) {
+    return (long long) getpid();
+}
+
+static long long gekko_monotonic_ms(void) {
+    struct timespec now;
+    clock_gettime(CLOCK_MONOTONIC, &now);
+    return (long long) now.tv_sec * 1000 + now.tv_nsec / 1000000;
+}
+
+static void gekko_set_nonblocking(int descriptor) {
+    int flags = fcntl(descriptor, F_GETFL, 0);
+    if (flags >= 0) {
+        fcntl(descriptor, F_SETFL, flags | O_NONBLOCK);
+    }
+}
+
+static void gekko_set_cloexec(int descriptor) {
+    int flags = fcntl(descriptor, F_GETFD, 0);
+    if (flags >= 0) {
+        fcntl(descriptor, F_SETFD, flags | FD_CLOEXEC);
+    }
+}
+
+static int gekko_pipe(int ends[2]) {
+    if (pipe(ends) != 0) {
+        return -1;
+    }
+    gekko_set_cloexec(ends[0]);
+    gekko_set_cloexec(ends[1]);
+    return 0;
+}
+
+/*
+ * A pipe is created and marked close-on-exec in two steps. Another thread that forks in between (parallel runs start
+ * programs from several threads) would hand the open ends to its program, and the read for the end of the output of
+ * this call would wait for that program. So creating the pipes and forking are one step for all threads.
+ */
+static pthread_mutex_t gekko_spawn_lock = PTHREAD_MUTEX_INITIALIZER;
+
+static void gekko_close(int descriptor) {
+    if (descriptor >= 0) {
+        close(descriptor);
+    }
+}
+
+/* Reports a start failure as the "output" of the call, like a shell would print it. */
+static int gekko_start_failure(const char *program, int error, char **out, long long *out_len) {
+    const char *reason = strerror(error);
+    size_t size = strlen(program) + strlen(reason) + 32;
+    char *message = malloc(size);
+    if (message == NULL) {
+        *out = NULL;
+        *out_len = 0;
+        return -1;
+    }
+    int length = snprintf(message, size, "cannot run '%s': %s", program, reason);
+    *out = message;
+    *out_len = length < 0 ? 0 : length;
+    return -1;
+}
+
+/* The environment of this process with the name=value pairs applied; the pairs are a NULL-terminated list. */
+static char **gekko_build_env(const char *const *pairs, size_t *owned_from) {
+    size_t base = 0;
+    while (environ != NULL && environ[base] != NULL) {
+        base++;
+    }
+    size_t extra = 0;
+    while (pairs != NULL && pairs[2 * extra] != NULL) {
+        extra++;
+    }
+    char **result = calloc(base + extra + 1, sizeof(char *));
+    if (result == NULL) {
+        return NULL;
+    }
+    size_t kept = 0;
+    for (size_t index = 0; index < base; index++) {
+        int replaced = 0;
+        for (size_t pair = 0; pair < extra; pair++) {
+            size_t length = strlen(pairs[2 * pair]);
+            if (strncmp(environ[index], pairs[2 * pair], length) == 0 && environ[index][length] == '=') {
+                replaced = 1;
+                break;
+            }
+        }
+        if (!replaced) {
+            result[kept++] = environ[index];
+        }
+    }
+    *owned_from = kept;
+    for (size_t pair = 0; pair < extra; pair++) {
+        size_t size = strlen(pairs[2 * pair]) + strlen(pairs[2 * pair + 1]) + 2;
+        char *entry = malloc(size);
+        if (entry == NULL) {
+            continue;
+        }
+        snprintf(entry, size, "%s=%s", pairs[2 * pair], pairs[2 * pair + 1]);
+        result[kept++] = entry;
+    }
+    result[kept] = NULL;
+    return result;
+}
+
+static void gekko_free_env(char **env, size_t owned_from) {
+    if (env == NULL) {
+        return;
+    }
+    for (size_t index = owned_from; env[index] != NULL; index++) {
+        free(env[index]);
+    }
+    free(env);
+}
+
+/* A program name without a slash is looked up in the PATH of the environment the program gets. */
+static char *gekko_find_program(const char *program, char *const *env) {
+    if (strchr(program, '/') != NULL) {
+        return strdup(program);
+    }
+    const char *path = "/usr/bin:/bin";
+    for (size_t index = 0; env != NULL && env[index] != NULL; index++) {
+        if (strncmp(env[index], "PATH=", 5) == 0) {
+            path = env[index] + 5;
+        }
+    }
+    size_t program_length = strlen(program);
+    const char *start = path;
+    for (;;) {
+        const char *end = strchr(start, ':');
+        size_t length = end == NULL ? strlen(start) : (size_t) (end - start);
+        size_t size = length + program_length + 3;
+        char *candidate = malloc(size);
+        if (candidate == NULL) {
+            return NULL;
+        }
+        if (length == 0) {
+            snprintf(candidate, size, "./%s", program);
+        } else {
+            snprintf(candidate, size, "%.*s/%s", (int) length, start, program);
+        }
+        struct stat info;
+        if (access(candidate, X_OK) == 0 && stat(candidate, &info) == 0 && S_ISREG(info.st_mode)) {
+            return candidate;
+        }
+        free(candidate);
+        if (end == NULL) {
+            return NULL;
+        }
+        start = end + 1;
+    }
+}
+
+static void gekko_reset_signals(void) {
+    sigset_t empty;
+    sigemptyset(&empty);
+    sigprocmask(SIG_SETMASK, &empty, NULL);
+    signal(SIGPIPE, SIG_DFL);
+}
+
+static void gekko_append(char **buffer, size_t *length, size_t *capacity, const char *data, size_t size) {
+    if (*buffer == NULL) {
+        return;
+    }
+    if (*length + size > *capacity) {
+        size_t wanted = *capacity;
+        while (*length + size > wanted) {
+            wanted *= 2;
+        }
+        char *grown = realloc(*buffer, wanted);
+        if (grown == NULL) {
+            return;
+        }
+        *buffer = grown;
+        *capacity = wanted;
+    }
+    memcpy(*buffer + *length, data, size);
+    *length += size;
+}
+
+/* Reads what is there without waiting; returns 0 once the pipe is at its end, 1 while it may still deliver. */
+static int gekko_read_available(int descriptor, char **buffer, size_t *length, size_t *capacity) {
+    char chunk[16384];
+    for (;;) {
+        ssize_t got = read(descriptor, chunk, sizeof chunk);
+        if (got > 0) {
+            gekko_append(buffer, length, capacity, chunk, (size_t) got);
+            continue;
+        }
+        if (got == 0) {
+            return 0;
+        }
+        if (errno == EINTR) {
+            continue;
+        }
+        return errno == EAGAIN || errno == EWOULDBLOCK ? 1 : 0;
+    }
+}
+
+static int gekko_exit_code(int status) {
+    if (WIFEXITED(status)) {
+        return WEXITSTATUS(status);
+    }
+    if (WIFSIGNALED(status)) {
+        return 128 + WTERMSIG(status);
+    }
+    return -1;
+}
+
+/*
+ * Runs a program and collects what it prints. Returns 0 when it finished (exit_code is set), 1 when the time limit ran
+ * out (the program is killed), -1 when it could not be started (out holds the reason). The output is malloc'ed; free it
+ * with gekko_free. command_line is only used on Windows.
+ */
+static int gekko_run(const char *program, char *const *argv, const char *command_line,
+                     const char *const *env_pairs, const char *cwd, const void *input, long long input_len,
+                     int merge_stderr, int timeout_seconds, char **out, long long *out_len, int *exit_code) {
+    *out = NULL;
+    *out_len = 0;
+    *exit_code = -1;
+
+    size_t owned_from = 0;
+    char **env = gekko_build_env(env_pairs, &owned_from);
+    if (env == NULL) {
+        return gekko_start_failure(program, ENOMEM, out, out_len);
+    }
+    char *path = gekko_find_program(program, env);
+    if (path == NULL) {
+        gekko_free_env(env, owned_from);
+        return gekko_start_failure(program, ENOENT, out, out_len);
+    }
+
+    int output_pipe[2] = {-1, -1};
+    int input_pipe[2] = {-1, -1};
+    int failure_pipe[2] = {-1, -1};
+    int null_in = -1;
+    int null_err = -1;
+    int started = -1;
+    pthread_mutex_lock(&gekko_spawn_lock);
+    if (gekko_pipe(output_pipe) != 0 || gekko_pipe(failure_pipe) != 0) {
+        started = ENFILE;
+    } else if (input_len > 0) {
+        if (gekko_pipe(input_pipe) != 0) {
+            started = ENFILE;
+        }
+    } else {
+        null_in = open("/dev/null", O_RDONLY | O_CLOEXEC);
+    }
+    if (started == -1 && !merge_stderr) {
+        null_err = open("/dev/null", O_WRONLY | O_CLOEXEC);
+    }
+    int child_in = input_len > 0 ? input_pipe[0] : null_in;
+    int child_err = merge_stderr ? output_pipe[1] : null_err;
+    if (started == -1 && (child_in < 0 || child_err < 0)) {
+        started = EMFILE;
+    }
+
+    pid_t pid = -1;
+    if (started == -1) {
+        pid = fork();
+        if (pid < 0) {
+            started = errno;
+        } else if (pid == 0) {
+            gekko_reset_signals();
+            if (cwd != NULL && chdir(cwd) != 0) {
+                int code = errno;
+                write(failure_pipe[1], &code, sizeof code);
+                _exit(127);
+            }
+            dup2(child_in, 0);
+            dup2(output_pipe[1], 1);
+            dup2(child_err, 2);
+            fcntl(0, F_SETFD, 0);
+            fcntl(1, F_SETFD, 0);
+            fcntl(2, F_SETFD, 0);
+            execve(path, argv, env);
+            int code = errno;
+            write(failure_pipe[1], &code, sizeof code);
+            _exit(127);
+        }
+    }
+    pthread_mutex_unlock(&gekko_spawn_lock);
+
+    gekko_close(output_pipe[1]);
+    gekko_close(failure_pipe[1]);
+    gekko_close(input_pipe[0]);
+    gekko_close(null_in);
+    gekko_close(null_err);
+
+    int result = 0;
+    char *buffer = NULL;
+    size_t length = 0;
+    size_t capacity = 16384;
+
+    if (pid > 0) {
+        int child_error = 0;
+        ssize_t reported;
+        do {
+            reported = read(failure_pipe[0], &child_error, sizeof child_error);
+        } while (reported < 0 && errno == EINTR);
+        if (reported == (ssize_t) sizeof child_error) {
+            int status;
+            waitpid(pid, &status, 0);
+            pid = -1;
+            started = child_error;
+        }
+    }
+
+    if (started != -1 || pid <= 0) {
+        result = gekko_start_failure(program, started == -1 ? EINVAL : started, out, out_len);
+    } else {
+        signal(SIGPIPE, SIG_IGN);
+        buffer = malloc(capacity);
+        gekko_set_nonblocking(output_pipe[0]);
+        int output_open = 1;
+        int input_open = input_len > 0;
+        if (input_open) {
+            gekko_set_nonblocking(input_pipe[1]);
+        }
+        long long written = 0;
+        long long deadline = gekko_monotonic_ms() + (long long) timeout_seconds * 1000;
+        int status = 0;
+        int exited = 0;
+        int timed_out = 0;
+        useconds_t idle = 1000;
+
+        while (!exited) {
+            long long remaining = deadline - gekko_monotonic_ms();
+            if (remaining <= 0) {
+                timed_out = 1;
+                break;
+            }
+            struct pollfd watched[2];
+            int count = 0;
+            int output_index = -1;
+            int input_index = -1;
+            if (output_open) {
+                output_index = count;
+                watched[count].fd = output_pipe[0];
+                watched[count].events = POLLIN;
+                watched[count].revents = 0;
+                count++;
+            }
+            if (input_open) {
+                input_index = count;
+                watched[count].fd = input_pipe[1];
+                watched[count].events = POLLOUT;
+                watched[count].revents = 0;
+                count++;
+            }
+            if (count > 0) {
+                int wait_ms = remaining < 100 ? (int) remaining : 100;
+                if (poll(watched, (nfds_t) count, wait_ms) < 0 && errno != EINTR) {
+                    break;
+                }
+                if (output_index >= 0 && watched[output_index].revents != 0) {
+                    if (!gekko_read_available(output_pipe[0], &buffer, &length, &capacity)) {
+                        output_open = 0;
+                    }
+                }
+                if (input_index >= 0 && watched[input_index].revents != 0) {
+                    ssize_t sent = write(input_pipe[1], (const char *) input + written, (size_t) (input_len - written));
+                    if (sent > 0) {
+                        written += sent;
+                    } else if (sent < 0 && errno != EAGAIN && errno != EINTR) {
+                        input_len = written;
+                    }
+                    if (written >= input_len) {
+                        gekko_close(input_pipe[1]);
+                        input_pipe[1] = -1;
+                        input_open = 0;
+                    }
+                }
+            } else {
+                usleep(idle);
+                if (idle < 20000) {
+                    idle *= 2;
+                }
+            }
+            if (waitpid(pid, &status, WNOHANG) == pid) {
+                exited = 1;
+            }
+        }
+
+        if (!exited) {
+            kill(pid, SIGKILL);
+            waitpid(pid, &status, 0);
+        }
+        if (output_open) {
+            gekko_read_available(output_pipe[0], &buffer, &length, &capacity);
+        }
+        *out = buffer;
+        *out_len = (long long) length;
+        buffer = NULL;
+        *exit_code = timed_out ? -1 : gekko_exit_code(status);
+        result = timed_out ? 1 : 0;
+    }
+
+    gekko_close(output_pipe[0]);
+    gekko_close(input_pipe[1]);
+    gekko_close(failure_pipe[0]);
+    free(buffer);
+    free(path);
+    gekko_free_env(env, owned_from);
+    return result;
+}
+
+/*
+ * Starts a program that outlives this process: its own session, no input, its output appended to log_path. Returns 0
+ * once it was handed over (a program that cannot be executed only shows in the log), -1 when that was not possible.
+ */
+static int gekko_spawn_detached(const char *program, char *const *argv, const char *command_line,
+                                const char *const *env_pairs, const char *log_path) {
+    size_t owned_from = 0;
+    char **env = gekko_build_env(env_pairs, &owned_from);
+    if (env == NULL) {
+        return -1;
+    }
+    char *path = gekko_find_program(program, env);
+    int log = open(log_path, O_WRONLY | O_CREAT | O_APPEND | O_CLOEXEC, 0600);
+    int result = -1;
+    if (path != NULL && log >= 0) {
+        pid_t first = fork();
+        if (first == 0) {
+            setsid();
+            pid_t second = fork();
+            if (second != 0) {
+                _exit(second < 0 ? 1 : 0);
+            }
+            gekko_reset_signals();
+            signal(SIGHUP, SIG_IGN);
+            int null_in = open("/dev/null", O_RDONLY);
+            dup2(null_in, 0);
+            dup2(log, 1);
+            dup2(log, 2);
+            for (int descriptor = 3; descriptor < 1024; descriptor++) {
+                close(descriptor);
+            }
+            execve(path, argv, env);
+            const char *message = "gekko: the program could not be started\n";
+            write(2, message, strlen(message));
+            _exit(127);
+        }
+        if (first > 0) {
+            int status = 0;
+            waitpid(first, &status, 0);
+            result = WIFEXITED(status) && WEXITSTATUS(status) == 0 ? 0 : -1;
+        }
+    }
+    gekko_close(log);
+    free(path);
+    gekko_free_env(env, owned_from);
+    return result;
+}

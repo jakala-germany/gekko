@@ -5,8 +5,10 @@ import com.github.ajalt.clikt.core.Context
 import com.github.ajalt.clikt.core.main
 import com.github.ajalt.clikt.core.subcommands
 import com.github.ajalt.clikt.parameters.arguments.argument
+import com.github.ajalt.clikt.parameters.arguments.convert
 import com.github.ajalt.clikt.parameters.arguments.multiple
 import com.github.ajalt.clikt.parameters.arguments.optional
+import com.github.ajalt.clikt.parameters.options.convert
 import com.github.ajalt.clikt.parameters.options.default
 import com.github.ajalt.clikt.parameters.options.flag
 import com.github.ajalt.clikt.parameters.options.multiple
@@ -38,6 +40,7 @@ import kotlinx.serialization.json.Json
 private val treeJson = Json { prettyPrint = true }
 
 fun runCli(args: List<String>) {
+    initializeHost()
     val command =
         GekkoCommand()
             .subcommands(
@@ -85,7 +88,7 @@ private abstract class DeviceCommand(name: String) : CliktCommand(name = name) {
             help =
                 "adb serial, simulator UDID or web browser (chromium, firefox, webkit; -2, -3 for more) of the device",
         )
-    val root by option("--project", help = "Directory containing gekko.yaml").default(".")
+    val root by option("--project", help = "Directory containing gekko.yaml").convert { slashes(it) }.default(".")
     private val requestedPlatform by
         option(
             "--platform",
@@ -476,7 +479,10 @@ private class LaunchCommand : DeviceCommand("launch") {
 }
 
 private class RunCommand : DeviceCommand("run") {
-    val paths by argument(name = "PATH", help = "Test files or directories (default: tests dir)").multiple()
+    val paths by
+        argument(name = "PATH", help = "Test files or directories (default: tests dir)")
+            .convert { slashes(it) }
+            .multiple()
     val tags by option("--tags", help = "Comma separated tags; a test runs if it has any of them")
     val excludeTags by
         option("--exclude-tags", help = "Comma separated tags; a test with any of them does not run (after --tags)")
@@ -856,8 +862,11 @@ private class LlmCheckCommand : CliktCommand(name = "llm-check") {
 }
 
 private class CheckCommand : CliktCommand(name = "check") {
-    val root by option("--project", help = "Directory containing gekko.yaml").default(".")
-    val files by argument(name = "FILE", help = "Tests or folders to check (default: all tests)").multiple()
+    val root by option("--project", help = "Directory containing gekko.yaml").convert { slashes(it) }.default(".")
+    val files by
+        argument(name = "FILE", help = "Tests or folders to check (default: all tests)")
+            .convert { slashes(it) }
+            .multiple()
 
     override fun help(context: Context): String {
         return "Read all tests and the flows they use without a device: broken YAML, unknown keys, missing flows or parameters"

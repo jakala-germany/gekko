@@ -56,8 +56,10 @@ puts a small agent into debug builds of the app under test (on the web it inject
       writes with `run-as`, the runner gets its key as an argument of `am instrument`. No other app can read either, so no
       other app can pass for the agent or the runner.
     - iOS simulators: loopback with a port per simulator. The key is the per-user token in `~/.gekko/token` (readable by
-      that user only), handed to the agent and the runner through the launch environment, and a loopback `Host` header
-      without an `Origin` is required, so other users and web pages are turned away.
+      that user only; on Windows a protected ACL that names only that user, so not even administrators or SYSTEM are
+      listed, and nothing is inherited from the folder above), handed to the agent and the runner through the launch
+      environment, and a loopback `Host` header without an `Origin` is required, so other users and web pages are turned
+      away.
     - Web bridge (a Node process with Playwright that the CLI starts for a browser session): it listens on `127.0.0.1`
       only, signs and checks like the iOS servers, needs a loopback `Host` and no `Origin` header, so a web page open in
       any browser on the machine cannot reach it, and it offers a fixed list of operations: it never runs JavaScript, a
