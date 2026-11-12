@@ -1,6 +1,5 @@
 package com.jakala.gekko.agent
 
-import android.app.Instrumentation
 import android.content.Context
 import android.os.Bundle
 import android.os.Handler
@@ -39,21 +38,6 @@ internal object KeyPresses {
             val handledUp =
                 root.dispatchKeyEvent(KeyEvent(down, SystemClock.uptimeMillis(), KeyEvent.ACTION_UP, code, 0))
             handledDown || handledUp
-        }
-    }
-
-    /**
-     * Presses [code] (down and up) through the input pipeline of the app's own window, the way a remote does: the
-     * window moves the focus on a D-pad key and leaves touch mode, which a key handed to the root view does not. Runs
-     * on the calling thread, which must not be the main thread. False when the system refused the injection.
-     */
-    fun inject(code: Int): Boolean {
-        return try {
-            Instrumentation().sendKeySync(KeyEvent(KeyEvent.ACTION_DOWN, code))
-            Instrumentation().sendKeySync(KeyEvent(KeyEvent.ACTION_UP, code))
-            true
-        } catch (refused: RuntimeException) {
-            false
         }
     }
 

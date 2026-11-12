@@ -6,7 +6,6 @@ import android.os.SystemClock
 import android.view.MotionEvent
 import android.view.View
 import android.view.ViewConfiguration
-import com.jakala.gekko.device.AndroidKeys
 import com.jakala.gekko.device.ElementLookup
 import com.jakala.gekko.device.Frame
 import com.jakala.gekko.device.Gestures
@@ -257,26 +256,17 @@ internal class CommandExecutor(private val application: Application, private val
 
     private fun pressKey(command: Command.PressKey): Response {
         val code = KeyPresses.fieldKeyCode(command.key)
-        val remoteCode = AndroidKeys.remoteKeyCode(command.key)
         return when {
             code != null ->
                 withFocusedField(command.timeoutMs, needsText = true) { focus ->
                     pressTimes(command.times, settle = false) { KeyPresses.press(focus.rootView, code) }
                 }
-            remoteCode != null -> pressRemote(command, remoteCode)
             KeyPresses.isBack(command.key) -> pressBack(command)
+            // The buttons of a TV remote too: they have to go through the input pipeline of the window to move the
+            // focus, and only the system can inject there (an app needs a permission that only the instrumentation of
+            // the system runner has); a key event handed to the root view would pass without moving anything
             else -> unsupported("The in-app agent cannot press '${command.key}'; the system runner can")
         }
-    }
-
-    /**
-     * A button of a TV remote, injected into the app's window so the focus moves as it does for a person. The app
-     * settles between two presses (the focus can still be moving). When the system refuses the injection the answer is
-     * `unsupported` and the CLI asks the system runner, which presses the real key.
-     */
-    private fun pressRemote(command: Command.PressKey, code: Int): Response {
-        idle.await(minOf(command.timeoutMs, IDLE_WAIT_MS))
-        return pressTimes(command.times, settle = true) { KeyPresses.inject(code) }
     }
 
     /**
