@@ -230,6 +230,16 @@ class FocusTest {
     }
 
     @Test
+    fun theMessageCountsOnePressAsOne() = runTest {
+        val remote = Remote(focus = 0)
+
+        val failure =
+            waiter(remote).pressUntil("right", Selector(id = "row.sports"), max = 1, timeoutMs = 1_000, system = false)
+
+        assertEquals("Element not found: Selector(id=row.sports) after 1 press of right", failure)
+    }
+
+    @Test
     fun anElementThatIsNotThereAtTheEndIsMissing() = runTest {
         val remote = Remote(focus = 0)
 

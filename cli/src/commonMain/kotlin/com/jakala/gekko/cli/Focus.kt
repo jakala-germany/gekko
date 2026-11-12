@@ -151,7 +151,7 @@ class FocusWaiter(
             }
             val after = FocusTree.focusedNode(windows)
             if (FocusTree.identity(after) == FocusTree.identity(before)) {
-                val presses = if (press == 1) "1 press" else "$press presses"
+                val presses = pressesOf(press)
                 return if (after == null) {
                     "nothing has the focus after $presses of $key"
                 } else {
@@ -160,9 +160,9 @@ class FocusWaiter(
             }
         }
         if (FocusTree.locate(windows, selector) == null) {
-            return "Element not found: $selector after $max presses of $key"
+            return "Element not found: $selector after ${pressesOf(max)} of $key"
         }
-        return "$selector did not get the focus after $max presses of $key " +
+        return "$selector did not get the focus after ${pressesOf(max)} of $key " +
             "(focus is on ${FocusTree.describe(FocusTree.focusedNode(windows))})"
     }
 
@@ -200,6 +200,10 @@ class FocusWaiter(
     }
 
     private companion object {
+        fun pressesOf(count: Int): String {
+            return if (count == 1) "1 press" else "$count presses"
+        }
+
         const val POLL_MS = 50L
         const val FOCUS_MOVE_MS = 1_000L
         const val FOCUS_QUIET_MS = 100L
