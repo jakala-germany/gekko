@@ -613,6 +613,24 @@ class ModelTest {
     }
 
     @Test
+    fun theSimulatorPathsAreLookedUpFromTheProjectAndInstalledStaysAMarker() {
+        val config =
+            GekkoConfig(
+                    ios =
+                        IosConfig(
+                            runnerDir = "../dist/ios-runner",
+                            tvosRunnerDir = "../dist/tvos-runner",
+                            tvosAgentFramework = InstalledRunners.INSTALLED,
+                        )
+                )
+                .withPathsRelativeTo("/work/tests")
+
+        assertEquals("/work/tests/../dist/ios-runner", config.ios.runnerDir)
+        assertEquals("/work/tests/../dist/tvos-runner", config.ios.tvosRunnerDir)
+        assertEquals(InstalledRunners.INSTALLED, config.ios.tvosAgentFramework)
+    }
+
+    @Test
     fun aWebSessionIsFreshUnlessItIsShared() {
         assertEquals("fresh", GekkoConfig().web.session)
         assertEquals("shared", Yamls.parse(GekkoConfig.serializer(), "web: { session: shared }").web.session)

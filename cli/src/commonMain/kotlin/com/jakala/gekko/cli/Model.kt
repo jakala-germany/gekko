@@ -1120,6 +1120,8 @@ fun GekkoConfig.withPathsRelativeTo(root: String): GekkoConfig {
                 app = ios.app?.relativeTo(root),
                 runnerDir = ios.runnerDir?.relativeTo(root),
                 agentFramework = ios.agentFramework?.relativeTo(root),
+                tvosRunnerDir = ios.tvosRunnerDir?.relativeTo(root),
+                tvosAgentFramework = ios.tvosAgentFramework?.relativeTo(root),
             ),
     )
 }
