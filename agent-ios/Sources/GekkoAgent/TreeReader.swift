@@ -11,10 +11,29 @@ enum TreeReader {
 
     static func read() -> [Element] {
         let secureFrames = secureInputFrames()
-        let focus = focusedView()
+        let focus = treeFocus()
         let focusedFrame = focus.flatMap { screenFrame(of: $0) }
         return windows().compactMap { build($0, parent: nil, visited: [], secureFrames: secureFrames, focus: focus, focusedFrame: focusedFrame) }
     }
+
+    /// The view the tree marks as focused. On a TV it is the one the remote moved the focus to; elsewhere the one a
+    /// keyboard types into.
+    private static func treeFocus() -> UIView? {
+        #if os(tvOS)
+        if let view = remoteFocusedView() { return view }
+        #endif
+        return focusedView()
+    }
+
+    #if os(tvOS)
+    /// The view the focus engine has focused, from the topmost window down: what the remote moves and select presses.
+    static func remoteFocusedView() -> UIView? {
+        for window in windows().reversed() {
+            if let view = window.windowScene?.focusSystem?.focusedItem as? UIView { return view }
+        }
+        return nil
+    }
+    #endif
 
     /// The view that has the input focus, from the topmost window down: what a keyboard types into. A text field is
     /// edited through a field editor (a scroll view) inside of it; the field is what a person calls focused.
@@ -113,8 +132,10 @@ enum TreeReader {
 
     /// State of a switch or toggle; nil for everything that cannot be checked.
     private static func checked(of object: NSObject) -> Bool? {
+        #if os(iOS)
         if let toggle = object as? UISwitch { return toggle.isOn }
-        if #available(iOS 17.0, *), object.accessibilityTraits.contains(.toggleButton) {
+        #endif
+        if #available(iOS 17.0, tvOS 17.0, *), object.accessibilityTraits.contains(.toggleButton) {
             let value = object.accessibilityValue?.lowercased()
             return value == "1" || value == "on" || value == "true"
         }
@@ -198,7 +219,9 @@ enum TreeReader {
         let traits = object.accessibilityTraits
         switch object {
         case is UITextField, is UITextView: return "TextField"
+        #if os(iOS)
         case is UISwitch: return "Switch"
+        #endif
         case is UIScrollView: return "ScrollView"
         default: break
         }

@@ -190,17 +190,7 @@ class SimctlDevice(private val requestedUdid: String?) : Device {
     }
 
     override fun launch(config: GekkoConfig, arguments: Map<String, String>) {
-        // The environment wins: a CI action installs the agent for the job without touching gekko.yaml
-        val framework =
-            env("GEKKO_IOS_AGENT")
-                ?: config.ios.agentFramework?.let { configured ->
-                    if (configured == InstalledRunners.INSTALLED) {
-                        InstalledRunners.iosAgentFramework()
-                            ?: error("ios.agentFramework is 'installed' but no agent was found; run scripts/install.sh")
-                    } else {
-                        configured
-                    }
-                }
+        val framework = SimulatorArtifacts.agentFramework(config.ios, isTv)
         val environment =
             mutableMapOf("SIMCTL_CHILD_GEKKO_PORT" to "${agentPort()}", "SIMCTL_CHILD_GEKKO_TOKEN" to UserToken.value)
         if (framework != null) {
@@ -208,7 +198,9 @@ class SimctlDevice(private val requestedUdid: String?) : Device {
                 if (framework.endsWith(".framework"))
                     "$framework/${framework.substringAfterLast('/').removeSuffix(".framework")}"
                 else framework
-            check(fileExists(binary)) { "ios.agentFramework not found: $binary" }
+            check(fileExists(binary)) {
+                "${if (isTv) "ios.tvosAgentFramework" else "ios.agentFramework"} not found: $binary"
+            }
             environment["SIMCTL_CHILD_DYLD_INSERT_LIBRARIES"] = binary
         }
         startupMocks?.let { environment["SIMCTL_CHILD_GEKKO_MOCKS"] = it }
@@ -232,13 +224,9 @@ class SimctlDevice(private val requestedUdid: String?) : Device {
 
     override fun startSystemRunner(config: GekkoConfig, log: (String) -> Unit) {
         runProcess(listOf("pkill", "-f", "xcodebuild test-without-building.*id=$udid"))
-        val dir =
-            env("GEKKO_IOS_RUNNER_DIR")
-                ?: config.ios.runnerDir?.takeUnless { it == InstalledRunners.INSTALLED }
-                ?: InstalledRunners.iosRunnerDir()
-                ?: error("System runner not found; run scripts/install.sh or set ios.runnerDir in gekko.yaml")
+        val dir = SimulatorArtifacts.runnerDir(config.ios, isTv)
         val bundle = bundleId(config)
-        log("Starting iOS system runner")
+        log(if (isTv) "Starting tvOS system runner" else "Starting iOS system runner")
         runProcess(
             listOf(
                 "sh",

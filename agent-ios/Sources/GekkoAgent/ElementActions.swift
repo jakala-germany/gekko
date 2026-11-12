@@ -12,11 +12,13 @@ enum ElementActions {
 
     static func tap(_ element: Element) -> TapResult {
         let object = element.object
+        #if os(iOS)
         if let toggle = object as? UISwitch, toggle.isEnabled {
             toggle.setOn(!toggle.isOn, animated: false)
             toggle.sendActions(for: .valueChanged)
             return .handled
         }
+        #endif
         if let (control, index) = segment(of: element) {
             control.selectedSegmentIndex = index
             control.sendActions(for: .valueChanged)
@@ -76,9 +78,11 @@ enum ElementActions {
     }
 
     static func type(_ element: Element, text: String) -> Bool {
+        #if os(iOS)
         if let picker = datePicker(for: element) {
             return setTime(of: picker, to: text)
         }
+        #endif
         guard let input = inputView(for: element) else { return false }
         _ = input.becomeFirstResponder()
         // Apps react to the focus change a moment later (select all, reset the search); type only after that settled
@@ -220,6 +224,15 @@ enum ElementActions {
         return false
     }
 
+    /// A pager moves by whole pages; tvOS has no paging scroll views.
+    private static func isPaging(_ scrollView: UIScrollView) -> Bool {
+        #if os(iOS)
+        return scrollView.isPagingEnabled
+        #else
+        return false
+        #endif
+    }
+
     /// Moves the offset along the axes with a non-zero delta (clamped to the content, whole pages for a pager);
     /// false when that changes nothing.
     private static func scrollBy(_ scrollView: UIScrollView, dx: CGFloat, dy: CGFloat) -> Bool {
@@ -230,7 +243,7 @@ enum ElementActions {
         let current = scrollView.contentOffset
         func target(_ offset: CGFloat, _ delta: CGFloat, _ low: CGFloat, _ high: CGFloat, page: CGFloat) -> CGFloat {
             guard delta != 0 else { return offset }
-            let step = scrollView.isPagingEnabled && page > 0 ? (delta < 0 ? -1 : 1) * page * max(1, (abs(delta) / page).rounded()) : delta
+            let step = isPaging(scrollView) && page > 0 ? (delta < 0 ? -1 : 1) * page * max(1, (abs(delta) / page).rounded()) : delta
             return min(max(offset + step, low), max(low, high))
         }
         let next = CGPoint(
@@ -282,6 +295,7 @@ enum ElementActions {
         return TreeReader.windows().reversed().lazy.compactMap { all(type, containing: point, in: $0).first }.first
     }
 
+    #if os(iOS)
     private static func datePicker(for element: Element) -> UIDatePicker? {
         if let picker = element.object as? UIDatePicker { return picker }
         return smallest(UIDatePicker.self, containing: CGPoint(x: element.frame.midX, y: element.frame.midY))
@@ -298,6 +312,7 @@ enum ElementActions {
         picker.sendActions(for: .valueChanged)
         return true
     }
+    #endif
 
     private static func inputView(for element: Element) -> UIView? {
         if element.object is UITextField || element.object is UITextView { return element.object as? UIView }

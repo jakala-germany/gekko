@@ -994,6 +994,13 @@ data class IosConfig(
      * Directory containing the built system runner (`gekko-ios-runner`): GekkoRunner.xctestrun + Debug-iphonesimulator.
      */
     val runnerDir: String? = null,
+    /**
+     * `GekkoAgent.framework` built for the Apple TV simulator (`gekko-tvos-agent`); `installed` is the one that
+     * `scripts/install.sh` put in place. Used instead of [agentFramework] on an Apple TV simulator.
+     */
+    val tvosAgentFramework: String? = null,
+    /** The same as [runnerDir] for the Apple TV simulator: the built tvOS system runner (`gekko-tvos-runner`). */
+    val tvosRunnerDir: String? = null,
 )
 
 @Serializable

@@ -5,7 +5,7 @@ import PackageDescription
 // The agent stays dormant (no listener) unless GEKKO_PORT and GEKKO_TOKEN are set; gekko injects the framework and sets both.
 let package = Package(
     name: "GekkoAgent",
-    platforms: [.iOS(.v15)],
+    platforms: [.iOS(.v15), .tvOS(.v15)],
     products: [
         // Dynamic so the C constructor in the bootstrap target runs at app launch without any app code.
         .library(name: "GekkoAgent", type: .dynamic, targets: ["GekkoAgent"]),

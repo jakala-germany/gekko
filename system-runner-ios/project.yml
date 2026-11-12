@@ -3,6 +3,7 @@ options:
   bundleIdPrefix: com.jakala.gekko
   deploymentTarget:
     iOS: "15.0"
+    tvOS: "15.0"
 targets:
   GekkoRunnerHost:
     type: application
@@ -24,7 +25,34 @@ targets:
       TEST_TARGET_NAME: GekkoRunnerHost
       GEKKO_VERSION: unknown
       INFOPLIST_FILE: Info/RunnerTests.plist
+  # The same runner for the Apple TV simulator: it presses the buttons of the remote instead of touching the screen
+  GekkoRunnerHostTV:
+    type: application
+    platform: tvOS
+    sources: [Host]
+    settings:
+      PRODUCT_BUNDLE_IDENTIFIER: com.jakala.gekko.runnerhost
+      GENERATE_INFOPLIST_FILE: YES
+  GekkoRunnerUITestsTV:
+    type: bundle.ui-testing
+    platform: tvOS
+    sources: [Tests]
+    dependencies:
+      - target: GekkoRunnerHostTV
+    settings:
+      PRODUCT_BUNDLE_IDENTIFIER: com.jakala.gekko.runneruitests
+      GENERATE_INFOPLIST_FILE: YES
+      TEST_TARGET_NAME: GekkoRunnerHostTV
+      GEKKO_VERSION: unknown
+      INFOPLIST_FILE: Info/RunnerTests.plist
 schemes:
+  GekkoRunnerTV:
+    build:
+      targets:
+        GekkoRunnerHostTV: all
+        GekkoRunnerUITestsTV: [test]
+    test:
+      targets: [GekkoRunnerUITestsTV]
   GekkoRunner:
     build:
       targets:
