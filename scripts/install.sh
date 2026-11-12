@@ -125,7 +125,7 @@ tvos=false
 if [ "$ios" = true ]; then
   tvos=true
   for name in "gekko-tvos-runner.zip" "gekko-tvos-agent.zip"; do
-    curl -fsSL -o "$work/$name" "$DOWNLOAD_URL/$name" || tvos=false
+    curl -fsL -o "$work/$name" "$DOWNLOAD_URL/$name" 2>/dev/null || tvos=false
   done
   if [ "$tvos" = true ]; then
     assets+=("gekko-tvos-runner.zip" "gekko-tvos-agent.zip")

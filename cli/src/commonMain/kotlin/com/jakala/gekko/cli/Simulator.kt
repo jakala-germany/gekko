@@ -57,7 +57,11 @@ class SimctlDevice(private val requestedUdid: String?) : Device {
 
     override fun openLink(url: String) {
         val result = simctl("openurl", udid, url)
-        check(result.exitCode == 0) { "Opening $url failed: ${result.text}" }
+        check(result.exitCode == 0) {
+            val hint =
+                if (isTv) "; an Apple TV has no browser, a link opens only in an app that registers its scheme" else ""
+            "Opening $url failed: ${result.text}$hint"
+        }
     }
 
     override fun terminate(config: GekkoConfig) {
@@ -70,6 +74,7 @@ class SimctlDevice(private val requestedUdid: String?) : Device {
     }
 
     override fun setDarkMode(enabled: Boolean): () -> Unit {
+        check(!isTv) { "Switching the appearance is not supported on an Apple TV simulator" }
         val previous = simctl("ui", udid, "appearance").text.trim()
         val result = simctl("ui", udid, "appearance", if (enabled) "dark" else "light")
         check(result.exitCode == 0) { "Switching the appearance failed: ${result.text}" }
