@@ -35,6 +35,7 @@ const MOCK_HITS = 5_000
 const WHEEL_STEP = 300
 // How long a fill waits for the element to be editable and stable; a browser that is starting while others run is slow
 const FILL_TIMEOUT_MS = 10_000
+const GOTO_ATTEMPTS = 3
 
 if (!PORT || TOKEN.length < 32) {
   console.error('gekko bridge: --port and GEKKO_BRIDGE_TOKEN are required')
@@ -434,7 +435,16 @@ const operations = {
       try {
         // A path or a query is meant for the page that is open
         const target = relative ? new URL(url, page.url()).href : url
-        await page.goto(target, { waitUntil: 'load', timeout: 30_000 })
+        // Windows runs out of socket buffers now and then (net::ERR_NO_BUFFER_SPACE): the next try gets through
+        for (let attempt = 1; ; attempt++) {
+          try {
+            await page.goto(target, { waitUntil: 'load', timeout: 30_000 })
+            break
+          } catch (error) {
+            if (attempt >= GOTO_ATTEMPTS || !/ERR_NO_BUFFER_SPACE/.test(String(error.message))) throw error
+            await sleep(500)
+          }
+        }
       } catch (error) {
         // A page that is slow to load is used as far as it got; a page that cannot be reached is an error
         if (!/Timeout/i.test(String(error.message))) throw fail(`Unable to open ${url}: ${firstLine(error)}`)
