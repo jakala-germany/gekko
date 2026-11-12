@@ -33,6 +33,8 @@ const MAX_BODY = 4_000_000
 const CONSOLE_LINES = 500
 const MOCK_HITS = 5_000
 const WHEEL_STEP = 300
+// How long a fill waits for the element to be editable and stable; a browser that is starting while others run is slow
+const FILL_TIMEOUT_MS = 10_000
 
 if (!PORT || TOKEN.length < 32) {
   console.error('gekko bridge: --port and GEKKO_BRIDGE_TOKEN are required')
@@ -513,7 +515,7 @@ const operations = {
       if (tag === 'SELECT') {
         await target.selectOption({ label: text }, { timeout: 2000 }).catch(() => target.selectOption({ value: text }, { timeout: 2000 }))
       } else {
-        await target.fill(text, { timeout: 2000 })
+        await target.fill(text, { timeout: FILL_TIMEOUT_MS })
       }
     } catch (error) {
       throw fail(firstLine(error), 'rejected')
