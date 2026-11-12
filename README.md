@@ -35,21 +35,21 @@ From zero to a first passing test on an Android app. You need `adb` and a runnin
 1. **Install the CLI** (macOS arm64, Linux x64 or Windows x64) and put `~/.local/bin` on your `PATH`:
 
    ```bash
-   curl -fsSL https://raw.githubusercontent.com/jakala-germany/gekko/1.3.0/scripts/install.sh | bash -s -- 1.3.0
+   curl -fsSL https://raw.githubusercontent.com/jakala-germany/gekko/1.4.0/scripts/install.sh | bash -s -- 1.4.0
    gekko --version
    ```
 
-   On Windows (not released yet: the first release after 1.3.0) run this in PowerShell instead; it installs to `%USERPROFILE%\.gekko\bin` and adds that folder to your `PATH`, so open a new terminal afterwards. In Git Bash the `curl ... | bash` command above works too and hands over to `install.ps1`:
+   On Windows run this in PowerShell instead; it installs to `%USERPROFILE%\.gekko\bin` and adds that folder to your `PATH`, so open a new terminal afterwards. In Git Bash the `curl ... | bash` command above works too and hands over to `install.ps1`:
 
    ```powershell
-   & ([scriptblock]::Create((irm https://raw.githubusercontent.com/jakala-germany/gekko/main/scripts/install.ps1))) -Version latest
+   & ([scriptblock]::Create((irm https://raw.githubusercontent.com/jakala-germany/gekko/1.4.0/scripts/install.ps1))) -Version 1.4.0
    gekko --version
    ```
 
 2. **Add the agent to the debug build.** In the app module (`mavenCentral()` must be in the `pluginManagement` and `dependencyResolutionManagement` repositories of `settings.gradle.kts`):
 
    ```kotlin
-   plugins { id("io.github.jakala-germany.gekko") version "1.3.0" }
+   plugins { id("io.github.jakala-germany.gekko") version "1.4.0" }
    gekko { variants.set(listOf("debug")) }
    ```
 
@@ -226,9 +226,9 @@ Step by step with the checks: [`gekko-setup`](skills/gekko-setup/SKILL.md).
 [`jakala-germany/setup-gekko-cli-action`](https://github.com/jakala-germany/setup-gekko-cli-action) (its tag is the gekko version) installs the CLI and the runners from the release, puts `gekko` on the `PATH` and removes everything when the job is done. Pin it to the commit of its tag:
 
 ```yaml
-- uses: jakala-germany/setup-gekko-cli-action@2aacfecac33551097b0c7b86ad57d4f59c9f5ad4 # 1.3.0
+- uses: jakala-germany/setup-gekko-cli-action@36773c689902f11f16f22e1d6c3842e26d4cfe19 # 1.4.0
   with:
-    version: 1.3.0
+    version: 1.4.0
     ios: true                                                   # also the iOS runner and agent (macOS runners)
                                                                 # web needs only Node.js, see the CLI reference
 - run: gekko run --tags smoke
