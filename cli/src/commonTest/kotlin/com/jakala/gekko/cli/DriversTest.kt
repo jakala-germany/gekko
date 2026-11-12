@@ -78,6 +78,21 @@ class DriversTest {
     }
 
     @Test
+    fun aRemoteButtonTheAgentCannotInjectGoesToTheSystemRunnerOnAndroid() {
+        runTest {
+            val press = Command.PressKey("down", times = 3)
+            val agent = FakeClient { Response.Error("The app did not take the key", ErrorKind.UNSUPPORTED) }
+            val system = FakeClient { Response.Ok }
+
+            val response = drivers(FakeDevice(supportsWaitFor = true), agent, system).sendWithRunnerFallback(press)
+
+            assertEquals(Response.Ok, response)
+            assertEquals(listOf<Command>(press), agent.received)
+            assertEquals(listOf<Command>(press), system.received)
+        }
+    }
+
+    @Test
     fun aKeyTheAgentCannotPressGoesToTheSystemRunnerOnIos() {
         runTest {
             val press = Command.PressKey("home")

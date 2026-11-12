@@ -18,6 +18,8 @@ internal object WebKeys {
             "down" to "ArrowDown",
             "left" to "ArrowLeft",
             "right" to "ArrowRight",
+            "select" to "Enter",
+            "playpause" to "MediaPlayPause",
         )
 
     fun of(key: String): String {

@@ -64,11 +64,12 @@ sealed interface Command {
 
     /**
      * Presses [key] [times] times. [key] is one of [Keys.ENTER], [Keys.BACKSPACE] (erases to the left; the web's
-     * forward `delete` is not this), [Keys.TAB], [Keys.BACK], [Keys.HOME], or an Android key code number (`"66"`). The
-     * keys that go to a field (enter, backspace, tab) wait up to [timeoutMs] for an element that takes text to have the
-     * focus and answer `error` with kind `rejected` when none has it by then. Answers `ok` once the presses are
-     * delivered, and `error` with kind `unsupported` for a key the platform does not have (`back` on iOS, `home` inside
-     * the app) or this server cannot press: the CLI then asks the system runner, which can press every key.
+     * forward `delete` is not this), [Keys.TAB], [Keys.BACK], [Keys.HOME], a button of a TV remote ([Keys.remote]), or
+     * an Android key code number (`"66"`). The keys that go to a field (enter, backspace, tab) wait up to [timeoutMs]
+     * for an element that takes text to have the focus and answer `error` with kind `rejected` when none has it by
+     * then. Answers `ok` once the presses are delivered, and `error` with kind `unsupported` for a key the platform
+     * does not have (`back` on iOS, `home` inside the app) or this server cannot press: the CLI then asks the system
+     * runner, which can press every key.
      */
     @Serializable
     @SerialName("pressKey")
@@ -203,9 +204,19 @@ object Keys {
     const val TAB = "tab"
     const val BACK = "back"
     const val HOME = "home"
+    const val UP = "up"
+    const val DOWN = "down"
+    const val LEFT = "left"
+    const val RIGHT = "right"
+    const val SELECT = "select"
+    const val PLAY_PAUSE = "playPause"
+    const val MENU = "menu"
 
     /** The keys that go to the field that has the input focus. */
     val field = listOf(ENTER, BACKSPACE, TAB)
 
-    val all = listOf(ENTER, BACKSPACE, TAB, BACK, HOME)
+    /** The buttons of a TV remote: they move the focus (up, down, left, right), open it (select) or control the app. */
+    val remote = listOf(UP, DOWN, LEFT, RIGHT, SELECT, PLAY_PAUSE, MENU)
+
+    val all = listOf(ENTER, BACKSPACE, TAB, BACK, HOME) + remote
 }
