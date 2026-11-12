@@ -259,7 +259,7 @@ class WebDevice(private val name: String, private val config: GekkoConfig, priva
         return if (stopped) listOf("web session $name") else emptyList()
     }
 
-    override fun startSystemRunner(config: GekkoConfig, log: (String) -> Unit) {
+    override fun startSystemRunner(config: GekkoConfig, log: (String) -> Unit, appInFront: Boolean) {
         session()
     }
 

@@ -156,6 +156,51 @@ class DriversTest {
     }
 
     @Test
+    fun aTvRunnerIsToldThatTheAppHadTheScreenWhenItIsStarted() {
+        runTest {
+            val press = Command.PressKey("right")
+            val agent = FakeClient { if (it is Command.Foreground) Response.ForegroundResult(true) else unsupported() }
+            val device = FakeDevice(supportsWaitFor = false, isTv = true)
+            val system = FakeClient { Response.Ok }
+            system.reachable = { device.runnerStarts.isNotEmpty() }
+
+            val response = drivers(device, agent, system).sendWithRunnerFallback(press)
+
+            assertEquals(Response.Ok, response)
+            assertEquals(listOf(true), device.runnerStarts)
+        }
+    }
+
+    @Test
+    fun aTvRunnerIsToldThatTheAppDidNotHaveTheScreenWhenItWasInTheBackground() {
+        runTest {
+            val agent = FakeClient { if (it is Command.Foreground) Response.ForegroundResult(false) else unsupported() }
+            val device = FakeDevice(supportsWaitFor = false, isTv = true)
+            val system = FakeClient { Response.Ok }
+            system.reachable = { device.runnerStarts.isNotEmpty() }
+
+            drivers(device, agent, system).sendWithRunnerFallback(Command.PressKey("home"))
+
+            assertEquals(listOf(false), device.runnerStarts)
+        }
+    }
+
+    @Test
+    fun aRunnerOffTheTvDoesNotAskWhetherTheAppHasTheScreen() {
+        runTest {
+            val press = Command.PressKey("home")
+            val agent = FakeClient { if (it is Command.Foreground) Response.ForegroundResult(true) else unsupported() }
+            val device = FakeDevice(supportsWaitFor = false)
+            val system = FakeClient { Response.Ok }
+            system.reachable = { device.runnerStarts.isNotEmpty() }
+
+            drivers(device, agent, system).sendWithRunnerFallback(press)
+
+            assertEquals(listOf(false), device.runnerStarts)
+        }
+    }
+
+    @Test
     fun aKeyTheAgentPressesStaysWithTheAgent() {
         runTest {
             val press = Command.PressKey("enter")

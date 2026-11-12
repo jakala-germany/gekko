@@ -310,8 +310,11 @@ interface Device {
     val runnerStartTimeoutMs: Long
         get() = 20_000
 
-    /** Starts the out-of-process runner (UiAutomator / XCUITest) that serves [systemPort]. */
-    fun startSystemRunner(config: GekkoConfig, log: (String) -> Unit)
+    /**
+     * Starts the out-of-process runner (UiAutomator / XCUITest) that serves [systemPort]. [appInFront] says that the
+     * app had the screen when the start was asked for: on an Apple TV the start takes it, so the runner gives it back.
+     */
+    fun startSystemRunner(config: GekkoConfig, log: (String) -> Unit, appInFront: Boolean)
 }
 
 private const val RECORDING_LIMIT_SECONDS = 180
@@ -669,7 +672,7 @@ class AdbDevice(val serial: String?) : Device {
      * Always installs the runner that belongs to this gekko: one left behind by another release, or signed with another
      * debug key, is removed first, so an install over it cannot fail and a stale runner is never started.
      */
-    override fun startSystemRunner(config: GekkoConfig, log: (String) -> Unit) {
+    override fun startSystemRunner(config: GekkoConfig, log: (String) -> Unit, appInFront: Boolean) {
         // The environment wins: a CI action installs the runner for the job without touching gekko.yaml
         val apk =
             env("GEKKO_RUNNER_APK")
@@ -968,6 +971,11 @@ class Drivers(
         }
     }
 
+    private suspend fun isAppInFront(): Boolean {
+        val response = askForeground()
+        return response is Response.ForegroundResult && response.appInForeground
+    }
+
     private suspend fun pick(): CommandClient {
         val foreground = askForeground()
         if (foreground is Response.ForegroundResult && foreground.appInForeground) {
@@ -992,7 +1000,9 @@ class Drivers(
             return
         }
         systemStarted = false
-        device.startSystemRunner(config, log)
+        // Only an Apple TV loses the screen to the runner; the others do not pay for the extra question
+        val appInFront = device.isTv && isAppInFront()
+        device.startSystemRunner(config, log, appInFront)
         val deadline = nowMillis() + device.runnerStartTimeoutMs
         // The runner that was just replaced can still hold the socket for a moment; whatever keeps it is reported
         var untrusted: IncompatibleVersionException? = null

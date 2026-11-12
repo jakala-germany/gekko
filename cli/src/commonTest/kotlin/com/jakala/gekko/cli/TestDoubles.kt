@@ -111,5 +111,10 @@ internal class FakeDevice(
 
     override fun terminate(config: GekkoConfig) {}
 
-    override fun startSystemRunner(config: GekkoConfig, log: (String) -> Unit) {}
+    /** For every start of the system runner: whether the app had the screen. */
+    val runnerStarts = mutableListOf<Boolean>()
+
+    override fun startSystemRunner(config: GekkoConfig, log: (String) -> Unit, appInFront: Boolean) {
+        runnerStarts += appInFront
+    }
 }

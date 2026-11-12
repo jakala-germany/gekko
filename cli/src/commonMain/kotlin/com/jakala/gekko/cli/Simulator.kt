@@ -227,7 +227,7 @@ class SimctlDevice(private val requestedUdid: String?) : Device {
     override val runnerStartTimeoutMs: Long
         get() = 120_000
 
-    override fun startSystemRunner(config: GekkoConfig, log: (String) -> Unit) {
+    override fun startSystemRunner(config: GekkoConfig, log: (String) -> Unit, appInFront: Boolean) {
         runProcess(listOf("pkill", "-f", "xcodebuild test-without-building.*id=$udid"))
         val dir = SimulatorArtifacts.runnerDir(config.ios, isTv)
         val bundle = bundleId(config)
@@ -241,11 +241,15 @@ class SimctlDevice(private val requestedUdid: String?) : Device {
                     ">/tmp/gekko-ios-runner-$udid.log 2>&1 &",
             ),
             environment =
-                mapOf(
-                    "TEST_RUNNER_GEKKO_TARGET_BUNDLE_ID" to bundle,
-                    "TEST_RUNNER_GEKKO_PORT" to "${systemPort()}",
-                    "TEST_RUNNER_GEKKO_TOKEN" to UserToken.value,
-                ),
+                mutableMapOf(
+                        "TEST_RUNNER_GEKKO_TARGET_BUNDLE_ID" to bundle,
+                        "TEST_RUNNER_GEKKO_PORT" to "${systemPort()}",
+                        "TEST_RUNNER_GEKKO_TOKEN" to UserToken.value,
+                    )
+                    .also {
+                        // Starting the runner on an Apple TV takes the screen from the app: the runner gives it back
+                        if (appInFront && isTv) it["TEST_RUNNER_GEKKO_ACTIVATE_TARGET"] = "1"
+                    },
         )
     }
 

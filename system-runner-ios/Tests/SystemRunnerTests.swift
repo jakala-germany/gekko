@@ -44,6 +44,13 @@ final class SystemRunnerTests: XCTestCase {
             XCTFail(message)
             return
         }
+        #if os(tvOS)
+        // Starting this runner took the screen from the app, and a remote press goes to whatever has it: the app comes
+        // back before the server answers. An app that is gone is not launched again, its agent would be lost.
+        if environment["GEKKO_ACTIVATE_TARGET"] == "1", let target, target.state != .notRunning, target.state != .unknown {
+            target.activate()
+        }
+        #endif
         let serving = expectation(description: "serve forever")
         let server = HttpCommandServer(port: port, token: token) { [self] command in
             var result: [String: Any] = [:]
