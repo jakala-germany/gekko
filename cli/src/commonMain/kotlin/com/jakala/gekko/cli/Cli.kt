@@ -229,12 +229,12 @@ private abstract class SelectorCommand(name: String) : DeviceCommand(name) {
 
 private class DevicesCommand : CliktCommand(name = "devices") {
     override fun help(context: Context): String {
-        return "List connected Android devices, booted iOS simulators and running web sessions"
+        return "List connected Android devices, booted iOS simulators and running web sessions; a TV is marked tv"
     }
 
     override fun run() {
-        AdbDevice.listSerials().forEach { say("android $it") }
-        SimctlDevice.bootedUdids().forEach { say("ios $it") }
+        AdbDevice.listSerials().forEach { say("android $it${if (AdbDevice(it).isTv) " tv" else ""}") }
+        SimctlDevice.bootedSimulators().forEach { say("ios ${it.udid}${if (it.isTv) " tv" else ""}") }
         WebSessions.running().forEach { say("web $it") }
     }
 }
@@ -295,7 +295,14 @@ private class TypeCommand : SelectorCommand("type") {
 
     override fun run() {
         withDrivers { drivers, _, project ->
-            report(drivers.send(Command.Type(selector(), value, timeout, project.config.settleMs), system))
+            val selector = selector()
+            if (drivers.isTv) {
+                val failure = FocusWaiter(drivers, project.config.settleMs).awaitFieldFocus(selector, timeout)
+                if (failure != null) {
+                    fail(failure, ExitCode.FAILED)
+                }
+            }
+            report(drivers.send(Command.Type(selector, value, timeout, project.config.settleMs), system))
         }
     }
 }

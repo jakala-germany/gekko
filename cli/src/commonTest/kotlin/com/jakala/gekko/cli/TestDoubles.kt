@@ -27,6 +27,7 @@ internal class FakeDevice(
     private val appRunning: Boolean? = null,
     /** An emulator or simulator takes the location from its console; a physical device does not have one. */
     private val locationConsole: Boolean = true,
+    override val isTv: Boolean = false,
 ) : Device {
     val locations = mutableListOf<Pair<Double, Double>>()
     var mockLocationAllowed = 0

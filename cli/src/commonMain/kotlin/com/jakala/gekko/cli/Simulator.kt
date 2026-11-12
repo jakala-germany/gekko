@@ -1,5 +1,12 @@
 package com.jakala.gekko.cli
 
+import kotlinx.serialization.SerializationException
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonArray
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.contentOrNull
+
 /** iOS simulator controlled through `xcrun simctl`; the simulator shares the host's loopback, so no port forwarding. */
 class SimctlDevice(private val requestedUdid: String?) : Device {
     private val udid: String by lazy { requestedUdid ?: singleBootedUdid() }
@@ -32,6 +39,10 @@ class SimctlDevice(private val requestedUdid: String?) : Device {
 
     override fun systemPort(): Int {
         return SimulatorPorts.agent(udid) + 1
+    }
+
+    override val isTv: Boolean by lazy {
+        bootedSimulators().firstOrNull { it.udid.equals(udid, ignoreCase = true) }?.isTv == true
     }
 
     private fun simctl(vararg args: String, mergeStderr: Boolean = true): ProcessResult {
@@ -298,13 +309,17 @@ class SimctlDevice(private val requestedUdid: String?) : Device {
         const val RUNNER_TESTS_BUNDLE = "com.jakala.gekko.runneruitests.xctrunner"
 
         fun bootedUdids(): List<String> {
+            return bootedSimulators().map { it.udid }
+        }
+
+        /** The booted simulators with the runtime each one runs; empty without Xcode or when `simctl` fails. */
+        fun bootedSimulators(): List<BootedSimulator> {
             if (isWindowsHost) {
                 return emptyList()
             }
-            val pattern = Regex("\\(([0-9A-Fa-f-]{36})\\) \\(Booted\\)")
-            return runProcess(listOf("xcrun", "simctl", "list", "devices", "booted")).text.lines().mapNotNull {
-                pattern.find(it)?.groupValues?.get(1)
-            }
+            // stderr stays out of the way: a warning of simctl would make the JSON unreadable
+            val listed = runProcess(listOf("xcrun", "simctl", "list", "devices", "booted", "-j"), mergeStderr = false)
+            return if (listed.exitCode == 0) BootedSimulator.parse(listed.text) else emptyList()
         }
 
         private fun singleBootedUdid(): String {
@@ -313,6 +328,36 @@ class SimctlDevice(private val requestedUdid: String?) : Device {
                 0 -> error("No booted iOS simulator")
                 1 -> booted[0]
                 else -> error("Several simulators are booted (${booted.joinToString()}); choose one with -s")
+            }
+        }
+    }
+}
+
+/**
+ * A simulator that `simctl` lists as booted. The [runtime] is the key of its group in the list
+ * (`com.apple.CoreSimulator.SimRuntime.tvOS-18-0`); an Apple TV is the one that runs a tvOS runtime.
+ */
+data class BootedSimulator(val udid: String, val runtime: String) {
+    val isTv: Boolean
+        get() = runtime.contains(".tvOS-")
+
+    companion object {
+        /** Reads the output of `xcrun simctl list devices booted -j`; unreadable output is an empty list. */
+        fun parse(json: String): List<BootedSimulator> {
+            val root =
+                try {
+                    Json.parseToJsonElement(json)
+                } catch (unreadable: SerializationException) {
+                    return emptyList()
+                }
+            val groups = (root as? JsonObject)?.get("devices") as? JsonObject ?: return emptyList()
+            return groups.flatMap { (runtime, devices) ->
+                (devices as? JsonArray).orEmpty().mapNotNull { device ->
+                    val fields = device as? JsonObject
+                    val udid = (fields?.get("udid") as? JsonPrimitive)?.contentOrNull
+                    val state = (fields?.get("state") as? JsonPrimitive)?.contentOrNull
+                    if (state == "Booted" && udid != null) BootedSimulator(udid, runtime) else null
+                }
             }
         }
     }

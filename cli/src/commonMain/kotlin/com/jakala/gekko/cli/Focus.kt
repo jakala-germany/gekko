@@ -76,8 +76,11 @@ object FocusTree {
         }
         val focus = focusedNode(windows)
         val where = if (focus == null) "nothing has the focus" else "focus is on ${describe(focus)}"
-        return "Expected focused: $selector ($where)"
+        return "$EXPECTED_FOCUSED $selector ($where)"
     }
+
+    /** What a failure of [failure] starts with when the element exists and the focus is elsewhere. */
+    const val EXPECTED_FOCUSED = "Expected focused:"
 
     private const val MAX_TEXT = 60
 }
@@ -110,6 +113,15 @@ class FocusWaiter(
             }
             delay(POLL_MS)
         }
+    }
+
+    /**
+     * [awaitFocus] for a field that is about to get text. On a TV the failure adds what a test has to do: move the
+     * focus to the field with the remote first.
+     */
+    suspend fun awaitFieldFocus(selector: Selector, timeoutMs: Long, settle: Boolean = true): String? {
+        val failure = awaitFocus(selector, timeoutMs, settle) ?: return null
+        return if (failure.startsWith(FocusTree.EXPECTED_FOCUSED)) "$failure; ${TvRules.FOCUS_FIRST}" else failure
     }
 
     /**

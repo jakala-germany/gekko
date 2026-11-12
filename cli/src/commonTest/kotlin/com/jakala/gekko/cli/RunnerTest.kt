@@ -146,7 +146,7 @@ class RunnerTest {
                 Command.Foreground -> Response.ForegroundResult(true)
                 Command.Tree -> Response.TreeResult(teaserRow(focus[0]))
                 is Command.PressKey -> {
-                    focus[0] = minOf(focus[0] + 1, 2)
+                    focus[0] = minOf(focus[0] + command.times, 2)
                     Response.Ok
                 }
                 else -> Response.Ok
@@ -209,6 +209,127 @@ class RunnerTest {
             ),
             result.failure,
         )
+    }
+
+    private fun tvRunner(seen: MutableList<Command>, focus: Int): TestRunner {
+        return runner(
+            Platform.Android,
+            remoteAgent(seen, intArrayOf(focus)),
+            suggestIds = false,
+            device = FakeDevice(supportsWaitFor = true, isTv = true),
+        )
+    }
+
+    @Test
+    fun aTouchStepFailsOnATvAndNamesTheRemote() = runTest {
+        val seen = mutableListOf<Command>()
+        val steps =
+            listOf(
+                "tap: { id: home.teaser }",
+                "tap: { point: \"50%,50%\" }",
+                "doubleTap: { id: home.teaser }",
+                "longPress: { id: home.teaser }",
+                "scroll: { id: home.teaser }",
+                "scrollUntilVisible: { id: home.teaser }",
+                "swipe: { direction: left }",
+                "drag: { start: \"10%,10%\", end: \"50%,50%\" }",
+            )
+
+        for (action in steps) {
+            val result = tvRunner(seen, focus = 0).run(test("name: Touch\nsteps:\n  - do: { $action }"), "t.yaml")
+
+            val name = action.substringBefore(':')
+            assertEquals(
+                "$name is not available on a TV: use pressKey (up, down, left, right, select) to move the focus",
+                result.failure,
+                action,
+            )
+        }
+        assertTrue(seen.none { it is Command.Tap || it is Command.Scroll || it is Command.Swipe }, seen.toString())
+    }
+
+    @Test
+    fun theTouchBanOfATvIsNotSkippedAsAnOptionalStepAndNotHealed() = runTest {
+        val result =
+            tvRunner(mutableListOf(), focus = 0)
+                .run(
+                    test(
+                        """
+                        name: Touch
+                        steps:
+                          - optional: true
+                            do: { tap: { id: home.teaser } }
+                        """
+                    ),
+                    "t.yaml",
+                )
+
+        assertTrue(result.failure!!.contains("not available on a TV"), result.failure)
+    }
+
+    @Test
+    fun aPhoneStillTaps() = runTest {
+        val seen = mutableListOf<Command>()
+        val runner = runner(Platform.Android, remoteAgent(seen, intArrayOf(0)), suggestIds = false)
+
+        val result = runner.run(test("name: Tap\nsteps:\n  - do: { tap: { id: home.teaser } }"), "t.yaml")
+
+        assertNull(result.failure)
+        assertTrue(seen.any { it is Command.Tap })
+    }
+
+    @Test
+    fun aTvTypesOnlyIntoAFieldThatHasTheFocus() = runTest {
+        val seen = mutableListOf<Command>()
+        val steps = "name: Type\nsteps:\n  - do: { type: { id: home.teaser, index: 1, value: Ada } }"
+
+        val unfocused = tvRunner(seen, focus = 0).run(test(steps), "t.yaml")
+        val focused = tvRunner(seen, focus = 1).run(test(steps), "t.yaml")
+
+        assertTrue(
+            unfocused.failure!!.startsWith("Expected focused: Selector(id=home.teaser, index=1) (focus is on"),
+            unfocused.failure,
+        )
+        assertTrue(unfocused.failure.contains("pressKey with until, then type"), unfocused.failure)
+        assertNull(focused.failure)
+        assertEquals(1, seen.filterIsInstance<Command.Type>().size)
+    }
+
+    @Test
+    fun aPhoneTypesWithoutAskingForTheFocus() = runTest {
+        val seen = mutableListOf<Command>()
+        val runner = runner(Platform.Android, remoteAgent(seen, intArrayOf(0)), suggestIds = false)
+
+        val result =
+            runner.run(
+                test("name: Type\nsteps:\n  - do: { type: { id: home.teaser, index: 1, value: Ada } }"),
+                "t.yaml",
+            )
+
+        assertNull(result.failure)
+        assertEquals(1, seen.filterIsInstance<Command.Type>().size)
+    }
+
+    @Test
+    fun aTvPressesRemoteKeysAndAssertsTheFocus() = runTest {
+        val seen = mutableListOf<Command>()
+
+        val result =
+            tvRunner(seen, focus = 0)
+                .run(
+                    test(
+                        """
+                        name: Remote
+                        steps:
+                          - do: { pressKey: { key: down, times: 2 } }
+                          - do: { assertFocused: { id: home.teaser, index: 2 } }
+                        """
+                    ),
+                    "t.yaml",
+                )
+
+        assertNull(result.failure)
+        assertEquals(listOf(2), seen.filterIsInstance<Command.PressKey>().map { it.times })
     }
 
     @Test

@@ -958,12 +958,16 @@ class TestRunner(
     }
 
     private suspend fun perform(action: Action, timeout: Long, settle: Boolean = true) {
+        if (drivers.isTv) {
+            TvRules.touchAction(action)?.let { throw StepFailure(it) }
+        }
         when {
             action.tap != null -> tap(action.tap, timeout)
-            action.type != null ->
-                expectOk(
-                    drivers.send(Command.Type(action.type.selector(platform), action.type.value, timeout, settleMs))
-                )
+            action.type != null -> {
+                val selector = action.type.selector(platform)
+                requireFocusOnTv(selector, timeout, settle)
+                expectOk(drivers.send(Command.Type(selector, action.type.value, timeout, settleMs)))
+            }
             action.typeFocused != null ->
                 expectOk(
                     drivers.send(Command.TypeFocused(action.typeFocused.value, timeout), action.typeFocused.system)
@@ -998,8 +1002,11 @@ class TestRunner(
             action.back == true -> pressKey(PressKeySpec(Keys.BACK), timeout)
             action.openLink != null -> onDevice { device.openLink(action.openLink) }
             action.scrollUntilVisible != null -> scrollUntilVisible(action.scrollUntilVisible, timeout)
-            action.eraseText != null ->
-                expectOk(drivers.send(Command.Type(action.eraseText.toSelector(platform), "", timeout, settleMs)))
+            action.eraseText != null -> {
+                val selector = action.eraseText.toSelector(platform)
+                requireFocusOnTv(selector, timeout, settle)
+                expectOk(drivers.send(Command.Type(selector, "", timeout, settleMs)))
+            }
             action.waitForAnimationToEnd == true -> waitForAnimationToEnd(timeout)
             action.takeScreenshot != null -> takeScreenshot(action.takeScreenshot)
             action.copyText != null -> copyText(action.copyText, timeout)
@@ -1061,6 +1068,14 @@ class TestRunner(
         focus.pressUntil(spec.key, until.toSelector(platform), spec.limit, timeout, spec.system)?.let {
             throw StepFailure(it)
         }
+    }
+
+    /** On a TV a field takes text only when the remote moved the focus to it; elsewhere nothing is asked. */
+    private suspend fun requireFocusOnTv(selector: Selector, timeout: Long, settle: Boolean) {
+        if (!drivers.isTv) {
+            return
+        }
+        focus.awaitFieldFocus(selector, timeout, settle)?.let { throw StepFailure(it) }
     }
 
     /** Passes once the element has the focus, which a remote moves; the failure names where the focus is. */

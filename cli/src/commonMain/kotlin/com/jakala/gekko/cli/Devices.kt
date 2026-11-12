@@ -163,6 +163,13 @@ interface Device {
     val supportsWaitFor: Boolean
         get() = false
 
+    /**
+     * True for an Android TV / Google TV device or an Apple TV simulator: a remote moves the focus there and nothing is
+     * touched, see [TvRules].
+     */
+    val isTv: Boolean
+        get() = false
+
     fun clearData(config: GekkoConfig)
 
     /** Installs the app under test from [path] (the app of `gekko.yaml` when null); keeps its data. */
@@ -343,6 +350,8 @@ class AdbDevice(val serial: String?) : Device {
     override val supportsWaitFor: Boolean
         get() = true
 
+    override val isTv: Boolean by lazy { isTelevision(shell("pm", "list", "features").text) }
+
     override fun agentPort(config: GekkoConfig): Int {
         return hostPort(agentSocketName(androidAppId(config)))
     }
@@ -497,13 +506,30 @@ class AdbDevice(val serial: String?) : Device {
         } else if (arguments.isNotEmpty()) {
             // monkey cannot pass extras: start the launcher activity by name
             val component =
-                shell("cmd", "package", "resolve-activity", "--brief", appId).text.lines().lastOrNull {
-                    it.contains("/")
-                } ?: error("No launcher activity found for $appId; set app.androidActivity in gekko.yaml")
-            shell("am", "start", "-n", component.trim(), *extras(arguments))
+                launcherCategories().firstNotNullOfOrNull { category -> launcherComponent(appId, category) }
+                    ?: error("No launcher activity found for $appId; set app.androidActivity in gekko.yaml")
+            shell("am", "start", "-n", component, *extras(arguments))
         } else {
-            shell("monkey", "-p", appId, "-c", "android.intent.category.LAUNCHER", "1")
+            // An app made for a TV has no launcher activity of a phone: only the leanback one starts it
+            for (category in launcherCategories()) {
+                if (!shell("monkey", "-p", appId, "-c", category, "1").text.contains("No activities found")) {
+                    break
+                }
+            }
         }
+    }
+
+    /** The launcher categories to try, in order: a TV starts an app from its leanback launcher first. */
+    private fun launcherCategories(): List<String> {
+        return if (isTv) listOf(LEANBACK_LAUNCHER, LAUNCHER) else listOf(LAUNCHER)
+    }
+
+    private fun launcherComponent(appId: String, category: String): String? {
+        return shell("cmd", "package", "resolve-activity", "--brief", "-c", category, appId)
+            .text
+            .lines()
+            .lastOrNull { it.contains("/") }
+            ?.trim()
     }
 
     private fun extras(arguments: Map<String, String>): Array<String> {
@@ -727,6 +753,19 @@ class AdbDevice(val serial: String?) : Device {
             check(result.exitCode == 0) { "$failure: $text" }
         }
 
+        const val LAUNCHER = "android.intent.category.LAUNCHER"
+        const val LEANBACK_LAUNCHER = "android.intent.category.LEANBACK_LAUNCHER"
+
+        /**
+         * True when the output of `pm list features` is the one of a TV (leanback, or the television hardware type).
+         */
+        fun isTelevision(features: String): Boolean {
+            return features
+                .lines()
+                .map { it.trim() }
+                .any { it == "feature:android.software.leanback" || it == "feature:android.hardware.type.television" }
+        }
+
         fun listSerials(): List<String> {
             return runProcess(listOf("adb", "devices"))
                 .text
@@ -758,7 +797,17 @@ class Drivers(
     val supportsWaitFor: Boolean
         get() = device.supportsWaitFor
 
+    /** True for a TV device, which has no touch: see [TvRules]. */
+    val isTv: Boolean
+        get() = device.isTv
+
     suspend fun send(command: Command, forceSystem: Boolean = false): Response {
+        if (isTv) {
+            // `rejected`, not `unsupported`: the system runner must not be asked for what the TV refuses
+            TvRules.touchCommand(command)?.let {
+                return Response.Error(it, ErrorKind.REJECTED)
+            }
+        }
         if (forceSystem) {
             return sendToSystemRunner(command)
         }

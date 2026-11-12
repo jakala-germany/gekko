@@ -93,6 +93,55 @@ class DriversTest {
     }
 
     @Test
+    fun aTvRefusesEveryTouchCommandWithoutAskingAnyone() {
+        runTest {
+            val agent = FakeClient { Response.Ok }
+            val system = FakeClient { Response.Ok }
+            val tv = drivers(FakeDevice(supportsWaitFor = true, isTv = true), agent, system)
+            val touches =
+                listOf(
+                    tap,
+                    Command.TapAt(1, 2),
+                    Command.DoubleTap(Selector(id = "go")),
+                    Command.LongPress(Selector(id = "go")),
+                    Command.LongPressAt(1, 2),
+                    Command.Scroll(Selector(id = "go")),
+                    Command.Swipe(1, 2, 3, 4),
+                    Command.Drag(1, 2, 3, 4),
+                    Command.Wheel(1, 2, 3, 4),
+                )
+
+            for (command in touches) {
+                val response = tv.sendWithRunnerFallback(command)
+
+                assertTrue(response is Response.Error && response.kind == ErrorKind.REJECTED, "$command: $response")
+                assertTrue((response as Response.Error).message.contains("pressKey"), response.message)
+            }
+            assertTrue(agent.received.isEmpty())
+            assertTrue(system.received.isEmpty())
+        }
+    }
+
+    @Test
+    fun aTvStillTakesKeysTextAndReads() {
+        runTest {
+            val agent = FakeClient { Response.Ok }
+            val tv = drivers(FakeDevice(supportsWaitFor = true, isTv = true), agent, FakeClient { Response.Ok })
+            val commands =
+                listOf(
+                    Command.PressKey("down"),
+                    Command.Tree,
+                    Command.TypeFocused("a"),
+                    Command.Type(Selector(id = "go"), "a"),
+                )
+
+            commands.forEach { assertEquals(Response.Ok, tv.send(it)) }
+
+            assertEquals(commands, agent.received)
+        }
+    }
+
+    @Test
     fun aKeyTheAgentCannotPressGoesToTheSystemRunnerOnIos() {
         runTest {
             val press = Command.PressKey("home")
