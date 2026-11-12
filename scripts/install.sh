@@ -120,6 +120,17 @@ curl -fsSL -o "$work/SHA256SUMS" "$DOWNLOAD_URL/SHA256SUMS" || die "no release $
 for name in "${assets[@]}"; do
   curl -fsSL -o "$work/$name" "$DOWNLOAD_URL/$name" || die "downloading $name failed"
 done
+# The builds for the Apple TV simulator: a release from before them has none, and the iOS ones still install
+tvos=false
+if [ "$ios" = true ]; then
+  tvos=true
+  for name in "gekko-tvos-runner.zip" "gekko-tvos-agent.zip"; do
+    curl -fsL -o "$work/$name" "$DOWNLOAD_URL/$name" 2>/dev/null || tvos=false
+  done
+  if [ "$tvos" = true ]; then
+    assets+=("gekko-tvos-runner.zip" "gekko-tvos-agent.zip")
+  fi
+fi
 
 # Only the lines of the files that were downloaded; a file that is not listed fails the check
 : > "$work/CHECKSUMS"
@@ -150,6 +161,10 @@ if [ "$ios" = true ]; then
   unzip -q -o "$work/gekko-ios-runner.zip" -d "$RUNNERS_DIR"
   unzip -q -o "$work/gekko-ios-agent.zip" -d "$RUNNERS_DIR"
 fi
+if [ "$tvos" = true ]; then
+  unzip -q -o "$work/gekko-tvos-runner.zip" -d "$RUNNERS_DIR"
+  unzip -q -o "$work/gekko-tvos-agent.zip" -d "$RUNNERS_DIR"
+fi
 
 echo "Installed gekko $version to $BIN_DIR/gekko and the runners to $RUNNERS_DIR"
 if [ -n "$web" ]; then
@@ -164,6 +179,9 @@ case ":$PATH:" in
 esac
 if [ "$ios" = true ]; then
   echo "For iOS simulators set ios.agentFramework: installed in gekko.yaml (or GEKKO_IOS_AGENT)"
+  if [ "$tvos" = true ]; then
+    echo "The same setting serves Apple TV simulators with the tvOS agent (or set GEKKO_TVOS_AGENT)"
+  fi
 fi
 if [ -z "$web" ]; then
   echo "For web tests (Node.js 18+): gekko install --platform web -s chromium   (or run this script again with --web)"

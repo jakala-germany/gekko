@@ -175,6 +175,13 @@ class ProtocolTest {
     }
 
     @Test
+    fun theRemoteButtonsAreKeysOfPressKey() {
+        assertEquals(listOf("up", "down", "left", "right", "select", "playPause", "menu"), Keys.remote)
+        assertTrue(Keys.all.containsAll(Keys.remote))
+        assertTrue(Keys.field.none { it in Keys.remote })
+    }
+
+    @Test
     fun pressKeyNeedsAtLeastOnePress() {
         assertFailsWith<IllegalArgumentException> { Command.PressKey(Keys.ENTER, times = 0) }
         assertFailsWith<IllegalArgumentException> {

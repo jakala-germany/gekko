@@ -112,11 +112,12 @@ teardown: [account-cleanup]      # optional flows, run once after the last test
 | `swipe` | `{ swipe: { direction: up } }`<br>`{ swipe: { from: { id: Slider.Handle }, direction: right, durationMs: 400 } }`<br>`{ swipe: { start: "50%,80%", end: "50%,20%" } }` | A physical finger gesture that flings, see "Scrolling". Takes `system: true`. |
 | `drag` | `{ drag: { start: "50%,80%", end: "50%,30%" } }`<br>`{ drag: { from: { id: Slider.Handle }, end: "90%,50%" } }` | Moves the content under the start to the end and lets go without momentum, see "Scrolling". Takes `system: true`. |
 | `assertVisible`<br>`assertNotVisible` | `{ assertVisible: { id: Detail.Title, text: "Tent" } }` | Passes when an element that matches is on screen (its center lies inside the window), or when none is. `gekko tree` also lists off-screen rows, so an id in the tree is not proof it is visible. |
+| `assertFocused` | `{ assertFocused: { id: home.teaser, index: 1 } }` | Passes once the element has the focus (the element itself, or something inside of it): on a TV the one the remote moved the focus to, elsewhere the field a tap put the focus into. The `index` is counted first, over the elements that match, so `index: 1` is the second teaser whether it has the focus or not (it is not "the second focused one"). It waits like `assertVisible` and fails with where the focus is: `Expected focused: Selector(id=home.teaser, index=1) (focus is on home.teaser "Top Gun")`. |
 | `assertPane` | `{ assertPane: auth/login }` | Passes when every element of the identity of the pane is visible, see "Panes". Also valid as the `until` of a step. |
 | `waitForAnimationToEnd` | `{ waitForAnimationToEnd: true }` | Waits until the screen stopped changing (same notion of "done" as for missing elements). |
 | `wait` | `{ wait: 500 }` | Fixed pause in ms. Avoid; assert the end state instead. |
 | `back` | `{ back: true }` | System back button (Android) or history back (web). With the keyboard up on Android, the first back closes it, as on a phone. On Android 13 and newer the system runner presses it (an app takes back through callbacks there), so the first back of a run starts the runner. iOS has no back key: the step fails. |
-| `pressKey` | `{ pressKey: enter }`<br>`{ pressKey: { key: backspace, times: 2 } }`<br>`{ pressKey: { key: home, system: true } }` | Presses a key `times` times (default 1) in one request. `enter`, `backspace` (erases to the left) and `tab` go to the field that has the input focus: the step waits for a field that takes text to get it (put it there first, e.g. with a `tap`) and fails when none does; on iOS a `tab` types a tab character. `back` and `home` (a real button, so it leaves the app) work on Android; on iOS `home` works and `back` does not. An Android key code number (`"66"`) works on Android. The in-app agent presses what it can inside the app; `home`, a key code and a key of an app that is not in front go to the system runner, which presses any key, and `system: true` sends it there at once. On the web `enter`, `tab`, `escape`, `space`, `backspace`, `delete` (the forward delete), `home`, `end`, `pageup`, `pagedown`, `up`, `down`, `left`, `right` or any Playwright key name (`a`, `Shift+A`) goes to the focused element. Erase with `backspace`: `delete` is the web's forward delete, and no key on Android and iOS. |
+| `pressKey` | `{ pressKey: enter }`<br>`{ pressKey: { key: backspace, times: 2 } }`<br>`{ pressKey: { key: home, system: true } }` | Presses a key `times` times (default 1) in one request. `enter`, `backspace` (erases to the left) and `tab` go to the field that has the input focus: the step waits for a field that takes text to get it (put it there first, e.g. with a `tap`) and fails when none does; on iOS a `tab` types a tab character. `back` and `home` (a real button, so it leaves the app) work on Android; on iOS `home` works and `back` does not. An Android key code number (`"66"`) works on Android. The in-app agent presses what it can inside the app; `home`, a key code and a key of an app that is not in front go to the system runner, which presses any key, and `system: true` sends it there at once. On the web `enter`, `tab`, `escape`, `space`, `backspace`, `delete` (the forward delete), `home`, `end`, `pageup`, `pagedown`, `up`, `down`, `left`, `right` or any Playwright key name (`a`, `Shift+A`) goes to the focused element. Erase with `backspace`: `delete` is the web's forward delete, and no key on Android and iOS. The buttons of a TV remote (`up`, `down`, `left`, `right`, `select`, `playPause`, `menu`) go to the system runner (Android key codes, `XCUIRemote` on an Apple TV, where `back` is the menu button); on the web they are the arrow keys, `select` is `Enter`. With `until: <selector>` (`{ pressKey: { key: down, until: { id: row.sports }, max: 15 } }`) the key is pressed until that element has the focus, at most `max` times (default 20), and the step fails as soon as a press did not move the focus: `focus stuck on row.news after 4 presses`. `until` is not combined with `times`. See "TV". |
 | `hideKeyboard` | `{ hideKeyboard: true }` | Closes the keyboard when it is open; do it before a scroll or swipe over the lower part of the screen. |
 | `openLink` | `{ openLink: "example://item/42" }` | Opens a URL or deep link (Android intent, `simctl openurl` on a simulator, a navigation of the page on the web: an address starting with `/`, `.`, `?` or `#` is relative to the current page). |
 | `launchApp` | `{ launchApp: {} }`<br>`{ launchApp: { clearState: true } }`<br>`{ launchApp: { arguments: { feature: "on" } } }` | Starts the app (again). `clearState: true` wipes its data first. `arguments` become Android intent extras (strings), iOS launch arguments (`-feature on`) and query parameters on the web; keys are letters, digits, `_` or `.`, starting with a letter. |
@@ -318,6 +319,32 @@ device:
 
 Put it in `gekko.yaml` for all tests or at the top of a test to override it. It is applied after the app data was cleared and before the app starts, and restored when the test is done. Android uses the per-app locale (`language` needs API 33 or newer) and the system time format, an iOS simulator gets launch arguments (`-AppleLanguages`, `-AppleLocale`, `-AppleICUForce24HourTime`). Tests that find elements by id do not depend on the language; text assertions do.
 
+## TV (Android TV, Apple TV)
+
+A TV is recognised by itself (`gekko devices` marks it `tv`): an Android device with the leanback or television feature, a simulator that runs a tvOS runtime. Tests use the same ids and `app.*` settings as on a phone; only the way the app is driven changes, because a TV is driven with a remote that moves the focus.
+
+```yaml
+name: Open the second teaser of the top row with the remote
+tags: [tv]
+steps:
+  - say: The first teaser has the focus after launch
+    do: { assertFocused: { id: home.teaser } }
+  - say: Move one teaser to the right
+    do: { pressKey: right }
+  - say: The second teaser has the focus now
+    do: { assertFocused: { id: home.teaser, index: 1 } }
+  - say: Go down to the sports row, at most 15 presses
+    do: { pressKey: { key: down, until: { id: row.sports }, max: 15 } }
+  - say: Open it with the select button
+    do: { pressKey: select }
+```
+
+- **No touch.** `tap`, `doubleTap`, `longPress`, `scroll`, `scrollUntilVisible`, `swipe` and `drag` fail on a TV with a message that points to `pressKey`: a tap would pass where a person with the remote gets stuck (a focus trap, a row the focus cannot reach). Reach what is off screen with `pressKey` and `until`.
+- **Focus.** `assertFocused` checks where the focus is, `pressKey` with `until` moves it and stops with `focus stuck on <element> after N presses` when a press did not move it (the end of a row, a trap); the focus is the `focused` marker of `gekko tree`.
+- **Typing.** `type` only types into a field that already has the focus (move it there with `pressKey` first), because that is how a person reaches the field; the failure says where the focus is. `typeFocused` works as before.
+- **Healing.** With `--heal` the model proposes a `focus` (a move to another element), never a tap or a scroll.
+- Put the tests in a tag such as `tv` and run the phone and the TV tests on their devices (`--tags tv`, `--exclude-tags tv`).
+
 ## What works where
 
 | | Android | iOS simulator | Web (Chromium, Firefox, WebKit) |
@@ -325,6 +352,8 @@ Put it in `gekko.yaml` for all tests or at the top of a test to override it. It 
 | All selector keys, `tap`, `doubleTap`, `longPress` (also with `point`), `type`, `typeFocused`, `pressKey` (`enter`, `backspace`, `tab`), `eraseText`, `scroll`, `scrollUntilVisible`, `swipe`, `drag`, assertions, `waitForAnimationToEnd`, `wait`, `takeScreenshot`, `copyText`, `hideKeyboard`, `openLink`, `launchApp`, `stopApp`, `clearState`, `setDarkMode`, `setOrientation`, `repeat`, `use`, `system: true` on `tap`, `doubleTap`, `longPress`, `swipe`, `drag`, `typeFocused` and `pressKey` | yes | yes | yes |
 | `tap` with `point` | yes | no | no |
 | `pressKey` with `enter`, `backspace`, `tab` | yes | yes | yes |
+| `assertFocused`, `pressKey` with `until` | yes | yes (on an iPhone the focus is the field of the keyboard, on an Apple TV the element the remote focused) | yes (the focused element) |
+| `pressKey` with `up`, `down`, `left`, `right`, `select`, `playPause`, `menu` | yes, through the system runner | Apple TV simulators only | the arrow keys, `select` is Enter, `playPause` is MediaPlayPause; `menu` is not a key |
 | `pressKey` with `home` or a key code, `back` | yes | `home` only: `back` and a key code fail with the server's message | history back, any Playwright key name |
 | `setAirplaneMode` | yes | no: the step fails ("is not supported") | yes (offline) |
 | `launchPackage`, `stopPackage` | yes | no | no |

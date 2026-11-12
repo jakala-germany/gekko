@@ -145,12 +145,18 @@ object WebInstall {
                 """{ "name": "gekko-web", "private": true, "dependencies": { "playwright": "$PLAYWRIGHT_VERSION" } }""" +
                     "\n",
             )
+            // Runs in the directory instead of naming it with `--prefix`: on the Windows runner of CI npm did not take
+            // the
+            // prefix and looked for the package.json in the directory of the caller
             val npm =
                 runProcess(
-                    npm() + listOf("install", "--prefix", directory, "--no-audit", "--no-fund", "--loglevel=error"),
+                    npm() + listOf("install", "--no-audit", "--no-fund", "--loglevel=error"),
                     timeoutSeconds = INSTALL_TIMEOUT_SECONDS,
+                    workingDirectory = directory,
                 )
-            check(npm.exitCode == 0) { "npm install playwright failed: ${npm.text.takeLast(2_000)}" }
+            check(npm.exitCode == 0) {
+                "npm install playwright in $directory failed (exit ${npm.exitCode}): ${npm.text.takeLast(2_000)}"
+            }
         }
         check(fileExists(cli(directory))) {
             "Playwright was not found in $directory/node_modules; run: npm install playwright"

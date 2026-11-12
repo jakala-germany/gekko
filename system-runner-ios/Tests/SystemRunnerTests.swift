@@ -2,7 +2,8 @@ import UIKit
 import XCTest
 
 /// Serves the gekko protocol on 127.0.0.1:GEKKO_PORT (token GEKKO_TOKEN) for everything outside the app process:
-/// permission alerts, Safari / SFSafariViewController / ASWebAuthenticationSession and SpringBoard. Blocks until
+/// permission alerts, Safari / SFSafariViewController / ASWebAuthenticationSession and SpringBoard. On an Apple TV
+/// (tvOS) there is no touch: it presses the buttons of the remote and reads which element has the focus. Blocks until
 /// killed. xcodebuild passes the TEST_RUNNER_GEKKO_PORT and TEST_RUNNER_GEKKO_TOKEN of the CLI on as GEKKO_PORT and
 /// GEKKO_TOKEN.
 final class SystemRunnerTests: XCTestCase {
@@ -13,12 +14,21 @@ final class SystemRunnerTests: XCTestCase {
     private static let maxResolved = 8
     private static let changeSeconds = 1.0
     /// The commands this runner serves, as `hello` lists them. Keep in sync with the cases of `execute`.
+    #if os(tvOS)
+    private static let servedCommands = ["hello", "metrics", "tree", "foreground", "waitIdle", "type", "typeFocused", "pressKey"]
+    #else
     private static let servedCommands = [
         "hello", "metrics", "tree", "foreground", "waitIdle", "tap", "doubleTap", "longPress", "type", "typeFocused",
         "pressKey", "tapAt", "longPressAt", "scroll", "swipe", "drag", "setOrientation",
     ]
+    #endif
 
+    /// The system UI that shows alerts and the home screen: SpringBoard on iOS, PineBoard on tvOS.
+    #if os(tvOS)
+    private let springboard = XCUIApplication(bundleIdentifier: "com.apple.PineBoard")
+    #else
     private let springboard = XCUIApplication(bundleIdentifier: "com.apple.springboard")
+    #endif
     private lazy var target: XCUIApplication? = {
         guard let id = ProcessInfo.processInfo.environment["GEKKO_TARGET_BUNDLE_ID"] else { return nil }
         return XCUIApplication(bundleIdentifier: id)
@@ -34,6 +44,13 @@ final class SystemRunnerTests: XCTestCase {
             XCTFail(message)
             return
         }
+        #if os(tvOS)
+        // Starting this runner took the screen from the app, and a remote press goes to whatever has it: the app comes
+        // back before the server answers. An app that is gone is not launched again, its agent would be lost.
+        if environment["GEKKO_ACTIVATE_TARGET"] == "1", let target, target.state != .notRunning, target.state != .unknown {
+            target.activate()
+        }
+        #endif
         let serving = expectation(description: "serve forever")
         let server = HttpCommandServer(port: port, token: token) { [self] command in
             var result: [String: Any] = [:]
@@ -59,6 +76,20 @@ final class SystemRunnerTests: XCTestCase {
         case "foreground": return ["type": "foreground", "appInForeground": false]
         case "waitIdle": return ok()
         case "screenshot": return error("Screenshot is handled by the host CLI", ErrorKind.unsupported)
+        #if os(tvOS)
+        case "tap", "doubleTap", "longPress", "tapAt", "longPressAt", "scroll", "swipe", "drag", "setOrientation":
+            return error("An Apple TV has no touch and no rotation: move the focus with pressKey (up, down, left, right, select)", ErrorKind.unsupported)
+        case "type":
+            let text = command["text"] as? String ?? ""
+            return withElement(command, alertOnlyWithoutText: false) { match in
+                // Nothing is tapped: the remote already moved the focus to the field, which takes the keyboard input
+                guard match.candidate.snapshot.hasFocus else {
+                    return self.error("The element does not have the focus: move it there with the remote first", ErrorKind.rejected)
+                }
+                match.scope.app.typeText(text)
+                return self.ok()
+            }
+        #else
         case "tap": return withElement(command, alertOnlyWithoutText: true) { match in
             self.touch(match, { $0.tap() }, { $0.tap() })
             return self.ok()
@@ -80,8 +111,6 @@ final class SystemRunnerTests: XCTestCase {
                 match.scope.app.typeText(text)
                 return self.ok()
             }
-        case "typeFocused": return typeFocused(command)
-        case "pressKey": return pressKey(command)
         case "tapAt": return tapAt(command)
         case "longPressAt": return longPressAt(command)
         case "scroll": return scroll(command)
@@ -90,6 +119,9 @@ final class SystemRunnerTests: XCTestCase {
         case "setOrientation":
             XCUIDevice.shared.orientation = (command["landscape"] as? Bool ?? false) ? .landscapeLeft : .portrait
             return ok()
+        #endif
+        case "typeFocused": return typeFocused(command)
+        case "pressKey": return pressKey(command)
         default: return error("Unknown command \(type)", ErrorKind.unsupported)
         }
     }
@@ -110,10 +142,12 @@ final class SystemRunnerTests: XCTestCase {
     private func foremost() -> Scope {
         let alert = springboard.alerts.firstMatch
         if alert.exists { return Scope(root: alert, app: springboard) }
+        #if !os(tvOS)
         for id in ["com.apple.SafariViewService", "com.apple.mobilesafari"] {
             let app = XCUIApplication(bundleIdentifier: id)
             if app.state == .runningForeground { return Scope(root: app, app: app) }
         }
+        #endif
         // An app that is not in front (the home button was pressed) is not what is on the screen: the home screen is
         if let target, target.state != .runningForeground { return Scope(root: springboard, app: springboard) }
         let app = target ?? springboard
@@ -144,6 +178,7 @@ final class SystemRunnerTests: XCTestCase {
         let scope: Scope
         let rootFrame: CGRect
 
+        #if !os(tvOS)
         func coordinate() -> XCUICoordinate {
             return point(CGPoint(x: candidate.snapshot.frame.midX, y: candidate.snapshot.frame.midY))
         }
@@ -153,8 +188,10 @@ final class SystemRunnerTests: XCTestCase {
             let origin = scope.root.coordinate(withNormalizedOffset: CGVector(dx: 0, dy: 0))
             return origin.withOffset(CGVector(dx: screenPoint.x - rootFrame.minX, dy: screenPoint.y - rootFrame.minY))
         }
+        #endif
     }
 
+    #if !os(tvOS)
     /// Touches the element the way XCUIElement does, at its activation point (the switch of a SwiftUI toggle row, not the
     /// middle of the row). An element that cannot be told apart from others, or is covered, gets the touch at the center
     /// of its frame instead.
@@ -177,6 +214,7 @@ final class SystemRunnerTests: XCTestCase {
         guard query.count > 0, query.count <= Self.maxResolved else { return nil }
         return query.allElementsBoundByIndex.first { abs($0.frame.midX - snapshot.frame.midX) < 1 && abs($0.frame.midY - snapshot.frame.midY) < 1 }
     }
+    #endif
 
     private func candidates(_ snapshot: XCUIElementSnapshot, ancestors: [String] = [], inSelectionGroup: Bool = false, scrollFrame: CGRect? = nil) -> [Candidate] {
         let scrolls = [.scrollView, .table, .collectionView, .webView].contains(snapshot.elementType)
@@ -245,6 +283,7 @@ final class SystemRunnerTests: XCTestCase {
         return error("\(what): \(selector)\(detail)", miss)
     }
 
+    #if !os(tvOS)
     /// A touch at screen points, counted from the origin of the foremost application.
     private func tapAt(_ command: [String: Any]) -> [String: Any] {
         guard let x = finite(command["x"]), let y = finite(command["y"]), x >= 0, y >= 0 else {
@@ -254,6 +293,7 @@ final class SystemRunnerTests: XCTestCase {
         origin.withOffset(CGVector(dx: x, dy: y)).tap()
         return ok()
     }
+    #endif
 
     /// While a typeFocused runs, what XCTest would record as a failure is kept here instead; nil otherwise.
     private var typingIssues: [String]?
@@ -293,16 +333,37 @@ final class SystemRunnerTests: XCTestCase {
         return error("The focused field did not take the text", ErrorKind.rejected)
     }
 
+    #if os(tvOS)
+    /// The buttons of the Siri Remote by the names of the protocol (lower case); back is the menu button of the remote.
+    private static let remoteButtons: [String: XCUIRemote.Button] = [
+        "up": .up, "down": .down, "left": .left, "right": .right, "select": .select, "playpause": .playPause,
+        "menu": .menu, "back": .menu, "home": .home,
+    ]
+    /// The focus moves with an animation: the next press waits for it.
+    private static let remoteSettleSeconds = 0.2
+    #endif
+
     /// Presses a key as a keyboard does. The keys of a field wait for the keyboard focus as typeFocused does; home is the
-    /// hardware button, and there is no back key on iOS.
+    /// hardware button, and there is no back key on iOS. On an Apple TV the keys are the buttons of the remote.
     private func pressKey(_ command: [String: Any]) -> [String: Any] {
         guard let name = (command["key"] as? String)?.lowercased() else { return error("pressKey needs a key", ErrorKind.unsupported) }
         let times = max((command["times"] as? NSNumber)?.intValue ?? 1, 1)
+        #if os(tvOS)
+        if let button = Self.remoteButtons[name] {
+            for index in 0 ..< times {
+                if index > 0 { Thread.sleep(forTimeInterval: Self.remoteSettleSeconds) }
+                XCUIRemote.shared.press(button)
+            }
+            return ok()
+        }
+        #endif
         let keys: [String: XCUIKeyboardKey] = ["enter": .return, "backspace": .delete, "tab": .tab]
+        #if !os(tvOS)
         if name == "home" {
             for _ in 0 ..< times { XCUIDevice.shared.press(.home) }
             return ok()
         }
+        #endif
         if name == "back" { return error("iOS has no back key", ErrorKind.unsupported) }
         guard let key = keys[name] else { return error("The system runner cannot press '\(name)'", ErrorKind.unsupported) }
         let scope = foremost()
@@ -337,6 +398,7 @@ final class SystemRunnerTests: XCTestCase {
         return element.exists ? element : nil
     }
 
+    #if !os(tvOS)
     /// A touch at screen points, counted from the origin of the foremost application, held for holdMs.
     private func longPressAt(_ command: [String: Any]) -> [String: Any] {
         guard let x = finite(command["x"]), let y = finite(command["y"]), x >= 0, y >= 0 else {
@@ -441,6 +503,7 @@ final class SystemRunnerTests: XCTestCase {
     private static let dragSlop: CGFloat = 12
     private static let dragRestSeconds = 0.3
     private static let minSwipeSeconds = 0.05
+    #endif
 
     private func node(for element: XCUIElement) -> [String: Any] {
         guard let snapshot = try? element.snapshot() else {
@@ -467,6 +530,10 @@ final class SystemRunnerTests: XCTestCase {
         }
         if let checked = Self.checked(snapshot) { json["checked"] = checked }
         if let selected = Self.selected(snapshot, inSelectionGroup: inSelectionGroup) { json["selected"] = selected }
+        // The element the remote moved the focus to; on iOS a query for the focus is slow, so the tree leaves it out
+        #if os(tvOS)
+        if snapshot.hasFocus { json["focused"] = true }
+        #endif
         return json
     }
 

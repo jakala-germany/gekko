@@ -7,6 +7,7 @@ import android.view.ViewConfiguration
 import android.view.accessibility.AccessibilityNodeInfo
 import androidx.test.platform.app.InstrumentationRegistry
 import androidx.test.uiautomator.UiDevice
+import com.jakala.gekko.device.AndroidKeys
 import com.jakala.gekko.device.ElementLookup
 import com.jakala.gekko.device.Frame
 import com.jakala.gekko.device.NO_BOUNDS
@@ -311,6 +312,7 @@ class SystemRunnerTest {
     private fun pressKey(command: Command.PressKey): Response {
         val key = command.key.lowercase()
         val fieldCode = fieldKeyCode(key)
+        val remoteCode = AndroidKeys.remoteKeyCode(key)
         val press: () -> Boolean =
             when {
                 // UiDevice answers false for a back or a home that worked on older Android (the window it sent the
@@ -318,6 +320,7 @@ class SystemRunnerTest {
                 key == Keys.BACK -> ({ device.pressBack() || true })
                 key == Keys.HOME -> ({ device.pressHome() || true })
                 fieldCode != null -> ({ device.pressKeyCode(fieldCode) })
+                remoteCode != null -> ({ device.pressKeyCode(remoteCode) })
                 key.toIntOrNull() != null -> ({ device.pressKeyCode(key.toInt()) })
                 else -> return Response.Error("The system runner cannot press '${command.key}'", ErrorKind.UNSUPPORTED)
             }

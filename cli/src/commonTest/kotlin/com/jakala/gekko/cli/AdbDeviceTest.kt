@@ -51,6 +51,24 @@ class AdbDeviceTest {
     }
 
     @Test
+    fun aDeviceWithTheLeanbackOrTheTelevisionFeatureIsATv() {
+        val leanback = "feature:android.hardware.wifi\nfeature:android.software.leanback\n"
+        val television = "feature:android.hardware.type.television\r\nfeature:android.hardware.wifi\r\n"
+
+        assertTrue(AdbDevice.isTelevision(leanback))
+        assertTrue(AdbDevice.isTelevision(television))
+    }
+
+    @Test
+    fun aPhoneIsNoTvAndNeitherIsAnUnreadableAnswer() {
+        assertTrue(
+            !AdbDevice.isTelevision("feature:android.hardware.touchscreen\nfeature:android.software.leanback_only")
+        )
+        assertTrue(!AdbDevice.isTelevision("error: device offline"))
+        assertTrue(!AdbDevice.isTelevision(""))
+    }
+
+    @Test
     fun aMissingSerialIsNamedGenerically() {
         assertEquals(
             "The device runs Android API 21; gekko needs an emulator or device with API 24 (Android 7.0) or newer",

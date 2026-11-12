@@ -229,12 +229,12 @@ private abstract class SelectorCommand(name: String) : DeviceCommand(name) {
 
 private class DevicesCommand : CliktCommand(name = "devices") {
     override fun help(context: Context): String {
-        return "List connected Android devices, booted iOS simulators and running web sessions"
+        return "List connected Android devices, booted iOS simulators and running web sessions; a TV is marked tv"
     }
 
     override fun run() {
-        AdbDevice.listSerials().forEach { say("android $it") }
-        SimctlDevice.bootedUdids().forEach { say("ios $it") }
+        AdbDevice.listSerials().forEach { say("android $it${if (AdbDevice(it).isTv) " tv" else ""}") }
+        SimctlDevice.bootedSimulators().forEach { say("ios ${it.udid}${if (it.isTv) " tv" else ""}") }
         WebSessions.running().forEach { say("web $it") }
     }
 }
@@ -295,7 +295,14 @@ private class TypeCommand : SelectorCommand("type") {
 
     override fun run() {
         withDrivers { drivers, _, project ->
-            report(drivers.send(Command.Type(selector(), value, timeout, project.config.settleMs), system))
+            val selector = selector()
+            if (drivers.isTv) {
+                val failure = FocusWaiter(drivers, project.config.settleMs).awaitFieldFocus(selector, timeout)
+                if (failure != null) {
+                    fail(failure, ExitCode.FAILED)
+                }
+            }
+            report(drivers.send(Command.Type(selector, value, timeout, project.config.settleMs), system))
         }
     }
 }
@@ -321,7 +328,16 @@ private class TypeFocusedCommand : DeviceCommand("type-focused") {
 
 private class PressKeyCommand : DeviceCommand("press-key") {
     val key by argument(name = "KEY", help = "${Keys.all.joinToString()}, or an Android key code number")
-    val times by option("--times", help = "How often to press it").int().default(1)
+    val times by option("--times", help = "How often to press it (default 1)").int()
+    val untilId by option("--until-id", help = "Press until the element with this id has the focus")
+    val untilText by option("--until-text", help = "Press until the element with this text has the focus")
+    val max by
+        option(
+                "--max",
+                help =
+                    "With --until-id or --until-text: the most presses (default ${PressKeySpec.DEFAULT_MAX_PRESSES})",
+            )
+            .int()
     val system by
         option("--system", help = "Use the system runner (permission prompts, browser) instead of the in-app agent")
             .flag()
@@ -331,12 +347,32 @@ private class PressKeyCommand : DeviceCommand("press-key") {
             .default(Command.DEFAULT_TIMEOUT_MS)
 
     override fun help(context: Context): String {
-        return "Press a key: enter, backspace and tab go to the field that has the focus"
+        return "Press a key: enter, backspace and tab go to the field that has the focus, up, down, left, right and " +
+            "select are the buttons of a TV remote"
     }
 
     override fun run() {
-        withDrivers { drivers, _, _ ->
-            report(drivers.sendWithRunnerFallback(Command.PressKey(key, times, timeout), system))
+        withDrivers { drivers, _, project ->
+            if (untilId == null && untilText == null) {
+                if (max != null) {
+                    fail("--max only goes with --until-id or --until-text")
+                }
+                report(drivers.sendWithRunnerFallback(Command.PressKey(key, times ?: 1, timeout), system))
+                return@withDrivers
+            }
+            if (times != null) {
+                fail("--times cannot be combined with --until-id or --until-text")
+            }
+            val limit = max ?: PressKeySpec.DEFAULT_MAX_PRESSES
+            if (limit < 1) {
+                fail("--max must be at least 1, was $limit")
+            }
+            val target = Selector(id = untilId, text = untilText)
+            val failure = FocusWaiter(drivers, project.config.settleMs).pressUntil(key, target, limit, timeout, system)
+            if (failure != null) {
+                fail(failure, ExitCode.FAILED)
+            }
+            say("ok")
         }
     }
 }
@@ -361,15 +397,29 @@ private class ScrollCommand : SelectorCommand("scroll") {
 
 private class AssertCommand : SelectorCommand("assert") {
     val gone by option("--gone", help = "Assert the element is NOT visible").flag()
+    val focused by
+        option("--focused", help = "Assert the element HAS THE FOCUS (a TV remote moves it) instead of being visible")
+            .flag()
 
     override fun help(context: Context): String {
 
-        return "Assert that an element is visible"
+        return "Assert that an element is visible, or with --focused that it has the focus"
     }
 
     override fun run() {
-        withDrivers { drivers, _, _ ->
+        withDrivers { drivers, _, project ->
             val selector = selector()
+            if (focused) {
+                if (gone) {
+                    fail("--focused and --gone cannot be combined")
+                }
+                val failure = FocusWaiter(drivers, project.config.settleMs).awaitFocus(selector, timeout)
+                if (failure != null) {
+                    fail(failure, ExitCode.FAILED)
+                }
+                say("ok")
+                return@withDrivers
+            }
             val deadline = nowMillis() + timeout
             while (true) {
                 val tree = drivers.send(Command.Tree) as? Response.TreeResult

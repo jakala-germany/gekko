@@ -9,8 +9,8 @@ GEKKO="$(cd "$(dirname "$GEKKO")" && pwd)/$(basename "$GEKKO")"
 OUT=build/e2e
 rm -rf "$OUT" && mkdir -p "$OUT"
 
-# A booted simulator, or the first available iPhone
-UDID="$(xcrun simctl list devices booted | sed -n 's/.*(\([0-9A-F-]\{36\}\)) (Booted).*/\1/p' | head -n 1)"
+# A booted iPhone simulator, or the first available iPhone
+UDID="$(xcrun simctl list devices booted | grep -E 'iPhone' | sed -n 's/.*(\([0-9A-F-]\{36\}\)) (Booted).*/\1/p' | head -n 1 || true)"
 if [ -z "$UDID" ]; then
   UDID="$(xcrun simctl list devices available | grep -E 'iPhone' | head -n 1 | sed -n 's/.*(\([0-9A-F-]\{36\}\)).*/\1/p')"
   [ -n "$UDID" ] || { echo "no iPhone simulator available" >&2; exit 1; }
@@ -20,7 +20,7 @@ xcrun simctl bootstatus "$UDID" -b
 
 "$GEKKO" --version
 "$GEKKO" install sample-ios/build/Sample.app --project examples/sample-tests --platform ios -s "$UDID"
-"$GEKKO" run --project examples/sample-tests --platform ios -s "$UDID" --exclude-tags broken,android-only,web-only,location \
+"$GEKKO" run --project examples/sample-tests --platform ios -s "$UDID" --exclude-tags broken,android-only,web-only,location,tv \
   --junit "$OUT/junit.xml" --output "$OUT/results" 2>&1 | tee "$OUT/run.log"
 
 # A drag moves the list exactly as far as the finger, a fast swipe flings it, a slow one does not
@@ -37,7 +37,7 @@ if [ "$status" -ne 1 ] || ! grep -qi "no back key" <<<"$refusal"; then
 fi
 
 status=0
-"$GEKKO" run --project examples/sample-tests --platform ios -s "$UDID" --tags broken --output "$OUT/failing" || status=$?
+"$GEKKO" run --project examples/sample-tests --platform ios -s "$UDID" --tags broken --exclude-tags tv --output "$OUT/failing" || status=$?
 if [ "$status" -ne 1 ]; then
   echo "a failing test must exit with 1, got $status" >&2
   exit 1

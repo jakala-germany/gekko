@@ -108,11 +108,11 @@ jobs:
           cp cli/build/bin/macosArm64/releaseExecutable/gekko.kexe release-assets/gekko-macos-arm64
         shell: bash
 
-      - name: 'Build the iOS system runner and agent'
+      - name: 'Build the iOS and tvOS system runners and agents'
         run: |
           brew install xcodegen
           VERSION_NAME="$VERSION" ./scripts/build-ios-runner.sh
-          cp dist/gekko-ios-runner.zip dist/gekko-ios-agent.zip release-assets/
+          cp dist/gekko-ios-runner.zip dist/gekko-ios-agent.zip dist/gekko-tvos-runner.zip dist/gekko-tvos-agent.zip release-assets/
         shell: bash
 
       - name: 'Upload the assets'

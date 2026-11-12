@@ -1,12 +1,13 @@
 name: Back leaves the app
 tags: [keys, android-only]
 steps:
-  - say: Press back on the first screen of the app
+  # With the keyboard up (an emulator that was driven with keys opens it for the first field) the first back only closes
+  # it: a second one leaves the app. gekko checks the state first, so a back that worked is not repeated
+  - say: Press back on the first screen of the app until the app is not on the screen any more
     platform: android
     do: { back: true }
-  - say: The app is not on the screen any more
-    platform: android
-    do: { assertNotVisible: { id: sample.name } }
+    until: { assertNotVisible: { id: sample.name } }
+    attempts: 2
   - say: Start the app again
     platform: android
     do: { launchApp: {} }

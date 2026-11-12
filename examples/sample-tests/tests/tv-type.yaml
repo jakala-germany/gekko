@@ -1,0 +1,9 @@
+name: TV typing needs the focus on the field
+tags: [tv]
+steps:
+  - say: Move the focus up to the search field
+    do: { pressKey: { key: up, until: { id: sample.tv.search }, max: 3 } }
+  - say: Type the query
+    do: { type: { id: sample.tv.search, value: Ada } }
+  - say: The field holds the query
+    do: { assertVisible: { id: sample.tv.search, text: Ada } }

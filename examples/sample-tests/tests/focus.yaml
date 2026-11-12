@@ -1,0 +1,7 @@
+name: Keys the field that was tapped has the focus
+tags: [keys]
+steps:
+  - say: Tap the name field
+    do: { tap: { id: sample.name } }
+  - say: The name field has the focus
+    do: { assertFocused: { id: sample.name } }

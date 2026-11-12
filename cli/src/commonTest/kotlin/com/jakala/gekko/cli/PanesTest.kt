@@ -221,6 +221,26 @@ class PanesTest {
     }
 
     @Test
+    fun theFocusActionsTakeReferencesToo() {
+        val project = paneProject(mapOf("panes/auth/login.yaml" to LOGIN_PANE))
+
+        val focused = expand(project, Platform.Android, "do: { assertFocused: auth/login.submit }")
+        val pressed = expand(project, Platform.Ios, "do: { pressKey: { key: down, until: auth/login.submit, max: 4 } }")
+
+        assertEquals("login_submit", focused.action.assertFocused!!.toSelector(Platform.Android).id)
+        assertEquals("Sign in", pressed.action.pressKey!!.until!!.toSelector(Platform.Ios).text)
+        assertEquals(4, pressed.action.pressKey!!.max)
+        assertEquals(
+            listOf("auth/login.submit"),
+            step("do: { assertFocused: auth/login.submit }").action.elementReferences(),
+        )
+        assertEquals(
+            listOf("auth/login.submit"),
+            step("do: { pressKey: { key: down, until: auth/login.submit } }").action.elementReferences(),
+        )
+    }
+
+    @Test
     fun theKeysOfTheStepAreAddedAndWinOverTheElement() {
         val project = paneProject(mapOf("panes/auth/login.yaml" to LOGIN_PANE))
 

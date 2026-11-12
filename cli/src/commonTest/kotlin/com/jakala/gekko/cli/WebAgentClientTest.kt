@@ -351,6 +351,20 @@ class WebAgentClientTest {
     }
 
     @Test
+    fun theButtonsOfARemoteAreKeysOfTheBrowser() = runTest {
+        val bridge = FakeBridge({ page() })
+
+        for (key in listOf("down", "select", "playPause")) {
+            client(bridge).send(Command.PressKey(key))
+        }
+
+        assertEquals(
+            listOf("ArrowDown", "Enter", "MediaPlayPause"),
+            bridge.called("key").map { it["key"]!!.jsonPrimitive.content },
+        )
+    }
+
+    @Test
     fun backGoesBackInTheHistory() = runTest {
         val bridge = FakeBridge({ page() })
 

@@ -8,4 +8,5 @@ android:
 defaultTimeoutMs: 5000
 ios:
   runnerDir: ../../dist/gekko-ios-runner
+  tvosRunnerDir: ../../dist/gekko-tvos-runner
   app: ../../sample-ios/build/Sample.app

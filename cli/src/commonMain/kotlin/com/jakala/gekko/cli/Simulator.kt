@@ -1,5 +1,12 @@
 package com.jakala.gekko.cli
 
+import kotlinx.serialization.SerializationException
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonArray
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.contentOrNull
+
 /** iOS simulator controlled through `xcrun simctl`; the simulator shares the host's loopback, so no port forwarding. */
 class SimctlDevice(private val requestedUdid: String?) : Device {
     private val udid: String by lazy { requestedUdid ?: singleBootedUdid() }
@@ -34,6 +41,10 @@ class SimctlDevice(private val requestedUdid: String?) : Device {
         return SimulatorPorts.agent(udid) + 1
     }
 
+    override val isTv: Boolean by lazy {
+        bootedSimulators().firstOrNull { it.udid.equals(udid, ignoreCase = true) }?.isTv == true
+    }
+
     private fun simctl(vararg args: String, mergeStderr: Boolean = true): ProcessResult {
         return runProcess(listOf("xcrun", "simctl") + args.toList(), mergeStderr)
     }
@@ -46,7 +57,11 @@ class SimctlDevice(private val requestedUdid: String?) : Device {
 
     override fun openLink(url: String) {
         val result = simctl("openurl", udid, url)
-        check(result.exitCode == 0) { "Opening $url failed: ${result.text}" }
+        check(result.exitCode == 0) {
+            val hint =
+                if (isTv) "; an Apple TV has no browser, a link opens only in an app that registers its scheme" else ""
+            "Opening $url failed: ${result.text}$hint"
+        }
     }
 
     override fun terminate(config: GekkoConfig) {
@@ -59,6 +74,7 @@ class SimctlDevice(private val requestedUdid: String?) : Device {
     }
 
     override fun setDarkMode(enabled: Boolean): () -> Unit {
+        check(!isTv) { "Switching the appearance is not supported on an Apple TV simulator" }
         val previous = simctl("ui", udid, "appearance").text.trim()
         val result = simctl("ui", udid, "appearance", if (enabled) "dark" else "light")
         check(result.exitCode == 0) { "Switching the appearance failed: ${result.text}" }
@@ -179,17 +195,7 @@ class SimctlDevice(private val requestedUdid: String?) : Device {
     }
 
     override fun launch(config: GekkoConfig, arguments: Map<String, String>) {
-        // The environment wins: a CI action installs the agent for the job without touching gekko.yaml
-        val framework =
-            env("GEKKO_IOS_AGENT")
-                ?: config.ios.agentFramework?.let { configured ->
-                    if (configured == InstalledRunners.INSTALLED) {
-                        InstalledRunners.iosAgentFramework()
-                            ?: error("ios.agentFramework is 'installed' but no agent was found; run scripts/install.sh")
-                    } else {
-                        configured
-                    }
-                }
+        val framework = SimulatorArtifacts.agentFramework(config.ios, isTv)
         val environment =
             mutableMapOf("SIMCTL_CHILD_GEKKO_PORT" to "${agentPort()}", "SIMCTL_CHILD_GEKKO_TOKEN" to UserToken.value)
         if (framework != null) {
@@ -197,7 +203,9 @@ class SimctlDevice(private val requestedUdid: String?) : Device {
                 if (framework.endsWith(".framework"))
                     "$framework/${framework.substringAfterLast('/').removeSuffix(".framework")}"
                 else framework
-            check(fileExists(binary)) { "ios.agentFramework not found: $binary" }
+            check(fileExists(binary)) {
+                "${if (isTv) "ios.tvosAgentFramework" else "ios.agentFramework"} not found: $binary"
+            }
             environment["SIMCTL_CHILD_DYLD_INSERT_LIBRARIES"] = binary
         }
         startupMocks?.let { environment["SIMCTL_CHILD_GEKKO_MOCKS"] = it }
@@ -219,15 +227,11 @@ class SimctlDevice(private val requestedUdid: String?) : Device {
     override val runnerStartTimeoutMs: Long
         get() = 120_000
 
-    override fun startSystemRunner(config: GekkoConfig, log: (String) -> Unit) {
+    override fun startSystemRunner(config: GekkoConfig, log: (String) -> Unit, appInFront: Boolean) {
         runProcess(listOf("pkill", "-f", "xcodebuild test-without-building.*id=$udid"))
-        val dir =
-            env("GEKKO_IOS_RUNNER_DIR")
-                ?: config.ios.runnerDir?.takeUnless { it == InstalledRunners.INSTALLED }
-                ?: InstalledRunners.iosRunnerDir()
-                ?: error("System runner not found; run scripts/install.sh or set ios.runnerDir in gekko.yaml")
+        val dir = SimulatorArtifacts.runnerDir(config.ios, isTv)
         val bundle = bundleId(config)
-        log("Starting iOS system runner")
+        log(if (isTv) "Starting tvOS system runner" else "Starting iOS system runner")
         runProcess(
             listOf(
                 "sh",
@@ -237,11 +241,15 @@ class SimctlDevice(private val requestedUdid: String?) : Device {
                     ">/tmp/gekko-ios-runner-$udid.log 2>&1 &",
             ),
             environment =
-                mapOf(
-                    "TEST_RUNNER_GEKKO_TARGET_BUNDLE_ID" to bundle,
-                    "TEST_RUNNER_GEKKO_PORT" to "${systemPort()}",
-                    "TEST_RUNNER_GEKKO_TOKEN" to UserToken.value,
-                ),
+                mutableMapOf(
+                        "TEST_RUNNER_GEKKO_TARGET_BUNDLE_ID" to bundle,
+                        "TEST_RUNNER_GEKKO_PORT" to "${systemPort()}",
+                        "TEST_RUNNER_GEKKO_TOKEN" to UserToken.value,
+                    )
+                    .also {
+                        // Starting the runner on an Apple TV takes the screen from the app: the runner gives it back
+                        if (appInFront && isTv) it["TEST_RUNNER_GEKKO_ACTIVATE_TARGET"] = "1"
+                    },
         )
     }
 
@@ -298,13 +306,17 @@ class SimctlDevice(private val requestedUdid: String?) : Device {
         const val RUNNER_TESTS_BUNDLE = "com.jakala.gekko.runneruitests.xctrunner"
 
         fun bootedUdids(): List<String> {
+            return bootedSimulators().map { it.udid }
+        }
+
+        /** The booted simulators with the runtime each one runs; empty without Xcode or when `simctl` fails. */
+        fun bootedSimulators(): List<BootedSimulator> {
             if (isWindowsHost) {
                 return emptyList()
             }
-            val pattern = Regex("\\(([0-9A-Fa-f-]{36})\\) \\(Booted\\)")
-            return runProcess(listOf("xcrun", "simctl", "list", "devices", "booted")).text.lines().mapNotNull {
-                pattern.find(it)?.groupValues?.get(1)
-            }
+            // stderr stays out of the way: a warning of simctl would make the JSON unreadable
+            val listed = runProcess(listOf("xcrun", "simctl", "list", "devices", "booted", "-j"), mergeStderr = false)
+            return if (listed.exitCode == 0) BootedSimulator.parse(listed.text) else emptyList()
         }
 
         private fun singleBootedUdid(): String {
@@ -313,6 +325,36 @@ class SimctlDevice(private val requestedUdid: String?) : Device {
                 0 -> error("No booted iOS simulator")
                 1 -> booted[0]
                 else -> error("Several simulators are booted (${booted.joinToString()}); choose one with -s")
+            }
+        }
+    }
+}
+
+/**
+ * A simulator that `simctl` lists as booted. The [runtime] is the key of its group in the list
+ * (`com.apple.CoreSimulator.SimRuntime.tvOS-18-0`); an Apple TV is the one that runs a tvOS runtime.
+ */
+data class BootedSimulator(val udid: String, val runtime: String) {
+    val isTv: Boolean
+        get() = runtime.contains(".tvOS-")
+
+    companion object {
+        /** Reads the output of `xcrun simctl list devices booted -j`; unreadable output is an empty list. */
+        fun parse(json: String): List<BootedSimulator> {
+            val root =
+                try {
+                    Json.parseToJsonElement(json)
+                } catch (unreadable: SerializationException) {
+                    return emptyList()
+                }
+            val groups = (root as? JsonObject)?.get("devices") as? JsonObject ?: return emptyList()
+            return groups.flatMap { (runtime, devices) ->
+                (devices as? JsonArray).orEmpty().mapNotNull { device ->
+                    val fields = device as? JsonObject
+                    val udid = (fields?.get("udid") as? JsonPrimitive)?.contentOrNull
+                    val state = (fields?.get("state") as? JsonPrimitive)?.contentOrNull
+                    if (state == "Booted" && udid != null) BootedSimulator(udid, runtime) else null
+                }
             }
         }
     }

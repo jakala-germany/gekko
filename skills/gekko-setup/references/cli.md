@@ -27,14 +27,14 @@ Without `-s`, Android uses the one attached device, iOS the one booted simulator
 
 | Command | Purpose |
 |---|---|
-| `gekko devices` | Attached adb devices, booted simulators and running web sessions, one per line: `android <serial>`, `ios <UDID>`, `web <browser>` |
+| `gekko devices` | Attached adb devices, booted simulators and running web sessions, one per line: `android <serial>`, `ios <UDID>`, `web <browser>`; a TV (an Android TV, an Apple TV simulator) ends with ` tv`. On a TV `tap` and `scroll` fail (use `press-key`), and `type` needs the focus on the field |
 | `gekko tree [--json]` | The current UI as the active driver sees it: role, `id=`, `text=`, `desc=`, `actions=`, `disabled`, `focused` (the element that has the input focus; not on iOS system-runner trees). Lines that are an element of a pane (`panes/`) end with `<- pane.element`, and a last line `current pane: ...` names the panes whose identity is on screen (not with `--json`) |
 | `gekko tap SELECTOR` | Tap an element; when the in-app agent's accessibility tap is not handled, the tap is repeated as a real touch through the system runner |
 | `gekko type SELECTOR "text"` | Type into an element (replaces its text) |
 | `gekko type-focused "text"` | Type at the cursor of the field that has the focus (adds to its text); waits up to `--timeout` for a field to get the focus, `--system` uses the system runner |
-| `gekko press-key KEY [--times N]` | Press a key: `enter`, `backspace` (erases to the left), `tab`, `back`, `home` or an Android key code number. `enter`, `backspace` and `tab` go to the field that has the focus and wait up to `--timeout` for one; a key the in-app agent cannot press goes to the system runner, `--system` uses it at once |
+| `gekko press-key KEY [--times N]` | Press a key: `enter`, `backspace` (erases to the left), `tab`, `back`, `home`, a button of a TV remote (`up`, `down`, `left`, `right`, `select`, `playPause`, `menu`) or an Android key code number. `--until-id ID` / `--until-text TEXT` press until that element has the focus (at most `--max N` times, default 20; fails as soon as a press did not move the focus; not with `--times`). `enter`, `backspace` and `tab` go to the field that has the focus and wait up to `--timeout` for one; a key the in-app agent cannot press goes to the system runner, `--system` uses it at once |
 | `gekko scroll SELECTOR [--direction D] [--distance DP]` | Scroll the container of an element; `--direction` is where the wanted content is: `down` (default), `up`, `start`, `end`, `left`, `right`; `--distance` in dp, points on iOS, CSS pixels on the web (default 400) |
-| `gekko assert SELECTOR [--gone]` | Wait until the element is visible (or, with `--gone`, not visible); exit 1 when it is not within `--timeout` |
+| `gekko assert SELECTOR [--gone] [--focused]` | Wait until the element is visible (or, with `--gone`, not visible; with `--focused`, has the focus: the failure says where the focus is); exit 1 when it is not within `--timeout` |
 | `gekko screenshot FILE` | Save a screenshot as PNG |
 | `gekko install [APP]` | Install the app under test and keep its data: an `.apk`, an `.app`, or a `.zip` that contains an `.app` (CI build products); without `APP` the `android.apk` / `ios.app` of `gekko.yaml`. `--platform web -s <browser>`: installs Playwright (into `~/.gekko/web`) and that browser, needs Node.js 18+, works without `gekko.yaml`; `--with-deps` adds the system libraries (Linux, uses sudo) |
 | `gekko uninstall` | Remove the app, the system runner and the port forwards from the device; fails when something is left. Web: stops the browser session |
@@ -132,6 +132,8 @@ ios:
   agentFramework: installed           # inject the installed agent; or a path; wins: GEKKO_IOS_AGENT
   app: builds/App.zip                 # an .app or a zip with one; for install / run --install
   runnerDir: installed                # or a path; wins: GEKKO_IOS_RUNNER_DIR. Left out: the installed runner
+  tvosAgentFramework: installed       # Apple TV simulators: the tvOS agent, or a path; wins: GEKKO_TVOS_AGENT
+  tvosRunnerDir: installed            # Apple TV simulators: the tvOS runner, or a path; wins: GEKKO_TVOS_RUNNER_DIR
 web:                                  # all keys optional, see the table
   browser: chromium                   # chromium, firefox or webkit
   viewport: 1280x800
@@ -162,6 +164,7 @@ env: [TEST_USER, TEST_PASSWORD]       # variables tests may read as ${env.NAME}
 | `web.playwright` | `installed` | A folder with Playwright in `node_modules`, instead of the one `gekko install --platform web` puts into `~/.gekko/web`. `GEKKO_PLAYWRIGHT_DIR` wins. |
 | `app.androidActivity` | none | Without it the app is started through its launcher entry; set it when several launcher activities exist (for example one added by a debug library). |
 | `android.runnerApk`, `ios.runnerDir` | the installed runner | A path, or `installed` for the runner that `scripts/install.sh` put into `$GEKKO_HOME/runners`. Without the key the installed runner is used. The environment variables below win. |
+| `ios.tvosAgentFramework`, `ios.tvosRunnerDir` | the installed tvOS agent and runner | The same as `ios.agentFramework` and `ios.runnerDir` for an Apple TV simulator, which needs the builds for the tvOS simulator (dyld refuses an iOS library there). `ios.agentFramework: installed` serves both; an explicit iOS path is never used on an Apple TV (the run fails and names `ios.tvosAgentFramework`). `ios.app` stays the one setting for the app to install: pass the tvOS build as `gekko install <app>` or `--app`. |
 | `ios.agentFramework` | none (no agent is injected) | A path to `GekkoAgent.framework`, or `installed` for the installed agent. The iOS agent is only injected when this key or `GEKKO_IOS_AGENT` is set. |
 | `android.stopApps` | none | Other apps (a browser that showed a login page) that a failed test must not leave in front. |
 | `defaultTimeoutMs` | 10000 | |
@@ -182,6 +185,7 @@ Values of `env:` names come from the process environment first, then from a `.en
 | `GEKKO_RUNNER_APK` | Android system runner APK; wins over `android.runnerApk` |
 | `GEKKO_IOS_AGENT` | `GekkoAgent.framework` for simulators; wins over `ios.agentFramework` and switches the injection on |
 | `GEKKO_IOS_RUNNER_DIR` | iOS system runner directory; wins over `ios.runnerDir` |
+| `GEKKO_TVOS_AGENT`, `GEKKO_TVOS_RUNNER_DIR` | The same for Apple TV simulators; win over `ios.tvosAgentFramework` and `ios.tvosRunnerDir` |
 | `GEKKO_HOME` | Where `scripts/install.sh` puts the runners and where the CLI looks for them: `$GEKKO_HOME/runners` (default `~/.gekko`) |
 | `GEKKO_LLM_BASE_URL`, `GEKKO_LLM_MODEL`, `GEKKO_LLM_API_KEY`, `GEKKO_LLM_CA_CERT` | OpenAI-compatible endpoint for `--heal api` (the API key is optional for endpoints that need none; `GEKKO_LLM_CA_CERT` is the PEM file of a private CA) |
 | `GEKKO_HEAL_MODEL` | Model for `--heal claude` (default `haiku`) and `--heal opencode` (`provider/model`, else the model configured in opencode) |

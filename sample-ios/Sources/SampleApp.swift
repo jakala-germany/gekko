@@ -3,10 +3,53 @@ import SwiftUI
 @main
 struct SampleApp: App {
     var body: some Scene {
-        WindowGroup { ContentView() }
+        WindowGroup {
+            #if os(tvOS)
+            TvContentView()
+            #else
+            ContentView()
+            #endif
+        }
     }
 }
 
+#if os(tvOS)
+/// The screen of a TV app: a search field above a grid of teasers that the remote moves the focus through (up, down,
+/// left, right) and opens (select). The ids are the ones of the Android sample, so the same tests run on both.
+struct TvContentView: View {
+    private enum Spot: Hashable {
+        case search
+        case teaser(Int)
+    }
+
+    @FocusState private var focus: Spot?
+    @State private var query = ""
+    @State private var opened = 0
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 24) {
+            TextField("Search", text: $query)
+                .focused($focus, equals: .search)
+                .accessibilityIdentifier("sample.tv.search")
+            Text("Opened: \(opened)")
+                .accessibilityIdentifier("sample.teaser.opened")
+            ForEach(0 ..< 3, id: \.self) { row in
+                HStack(spacing: 24) {
+                    ForEach(1 ... 3, id: \.self) { column in
+                        let number = row * 3 + column
+                        Button("Teaser \(number)") { opened = number }
+                            .focused($focus, equals: .teaser(number))
+                            .accessibilityIdentifier("sample.teaser.\(number)")
+                    }
+                }
+            }
+        }
+        .padding(60)
+        // A TV app starts with the focus on its content
+        .onAppear { focus = .teaser(1) }
+    }
+}
+#else
 struct ScrollOffsetKey: PreferenceKey {
     static var defaultValue: CGFloat = 0
     static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) { value = nextValue() }
@@ -129,3 +172,4 @@ struct ContentView: View {
         }
     }
 }
+#endif

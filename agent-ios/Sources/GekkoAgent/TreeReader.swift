@@ -11,10 +11,50 @@ enum TreeReader {
 
     static func read() -> [Element] {
         let secureFrames = secureInputFrames()
-        let focus = focusedView()
-        let focusedFrame = focus.flatMap { screenFrame(of: $0) }
+        let focus = treeFocus()
+        let focusedFrame = treeFocusFrame(of: focus)
         return windows().compactMap { build($0, parent: nil, visited: [], secureFrames: secureFrames, focus: focus, focusedFrame: focusedFrame) }
     }
+
+    /// The view the tree marks as focused. On a TV it is the one the remote moved the focus to; elsewhere the one a
+    /// keyboard types into.
+    private static func treeFocus() -> UIView? {
+        #if os(tvOS)
+        if let view = remoteFocusedView() { return view }
+        #endif
+        return focusedView()
+    }
+
+    /// Where the focus is on the screen: the frame of what [treeFocus] found; on a TV the frame of the focus item, which
+    /// SwiftUI makes of its own (a responder that is no view) and so [treeFocus] cannot name.
+    private static func treeFocusFrame(of focus: UIView?) -> CGRect? {
+        #if os(tvOS)
+        if let frame = remoteFocusedFrame() { return frame }
+        #endif
+        return focus.flatMap { screenFrame(of: $0) }
+    }
+
+    #if os(tvOS)
+    /// The view the focus engine has focused, from the topmost window down: what the remote moves and select presses.
+    static func remoteFocusedView() -> UIView? {
+        for window in windows().reversed() {
+            if let view = window.windowScene?.focusSystem?.focusedItem as? UIView { return view }
+        }
+        return nil
+    }
+
+    /// The screen frame of the focus item the focus engine has focused, whatever kind of item it is.
+    private static func remoteFocusedFrame() -> CGRect? {
+        for window in windows().reversed() {
+            guard let item = window.windowScene?.focusSystem?.focusedItem else { continue }
+            if let view = item as? UIView { return screenFrame(of: view) }
+            // SwiftUI's items have no container: their frame is in the window
+            let space = item.focusItemContainer?.coordinateSpace ?? window.coordinateSpace
+            return space.convert(item.frame, to: window.screen.coordinateSpace)
+        }
+        return nil
+    }
+    #endif
 
     /// The view that has the input focus, from the topmost window down: what a keyboard types into. A text field is
     /// edited through a field editor (a scroll view) inside of it; the field is what a person calls focused.
@@ -66,7 +106,7 @@ enum TreeReader {
         // A SwiftUI field is an accessibility node on top of the UITextField: it is secure when it covers a secure one
         let secure = isSecureInput(object) || secureFrames.contains { Self.covers($0, area) }
         // Same for the focus: the node on top of the focused UITextField has it as well
-        let focused = (focus != nil && object === focus) || focusedFrame.map { Self.covers($0, area) } == true
+        let focused = (focus != nil && object === focus) || focusedFrame.map { Self.coversFocus($0, area) } == true
         let element = Element(
             object: object,
             id: identifier(of: object),
@@ -106,6 +146,20 @@ enum TreeReader {
         return frames
     }
 
+    /// Whether [frame] is the node of the focused item. On a TV the focus effect scales the focused item about its
+    /// center, so its frame differs in size from the one the accessibility node reports, and not in its center.
+    private static func coversFocus(_ focus: CGRect, _ frame: CGRect) -> Bool {
+        #if os(tvOS)
+        guard focus.width > 0, focus.height > 0, frame.width > 0, frame.height > 0 else { return false }
+        let ratioX = frame.width / focus.width
+        let ratioY = frame.height / focus.height
+        return abs(focus.midX - frame.midX) < 3 && abs(focus.midY - frame.midY) < 3
+            && (0.7 ... 1.4).contains(ratioX) && (0.7 ... 1.4).contains(ratioY)
+        #else
+        return covers(focus, frame)
+        #endif
+    }
+
     private static func covers(_ secure: CGRect, _ frame: CGRect) -> Bool {
         return abs(secure.minX - frame.minX) < 2 && abs(secure.minY - frame.minY) < 2
             && abs(secure.maxX - frame.maxX) < 2 && abs(secure.maxY - frame.maxY) < 2
@@ -113,8 +167,10 @@ enum TreeReader {
 
     /// State of a switch or toggle; nil for everything that cannot be checked.
     private static func checked(of object: NSObject) -> Bool? {
+        #if os(iOS)
         if let toggle = object as? UISwitch { return toggle.isOn }
-        if #available(iOS 17.0, *), object.accessibilityTraits.contains(.toggleButton) {
+        #endif
+        if #available(iOS 17.0, tvOS 17.0, *), object.accessibilityTraits.contains(.toggleButton) {
             let value = object.accessibilityValue?.lowercased()
             return value == "1" || value == "on" || value == "true"
         }
@@ -198,7 +254,9 @@ enum TreeReader {
         let traits = object.accessibilityTraits
         switch object {
         case is UITextField, is UITextView: return "TextField"
+        #if os(iOS)
         case is UISwitch: return "Switch"
+        #endif
         case is UIScrollView: return "ScrollView"
         default: break
         }

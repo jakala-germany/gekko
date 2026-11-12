@@ -262,6 +262,9 @@ internal class CommandExecutor(private val application: Application, private val
                     pressTimes(command.times, settle = false) { KeyPresses.press(focus.rootView, code) }
                 }
             KeyPresses.isBack(command.key) -> pressBack(command)
+            // The buttons of a TV remote too: they have to go through the input pipeline of the window to move the
+            // focus, and only the system can inject there (an app needs a permission that only the instrumentation of
+            // the system runner has); a key event handed to the root view would pass without moving anything
             else -> unsupported("The in-app agent cannot press '${command.key}'; the system runner can")
         }
     }

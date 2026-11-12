@@ -25,8 +25,9 @@ Thank you for your interest in gekko. Issues, pull requests and ideas are welcom
 ./gradlew :cli:linkReleaseExecutableMacosArm64 :cli:linkReleaseExecutableLinuxX64 :cli:linkReleaseExecutableMingwX64   # the CLI binaries
 ./gradlew :sample-android:assembleDebug :system-runner-android:assembleDebug
 ./scripts/build-sample-ios.sh                  # sample-ios/build/Sample.app (macOS)
-./scripts/build-ios-runner.sh                  # dist/gekko-ios-runner and dist/gekko-ios-agent (macOS)
+./scripts/build-ios-runner.sh                  # dist/gekko-ios-runner and dist/gekko-ios-agent, and the tvOS ones (macOS)
 ./scripts/e2e-android.sh                       # the sample tests on a running emulator; e2e-ios.sh: a booted simulator
+./scripts/e2e-android-tv.sh                    # the TV tests on a running Android TV emulator; e2e-tvos.sh: an Apple TV simulator
 ./scripts/e2e-web.sh                           # the sample tests in Chromium, Firefox and WebKit (after the CLI link)
 ./scripts/check-hygiene.sh                     # no secrets or internal names in tracked files
 actionlint -config-file .github/actionlint.yml                                             # the workflows

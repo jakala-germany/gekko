@@ -123,6 +123,297 @@ class RunnerTest {
             do: { setLocation: { latitude: 53.5511, longitude: 9.9937 } }
         """
 
+    /** Three teasers side by side, the one at [focus] has the focus. */
+    private fun teaserRow(focus: Int): List<UiNode> {
+        val cards =
+            (0 until 3).map { index ->
+                UiNode(
+                    id = "home.teaser",
+                    text = "Teaser $index",
+                    bounds = Bounds(index * 100, 100, index * 100 + 90, 160),
+                    focused = index == focus,
+                    actions = listOf("click"),
+                )
+            }
+        return listOf(UiNode(bounds = Bounds(0, 0, 400, 300), children = cards))
+    }
+
+    /** An app with a row of teasers: every press of a key moves the focus one teaser on. */
+    private fun remoteAgent(seen: MutableList<Command>, focus: IntArray): FakeClient {
+        return FakeClient { command ->
+            seen += command
+            when (command) {
+                Command.Foreground -> Response.ForegroundResult(true)
+                Command.Tree -> Response.TreeResult(teaserRow(focus[0]))
+                is Command.PressKey -> {
+                    focus[0] = minOf(focus[0] + command.times, 2)
+                    Response.Ok
+                }
+                else -> Response.Ok
+            }
+        }
+    }
+
+    @Test
+    fun aTestMovesTheFocusWithTheRemoteAndChecksIt() = runTest {
+        val seen = mutableListOf<Command>()
+        val runner = runner(Platform.Android, remoteAgent(seen, intArrayOf(0)), suggestIds = false)
+
+        val result =
+            runner.run(
+                test(
+                    """
+                    name: Remote
+                    steps:
+                      - do: { assertFocused: { id: home.teaser } }
+                      - do: { pressKey: { key: right, until: { id: home.teaser, index: 2 } } }
+                      - do: { assertFocused: { id: home.teaser, index: 2 } }
+                    """
+                ),
+                "tests/remote.yaml",
+            )
+
+        assertNull(result.failure)
+        assertEquals(listOf("right", "right"), seen.filterIsInstance<Command.PressKey>().map { it.key })
+        assertEquals(
+            listOf(
+                "assert focused Selector(id=home.teaser)",
+                "press right until home.teaser has the focus",
+                "assert focused Selector(id=home.teaser, index=2)",
+            ),
+            result.steps.map { it.description }.takeLast(3),
+        )
+    }
+
+    @Test
+    fun aFocusOnAnotherElementFailsTheStepAndSaysWhereItIs() = runTest {
+        val runner = runner(Platform.Android, remoteAgent(mutableListOf(), intArrayOf(0)), suggestIds = false)
+
+        val result =
+            runner.run(
+                test(
+                    """
+                    name: Remote
+                    steps:
+                      - say: The second teaser has the focus
+                        do: { assertFocused: { id: home.teaser, index: 1 } }
+                        timeout: 100
+                    """
+                ),
+                "tests/remote.yaml",
+            )
+
+        assertTrue(
+            result.failure!!.contains(
+                "Expected focused: Selector(id=home.teaser, index=1) (focus is on home.teaser \"Teaser 0\")"
+            ),
+            result.failure,
+        )
+    }
+
+    private fun tvRunner(seen: MutableList<Command>, focus: Int): TestRunner {
+        return runner(
+            Platform.Android,
+            remoteAgent(seen, intArrayOf(focus)),
+            suggestIds = false,
+            device = FakeDevice(supportsWaitFor = true, isTv = true),
+        )
+    }
+
+    @Test
+    fun aTouchStepFailsOnATvAndNamesTheRemote() = runTest {
+        val seen = mutableListOf<Command>()
+        val steps =
+            listOf(
+                "tap: { id: home.teaser }",
+                "tap: { point: \"50%,50%\" }",
+                "doubleTap: { id: home.teaser }",
+                "longPress: { id: home.teaser }",
+                "scroll: { id: home.teaser }",
+                "scrollUntilVisible: { id: home.teaser }",
+                "swipe: { direction: left }",
+                "drag: { start: \"10%,10%\", end: \"50%,50%\" }",
+            )
+
+        for (action in steps) {
+            val result = tvRunner(seen, focus = 0).run(test("name: Touch\nsteps:\n  - do: { $action }"), "t.yaml")
+
+            val name = action.substringBefore(':')
+            assertEquals(
+                "$name is not available on a TV: use pressKey (up, down, left, right, select) to move the focus",
+                result.failure,
+                action,
+            )
+        }
+        assertTrue(seen.none { it is Command.Tap || it is Command.Scroll || it is Command.Swipe }, seen.toString())
+    }
+
+    @Test
+    fun theTouchBanOfATvIsNotSkippedAsAnOptionalStepAndNotHealed() = runTest {
+        val result =
+            tvRunner(mutableListOf(), focus = 0)
+                .run(
+                    test(
+                        """
+                        name: Touch
+                        steps:
+                          - optional: true
+                            do: { tap: { id: home.teaser } }
+                        """
+                    ),
+                    "t.yaml",
+                )
+
+        assertTrue(result.failure!!.contains("not available on a TV"), result.failure)
+    }
+
+    @Test
+    fun aPhoneStillTaps() = runTest {
+        val seen = mutableListOf<Command>()
+        val runner = runner(Platform.Android, remoteAgent(seen, intArrayOf(0)), suggestIds = false)
+
+        val result = runner.run(test("name: Tap\nsteps:\n  - do: { tap: { id: home.teaser } }"), "t.yaml")
+
+        assertNull(result.failure)
+        assertTrue(seen.any { it is Command.Tap })
+    }
+
+    @Test
+    fun aTvTypesOnlyIntoAFieldThatHasTheFocus() = runTest {
+        val seen = mutableListOf<Command>()
+        val steps = "name: Type\nsteps:\n  - do: { type: { id: home.teaser, index: 1, value: Ada } }"
+
+        val unfocused = tvRunner(seen, focus = 0).run(test(steps), "t.yaml")
+        val focused = tvRunner(seen, focus = 1).run(test(steps), "t.yaml")
+
+        assertTrue(
+            unfocused.failure!!.startsWith("Expected focused: Selector(id=home.teaser, index=1) (focus is on"),
+            unfocused.failure,
+        )
+        assertTrue(unfocused.failure.contains("pressKey with until, then type"), unfocused.failure)
+        assertNull(focused.failure)
+        assertEquals(1, seen.filterIsInstance<Command.Type>().size)
+    }
+
+    @Test
+    fun aPhoneTypesWithoutAskingForTheFocus() = runTest {
+        val seen = mutableListOf<Command>()
+        val runner = runner(Platform.Android, remoteAgent(seen, intArrayOf(0)), suggestIds = false)
+
+        val result =
+            runner.run(
+                test("name: Type\nsteps:\n  - do: { type: { id: home.teaser, index: 1, value: Ada } }"),
+                "t.yaml",
+            )
+
+        assertNull(result.failure)
+        assertEquals(1, seen.filterIsInstance<Command.Type>().size)
+    }
+
+    /** A model that moves the focus to the third teaser, whatever was missing. */
+    private fun tvHealer(systems: MutableList<String> = mutableListOf()): Healer {
+        return Healer(
+            object : LlmClient {
+                override suspend fun complete(system: String, user: String): String {
+                    systems += system
+                    return """{"action":"focus","id":"home.teaser","index":2,"reason":"the third teaser"}"""
+                }
+            }
+        )
+    }
+
+    private val missingRow =
+        """
+        name: Remote
+        steps:
+          - say: Go to the sports row
+            do: { pressKey: { key: right, max: 2, until: { id: home.sports } } }
+        """
+
+    @Test
+    fun aTvHealsAMissingElementOfAFocusSearchByMovingTheFocusThere() = runTest {
+        val systems = mutableListOf<String>()
+        val seen = mutableListOf<Command>()
+        val runner =
+            runner(
+                Platform.Android,
+                remoteAgent(seen, intArrayOf(0)),
+                suggestIds = false,
+                healer = tvHealer(systems),
+                device = FakeDevice(supportsWaitFor = true, isTv = true),
+            )
+
+        val result = runner.run(test(missingRow), "t.yaml")
+
+        assertNull(result.failure)
+        assertEquals("focus id=home.teaser", result.healed.single().applied)
+        assertTrue(systems.single().contains("TV UI test"), systems.single())
+        assertTrue(seen.none { it is Command.Tap || it is Command.Scroll })
+    }
+
+    @Test
+    fun aPhoneDoesNotHealAFocusSearch() = runTest {
+        val systems = mutableListOf<String>()
+        val runner =
+            runner(
+                Platform.Android,
+                remoteAgent(mutableListOf(), intArrayOf(0)),
+                suggestIds = false,
+                healer = tvHealer(systems),
+            )
+
+        val result = runner.run(test(missingRow), "t.yaml")
+
+        assertTrue(result.failure!!.contains("Element not found: Selector(id=home.sports)"), result.failure)
+        assertTrue(systems.isEmpty())
+    }
+
+    @Test
+    fun aFocusThatIsStuckIsNotHealed() = runTest {
+        val systems = mutableListOf<String>()
+        val runner =
+            runner(
+                Platform.Android,
+                FakeClient { command ->
+                    when (command) {
+                        Command.Foreground -> Response.ForegroundResult(true)
+                        Command.Tree -> Response.TreeResult(teaserRow(0))
+                        else -> Response.Ok
+                    }
+                },
+                suggestIds = false,
+                healer = tvHealer(systems),
+                device = FakeDevice(supportsWaitFor = true, isTv = true),
+            )
+
+        val result = runner.run(test(missingRow), "t.yaml")
+
+        assertTrue(result.failure!!.contains("focus stuck on home.teaser"), result.failure)
+        assertTrue(systems.isEmpty())
+    }
+
+    @Test
+    fun aTvPressesRemoteKeysAndAssertsTheFocus() = runTest {
+        val seen = mutableListOf<Command>()
+
+        val result =
+            tvRunner(seen, focus = 0)
+                .run(
+                    test(
+                        """
+                        name: Remote
+                        steps:
+                          - do: { pressKey: { key: down, times: 2 } }
+                          - do: { assertFocused: { id: home.teaser, index: 2 } }
+                        """
+                    ),
+                    "t.yaml",
+                )
+
+        assertNull(result.failure)
+        assertEquals(listOf(2), seen.filterIsInstance<Command.PressKey>().map { it.times })
+    }
+
     @Test
     fun anEmulatorTakesTheLocationFromItsConsole() = runTest {
         val device = FakeDevice(supportsWaitFor = true)

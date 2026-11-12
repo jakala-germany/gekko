@@ -1,0 +1,5 @@
+name: TV the end of a row stops the focus
+tags: [tv, broken]
+steps:
+  - say: Press right until the first teaser of the next row has the focus, which the remote cannot do
+    do: { pressKey: { key: right, until: { id: sample.teaser.4 }, max: 6 } }

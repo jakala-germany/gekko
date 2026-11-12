@@ -29,7 +29,7 @@ adb install -r sample-android/build/outputs/apk/debug/sample-android-debug.apk
 "$GEKKO" check --project examples/sample-tests
 
 # Every test that is expected to pass, with a junit file
-"$GEKKO" run --project examples/sample-tests --exclude-tags broken,ios-only,web-only \
+"$GEKKO" run --project examples/sample-tests --exclude-tags broken,ios-only,web-only,tv \
   --junit "$OUT/junit.xml" --output "$OUT/results" 2>&1 | tee "$OUT/run.log"
 
 # The system runner reads a password field as bullets, so it cannot type at the cursor of one and says so. It refuses as
@@ -65,7 +65,7 @@ GEKKO_MOCK_LOCATION=1 "$GEKKO" run --project examples/sample-tests --tags locati
 
 # A failing test exits with 1 and leaves its artifacts; the exit code is part of the CLI contract
 status=0
-"$GEKKO" run --project examples/sample-tests --tags broken --output "$OUT/failing" || status=$?
+"$GEKKO" run --project examples/sample-tests --tags broken --exclude-tags tv --output "$OUT/failing" || status=$?
 if [ "$status" -ne 1 ]; then
   echo "a failing test must exit with 1, got $status" >&2
   exit 1

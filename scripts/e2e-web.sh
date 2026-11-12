@@ -29,7 +29,7 @@ done
 # Every test that is expected to pass, in one browser after the other, with a junit file each
 for browser in "${BROWSERS[@]}"; do
   "$GEKKO" run --project examples/sample-tests --platform web -s "$browser" \
-    --exclude-tags broken,broken-group,android-only,ios-only,session-shared \
+    --exclude-tags broken,broken-group,android-only,ios-only,session-shared,tv \
     --junit "$OUT/junit-$browser.xml" --output "$OUT/$browser"
 done
 
@@ -67,7 +67,7 @@ grep -q 'skipped="2"' "$OUT/junit-broken-group.xml"
 
 # A failing test exits with 1 and leaves its artifacts; the exit code is part of the CLI contract
 status=0
-"$GEKKO" run --project examples/sample-tests --platform web --tags broken --output "$OUT/failing" || status=$?
+"$GEKKO" run --project examples/sample-tests --platform web --tags broken --exclude-tags tv --output "$OUT/failing" || status=$?
 if [ "$status" -ne 1 ]; then
   echo "a failing test must exit with 1, got $status" >&2
   exit 1

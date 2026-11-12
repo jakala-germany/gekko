@@ -78,6 +78,70 @@ class DriversTest {
     }
 
     @Test
+    fun aRemoteButtonTheAgentCannotInjectGoesToTheSystemRunnerOnAndroid() {
+        runTest {
+            val press = Command.PressKey("down", times = 3)
+            val agent = FakeClient { Response.Error("The app did not take the key", ErrorKind.UNSUPPORTED) }
+            val system = FakeClient { Response.Ok }
+
+            val response = drivers(FakeDevice(supportsWaitFor = true), agent, system).sendWithRunnerFallback(press)
+
+            assertEquals(Response.Ok, response)
+            assertEquals(listOf<Command>(press), agent.received)
+            assertEquals(listOf<Command>(press), system.received)
+        }
+    }
+
+    @Test
+    fun aTvRefusesEveryTouchCommandWithoutAskingAnyone() {
+        runTest {
+            val agent = FakeClient { Response.Ok }
+            val system = FakeClient { Response.Ok }
+            val tv = drivers(FakeDevice(supportsWaitFor = true, isTv = true), agent, system)
+            val touches =
+                listOf(
+                    tap,
+                    Command.TapAt(1, 2),
+                    Command.DoubleTap(Selector(id = "go")),
+                    Command.LongPress(Selector(id = "go")),
+                    Command.LongPressAt(1, 2),
+                    Command.Scroll(Selector(id = "go")),
+                    Command.Swipe(1, 2, 3, 4),
+                    Command.Drag(1, 2, 3, 4),
+                    Command.Wheel(1, 2, 3, 4),
+                )
+
+            for (command in touches) {
+                val response = tv.sendWithRunnerFallback(command)
+
+                assertTrue(response is Response.Error && response.kind == ErrorKind.REJECTED, "$command: $response")
+                assertTrue((response as Response.Error).message.contains("pressKey"), response.message)
+            }
+            assertTrue(agent.received.isEmpty())
+            assertTrue(system.received.isEmpty())
+        }
+    }
+
+    @Test
+    fun aTvStillTakesKeysTextAndReads() {
+        runTest {
+            val agent = FakeClient { Response.Ok }
+            val tv = drivers(FakeDevice(supportsWaitFor = true, isTv = true), agent, FakeClient { Response.Ok })
+            val commands =
+                listOf(
+                    Command.PressKey("down"),
+                    Command.Tree,
+                    Command.TypeFocused("a"),
+                    Command.Type(Selector(id = "go"), "a"),
+                )
+
+            commands.forEach { assertEquals(Response.Ok, tv.send(it)) }
+
+            assertEquals(commands, agent.received)
+        }
+    }
+
+    @Test
     fun aKeyTheAgentCannotPressGoesToTheSystemRunnerOnIos() {
         runTest {
             val press = Command.PressKey("home")
@@ -88,6 +152,51 @@ class DriversTest {
 
             assertEquals(Response.Ok, response)
             assertEquals(listOf<Command>(press), system.received)
+        }
+    }
+
+    @Test
+    fun aTvRunnerIsToldThatTheAppHadTheScreenWhenItIsStarted() {
+        runTest {
+            val press = Command.PressKey("right")
+            val agent = FakeClient { if (it is Command.Foreground) Response.ForegroundResult(true) else unsupported() }
+            val device = FakeDevice(supportsWaitFor = false, isTv = true)
+            val system = FakeClient { Response.Ok }
+            system.reachable = { device.runnerStarts.isNotEmpty() }
+
+            val response = drivers(device, agent, system).sendWithRunnerFallback(press)
+
+            assertEquals(Response.Ok, response)
+            assertEquals(listOf(true), device.runnerStarts)
+        }
+    }
+
+    @Test
+    fun aTvRunnerIsToldThatTheAppDidNotHaveTheScreenWhenItWasInTheBackground() {
+        runTest {
+            val agent = FakeClient { if (it is Command.Foreground) Response.ForegroundResult(false) else unsupported() }
+            val device = FakeDevice(supportsWaitFor = false, isTv = true)
+            val system = FakeClient { Response.Ok }
+            system.reachable = { device.runnerStarts.isNotEmpty() }
+
+            drivers(device, agent, system).sendWithRunnerFallback(Command.PressKey("home"))
+
+            assertEquals(listOf(false), device.runnerStarts)
+        }
+    }
+
+    @Test
+    fun aRunnerOffTheTvDoesNotAskWhetherTheAppHasTheScreen() {
+        runTest {
+            val press = Command.PressKey("home")
+            val agent = FakeClient { if (it is Command.Foreground) Response.ForegroundResult(true) else unsupported() }
+            val device = FakeDevice(supportsWaitFor = false)
+            val system = FakeClient { Response.Ok }
+            system.reachable = { device.runnerStarts.isNotEmpty() }
+
+            drivers(device, agent, system).sendWithRunnerFallback(press)
+
+            assertEquals(listOf(false), device.runnerStarts)
         }
     }
 

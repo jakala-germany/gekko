@@ -286,6 +286,7 @@ class TestRunner(
             clock = { device.deviceTime() },
         )
     private val settleMs = project.config.settleMs
+    private val focus = FocusWaiter(drivers, settleMs)
 
     /** The pane whose action is running: its element names are written without the pane. */
     private var scope: String? = null
@@ -732,6 +733,12 @@ class TestRunner(
         action.assertVisible?.let {
             return it.toSelector(platform)
         }
+        action.assertFocused?.let {
+            return it.toSelector(platform)
+        }
+        action.pressKey?.until?.let {
+            return it.toSelector(platform)
+        }
         action.type?.let {
             return it.selector(platform)
         }
@@ -771,6 +778,9 @@ class TestRunner(
         val tree = paneLine.orEmpty() + TreePrinter.print(windows)
         val kind =
             when {
+                // A focus is moved with the remote of a TV only; a phone has nothing to heal here
+                action.assertFocused != null || action.pressKey?.until != null ->
+                    if (drivers.isTv) "focus" else return false
                 action.tap != null -> "tap"
                 action.type != null -> "type"
                 action.typeFocused != null -> "type into the focused field"
@@ -784,7 +794,7 @@ class TestRunner(
             if (!assertionMayBeHealed(spec, tree, windows)) return false
             val (holds, reason) =
                 try {
-                    healer.checkAssertion(say, "assertVisible $missing", tree)
+                    healer.checkAssertion(say, "assertVisible $missing", tree, drivers.isTv)
                 } catch (error: Exception) {
                     log("    heal unavailable: ${error.message}")
                     return false
@@ -799,7 +809,7 @@ class TestRunner(
         if (!message.startsWith("Element not found") && !message.contains("not found")) return false
         val proposal =
             try {
-                healer.proposeAction(say, "$kind $missing", tree)
+                healer.proposeAction(say, "$kind $missing", tree, drivers.isTv)
             } catch (error: Exception) {
                 log("    heal unavailable: ${error.message}")
                 return false
@@ -835,8 +845,10 @@ class TestRunner(
             "type" -> {
                 // The text to type belongs to the test, never to the model
                 val value = action.type?.value ?: proposal.value.orEmpty()
+                requireFocusOnTv(spec.toSelector(platform), timeout, settle = true)
                 expectOk(drivers.send(Command.Type(spec.toSelector(platform), value, timeout, settleMs)))
             }
+            "focus" -> healFocus(action, spec.toSelector(platform), timeout)
             "scroll" ->
                 expectOk(
                     drivers.send(
@@ -853,6 +865,18 @@ class TestRunner(
         val typed = if (proposal.kind == "type") " \"${action.type?.value.orEmpty()}\"" else ""
         record(say, missing, "${proposal.kind} ${describeSelector(proposal.selector)}$typed", proposal.reason)
         return true
+    }
+
+    /** Does what the step wanted with the element the model chose: moves the focus there, or waits for it. */
+    private suspend fun healFocus(action: Action, selector: Selector, timeout: Long) {
+        val press = action.pressKey
+        val failure =
+            if (press?.until != null) {
+                focus.pressUntil(press.key, selector, press.limit, timeout, press.system)
+            } else {
+                focus.awaitFocus(selector, timeout)
+            }
+        failure?.let { throw StepFailure(it) }
     }
 
     /**
@@ -882,7 +906,7 @@ class TestRunner(
     }
 
     private fun describeMissing(action: Action): String? {
-        val spec = action.tap ?: action.assertVisible
+        val spec = action.tap ?: action.assertVisible ?: action.assertFocused ?: action.pressKey?.until
         if (spec != null) return describeSelector(spec.toSelector(platform))
         action.type?.let {
             return describeSelector(it.selector(platform))
@@ -951,12 +975,16 @@ class TestRunner(
     }
 
     private suspend fun perform(action: Action, timeout: Long, settle: Boolean = true) {
+        if (drivers.isTv) {
+            TvRules.touchAction(action)?.let { throw StepFailure(it) }
+        }
         when {
             action.tap != null -> tap(action.tap, timeout)
-            action.type != null ->
-                expectOk(
-                    drivers.send(Command.Type(action.type.selector(platform), action.type.value, timeout, settleMs))
-                )
+            action.type != null -> {
+                val selector = action.type.selector(platform)
+                requireFocusOnTv(selector, timeout, settle)
+                expectOk(drivers.send(Command.Type(selector, action.type.value, timeout, settleMs)))
+            }
             action.typeFocused != null ->
                 expectOk(
                     drivers.send(Command.TypeFocused(action.typeFocused.value, timeout), action.typeFocused.system)
@@ -979,6 +1007,7 @@ class TestRunner(
                 assertVisible(action.assertVisible.toSelector(platform), timeout, true, settle)
             action.assertNotVisible != null ->
                 assertVisible(action.assertNotVisible.toSelector(platform), timeout, false, settle)
+            action.assertFocused != null -> assertFocused(action.assertFocused.toSelector(platform), timeout, settle)
             action.wait != null -> delay(action.wait)
             action.pressKey != null -> pressKey(action.pressKey, timeout)
             action.doubleTap != null ->
@@ -990,8 +1019,11 @@ class TestRunner(
             action.back == true -> pressKey(PressKeySpec(Keys.BACK), timeout)
             action.openLink != null -> onDevice { device.openLink(action.openLink) }
             action.scrollUntilVisible != null -> scrollUntilVisible(action.scrollUntilVisible, timeout)
-            action.eraseText != null ->
-                expectOk(drivers.send(Command.Type(action.eraseText.toSelector(platform), "", timeout, settleMs)))
+            action.eraseText != null -> {
+                val selector = action.eraseText.toSelector(platform)
+                requireFocusOnTv(selector, timeout, settle)
+                expectOk(drivers.send(Command.Type(selector, "", timeout, settleMs)))
+            }
             action.waitForAnimationToEnd == true -> waitForAnimationToEnd(timeout)
             action.takeScreenshot != null -> takeScreenshot(action.takeScreenshot)
             action.copyText != null -> copyText(action.copyText, timeout)
@@ -1045,7 +1077,27 @@ class TestRunner(
      * of an app that is not in front) it answers `unsupported`, and the system runner, which presses any key, gets it.
      */
     private suspend fun pressKey(spec: PressKeySpec, timeout: Long) {
-        expectOk(drivers.sendWithRunnerFallback(Command.PressKey(spec.key, spec.times, timeout), spec.system))
+        val until = spec.until
+        if (until == null) {
+            expectOk(drivers.sendWithRunnerFallback(Command.PressKey(spec.key, spec.count, timeout), spec.system))
+            return
+        }
+        focus.pressUntil(spec.key, until.toSelector(platform), spec.limit, timeout, spec.system)?.let {
+            throw StepFailure(it)
+        }
+    }
+
+    /** On a TV a field takes text only when the remote moved the focus to it; elsewhere nothing is asked. */
+    private suspend fun requireFocusOnTv(selector: Selector, timeout: Long, settle: Boolean) {
+        if (!drivers.isTv) {
+            return
+        }
+        focus.awaitFieldFocus(selector, timeout, settle)?.let { throw StepFailure(it) }
+    }
+
+    /** Passes once the element has the focus, which a remote moves; the failure names where the focus is. */
+    private suspend fun assertFocused(selector: Selector, timeout: Long, settle: Boolean) {
+        focus.awaitFocus(selector, timeout, settle)?.let { throw StepFailure(it) }
     }
 
     /** Device commands report problems as IllegalStateException; a test sees them as a failed step. */
@@ -1698,6 +1750,8 @@ class TestRunner(
                 "assert visible ${action.assertVisible.element ?: action.assertVisible.toSelector(platform)}"
             action.assertNotVisible != null ->
                 "assert not visible ${action.assertNotVisible.element ?: action.assertNotVisible.toSelector(platform)}"
+            action.assertFocused != null ->
+                "assert focused ${action.assertFocused.element ?: action.assertFocused.toSelector(platform)}"
             action.assertPane != null -> "assert pane ${action.assertPane}"
             action.wait != null -> "wait ${action.wait}ms"
             action.pressKey != null -> "press ${action.pressKey.describe()}"
