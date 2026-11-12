@@ -310,6 +310,88 @@ class RunnerTest {
         assertEquals(1, seen.filterIsInstance<Command.Type>().size)
     }
 
+    /** A model that moves the focus to the third teaser, whatever was missing. */
+    private fun tvHealer(systems: MutableList<String> = mutableListOf()): Healer {
+        return Healer(
+            object : LlmClient {
+                override suspend fun complete(system: String, user: String): String {
+                    systems += system
+                    return """{"action":"focus","id":"home.teaser","index":2,"reason":"the third teaser"}"""
+                }
+            }
+        )
+    }
+
+    private val missingRow =
+        """
+        name: Remote
+        steps:
+          - say: Go to the sports row
+            do: { pressKey: { key: right, max: 2, until: { id: home.sports } } }
+        """
+
+    @Test
+    fun aTvHealsAMissingElementOfAFocusSearchByMovingTheFocusThere() = runTest {
+        val systems = mutableListOf<String>()
+        val seen = mutableListOf<Command>()
+        val runner =
+            runner(
+                Platform.Android,
+                remoteAgent(seen, intArrayOf(0)),
+                suggestIds = false,
+                healer = tvHealer(systems),
+                device = FakeDevice(supportsWaitFor = true, isTv = true),
+            )
+
+        val result = runner.run(test(missingRow), "t.yaml")
+
+        assertNull(result.failure)
+        assertEquals("focus id=home.teaser", result.healed.single().applied)
+        assertTrue(systems.single().contains("TV UI test"), systems.single())
+        assertTrue(seen.none { it is Command.Tap || it is Command.Scroll })
+    }
+
+    @Test
+    fun aPhoneDoesNotHealAFocusSearch() = runTest {
+        val systems = mutableListOf<String>()
+        val runner =
+            runner(
+                Platform.Android,
+                remoteAgent(mutableListOf(), intArrayOf(0)),
+                suggestIds = false,
+                healer = tvHealer(systems),
+            )
+
+        val result = runner.run(test(missingRow), "t.yaml")
+
+        assertTrue(result.failure!!.contains("Element not found: Selector(id=home.sports)"), result.failure)
+        assertTrue(systems.isEmpty())
+    }
+
+    @Test
+    fun aFocusThatIsStuckIsNotHealed() = runTest {
+        val systems = mutableListOf<String>()
+        val runner =
+            runner(
+                Platform.Android,
+                FakeClient { command ->
+                    when (command) {
+                        Command.Foreground -> Response.ForegroundResult(true)
+                        Command.Tree -> Response.TreeResult(teaserRow(0))
+                        else -> Response.Ok
+                    }
+                },
+                suggestIds = false,
+                healer = tvHealer(systems),
+                device = FakeDevice(supportsWaitFor = true, isTv = true),
+            )
+
+        val result = runner.run(test(missingRow), "t.yaml")
+
+        assertTrue(result.failure!!.contains("focus stuck on home.teaser"), result.failure)
+        assertTrue(systems.isEmpty())
+    }
+
     @Test
     fun aTvPressesRemoteKeysAndAssertsTheFocus() = runTest {
         val seen = mutableListOf<Command>()

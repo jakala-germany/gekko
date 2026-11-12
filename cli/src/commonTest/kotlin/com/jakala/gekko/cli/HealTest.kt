@@ -85,6 +85,56 @@ class HealTest {
         assertEquals("the only button", proposal?.reason)
     }
 
+    private class RecordingLlm(private val answer: String) : LlmClient {
+        val systems = mutableListOf<String>()
+
+        override suspend fun complete(system: String, user: String): String {
+            systems += system
+            return answer
+        }
+    }
+
+    @Test
+    fun aTvIsToldItHasARemoteAndMayProposeAFocus() = runTest {
+        val llm = RecordingLlm("""{"action":"focus","id":"row.sports","index":0,"reason":"the sports row"}""")
+
+        val proposal = Healer(llm).proposeAction("Go to sports", "focus id=row.sport", "row id=row.sports", tv = true)
+
+        assertEquals("focus", proposal?.kind)
+        assertEquals("row.sports", proposal?.selector?.id)
+        val prompt = llm.systems.single()
+        assertTrue(prompt.contains("TV"), prompt)
+        assertTrue(prompt.contains("remote"), prompt)
+        assertTrue(prompt.contains("focused"), prompt)
+        assertTrue(prompt.contains("never answer \"tap\" or \"scroll\""), prompt)
+    }
+
+    @Test
+    fun aTvGetsNoTapAndAPhoneNoFocus() = runTest {
+        val tap = """{"action":"tap","id":"a","reason":"x"}"""
+        val scroll = """{"action":"scroll","id":"a","reason":"x"}"""
+        val focus = """{"action":"focus","id":"a","reason":"x"}"""
+
+        assertNull(Healer(FakeLlm(tap)).proposeAction("s", "focus id=a", "t", tv = true))
+        assertNull(Healer(FakeLlm(scroll)).proposeAction("s", "focus id=a", "t", tv = true))
+        assertNull(Healer(FakeLlm(focus)).proposeAction("s", "tap id=a", "t", tv = false))
+        assertEquals("type", Healer(FakeLlm("""{"action":"type","id":"a"}""")).proposeAction("s", "t", "t", true)?.kind)
+    }
+
+    @Test
+    fun aPhoneKeepsItsPromptAndATvAssertionGetsTheNote() = runTest {
+        val phone = RecordingLlm("""{"action":"tap","id":"a","reason":"x"}""")
+        val assertion = RecordingLlm("""{"holds":true,"reason":"shown"}""")
+
+        Healer(phone).proposeAction("s", "tap id=a", "t")
+        Healer(assertion).checkAssertion("s", "a", "t")
+        Healer(assertion).checkAssertion("s", "a", "t", tv = true)
+
+        assertTrue(!phone.systems.single().contains("TV"))
+        assertTrue(!assertion.systems[0].contains("TV"))
+        assertTrue(assertion.systems[1].contains("TV driven with a remote"))
+    }
+
     @Test
     fun noFittingElementGivesNoProposal() = runTest {
         val healer = Healer(FakeLlm("{\"action\":\"none\",\"reason\":\"nothing fits\"}"))
