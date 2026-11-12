@@ -10,7 +10,7 @@ OUT=build/e2e
 rm -rf "$OUT" && mkdir -p "$OUT"
 
 # A booted iPhone simulator, or the first available iPhone
-UDID="$(xcrun simctl list devices booted | grep -E 'iPhone' | sed -n 's/.*(\([0-9A-F-]\{36\}\)) (Booted).*/\1/p' | head -n 1)"
+UDID="$(xcrun simctl list devices booted | grep -E 'iPhone' | sed -n 's/.*(\([0-9A-F-]\{36\}\)) (Booted).*/\1/p' | head -n 1 || true)"
 if [ -z "$UDID" ]; then
   UDID="$(xcrun simctl list devices available | grep -E 'iPhone' | head -n 1 | sed -n 's/.*(\([0-9A-F-]\{36\}\)).*/\1/p')"
   [ -n "$UDID" ] || { echo "no iPhone simulator available" >&2; exit 1; }

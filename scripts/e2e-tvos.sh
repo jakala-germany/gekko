@@ -12,9 +12,9 @@ OUT=build/e2e-tvos
 rm -rf "$OUT" && mkdir -p "$OUT"
 
 # A booted Apple TV simulator, or the first available one
-UDID="$(xcrun simctl list devices booted | grep -E 'Apple TV' | sed -n 's/.*(\([0-9A-F-]\{36\}\)) (Booted).*/\1/p' | head -n 1)"
+UDID="$(xcrun simctl list devices booted | grep -E 'Apple TV' | sed -n 's/.*(\([0-9A-F-]\{36\}\)) (Booted).*/\1/p' | head -n 1 || true)"
 if [ -z "$UDID" ]; then
-  UDID="$(xcrun simctl list devices available | grep -E 'Apple TV' | head -n 1 | sed -n 's/.*(\([0-9A-F-]\{36\}\)).*/\1/p')"
+  UDID="$(xcrun simctl list devices available | grep -E 'Apple TV' | head -n 1 | sed -n 's/.*(\([0-9A-F-]\{36\}\)).*/\1/p' || true)"
   [ -n "$UDID" ] || { echo "no Apple TV simulator available (xcodebuild -downloadPlatform tvOS installs the runtime)" >&2; exit 1; }
   xcrun simctl boot "$UDID"
 fi
