@@ -12,7 +12,7 @@ enum TreeReader {
     static func read() -> [Element] {
         let secureFrames = secureInputFrames()
         let focus = treeFocus()
-        let focusedFrame = focus.flatMap { screenFrame(of: $0) }
+        let focusedFrame = treeFocusFrame(of: focus)
         return windows().compactMap { build($0, parent: nil, visited: [], secureFrames: secureFrames, focus: focus, focusedFrame: focusedFrame) }
     }
 
@@ -25,11 +25,32 @@ enum TreeReader {
         return focusedView()
     }
 
+    /// Where the focus is on the screen: the frame of what [treeFocus] found; on a TV the frame of the focus item, which
+    /// SwiftUI makes of its own (a responder that is no view) and so [treeFocus] cannot name.
+    private static func treeFocusFrame(of focus: UIView?) -> CGRect? {
+        #if os(tvOS)
+        if let frame = remoteFocusedFrame() { return frame }
+        #endif
+        return focus.flatMap { screenFrame(of: $0) }
+    }
+
     #if os(tvOS)
     /// The view the focus engine has focused, from the topmost window down: what the remote moves and select presses.
     static func remoteFocusedView() -> UIView? {
         for window in windows().reversed() {
             if let view = window.windowScene?.focusSystem?.focusedItem as? UIView { return view }
+        }
+        return nil
+    }
+
+    /// The screen frame of the focus item the focus engine has focused, whatever kind of item it is.
+    private static func remoteFocusedFrame() -> CGRect? {
+        for window in windows().reversed() {
+            guard let item = window.windowScene?.focusSystem?.focusedItem else { continue }
+            if let view = item as? UIView { return screenFrame(of: view) }
+            // SwiftUI's items have no container: their frame is in the window
+            let space = item.focusItemContainer?.coordinateSpace ?? window.coordinateSpace
+            return space.convert(item.frame, to: window.screen.coordinateSpace)
         }
         return nil
     }
@@ -85,7 +106,7 @@ enum TreeReader {
         // A SwiftUI field is an accessibility node on top of the UITextField: it is secure when it covers a secure one
         let secure = isSecureInput(object) || secureFrames.contains { Self.covers($0, area) }
         // Same for the focus: the node on top of the focused UITextField has it as well
-        let focused = (focus != nil && object === focus) || focusedFrame.map { Self.covers($0, area) } == true
+        let focused = (focus != nil && object === focus) || focusedFrame.map { Self.coversFocus($0, area) } == true
         let element = Element(
             object: object,
             id: identifier(of: object),
@@ -123,6 +144,20 @@ enum TreeReader {
         }
         windows().forEach(visit)
         return frames
+    }
+
+    /// Whether [frame] is the node of the focused item. On a TV the focus effect scales the focused item about its
+    /// center, so its frame differs in size from the one the accessibility node reports, and not in its center.
+    private static func coversFocus(_ focus: CGRect, _ frame: CGRect) -> Bool {
+        #if os(tvOS)
+        guard focus.width > 0, focus.height > 0, frame.width > 0, frame.height > 0 else { return false }
+        let ratioX = frame.width / focus.width
+        let ratioY = frame.height / focus.height
+        return abs(focus.midX - frame.midX) < 3 && abs(focus.midY - frame.midY) < 3
+            && (0.7 ... 1.4).contains(ratioX) && (0.7 ... 1.4).contains(ratioY)
+        #else
+        return covers(focus, frame)
+        #endif
     }
 
     private static func covers(_ secure: CGRect, _ frame: CGRect) -> Bool {
