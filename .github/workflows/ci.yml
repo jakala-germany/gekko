@@ -324,10 +324,8 @@ jobs:
           path: '**/build/reports/tests'
           if-no-files-found: ignore
 
-  # Slow and the most likely to flake: after a merge and before a release, not on every pull request
   windows-web-e2e:
     name: 'Web end to end on Windows'
-    if: ${{ github.event_name != 'pull_request' }}
     runs-on: windows-latest
     timeout-minutes: 45
     steps:
