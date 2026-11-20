@@ -13,6 +13,7 @@ import java.net.HttpURLConnection
 import java.net.InetSocketAddress
 import java.net.URL
 import java.util.concurrent.CopyOnWriteArrayList
+import kotlin.concurrent.thread
 import kotlin.test.AfterTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -167,6 +168,55 @@ class SignedClientTest {
     }
 
     @Test
+    fun sendsARequestAgainWhenTheConnectionIsRefusedForAMoment() {
+        runBlocking {
+            val first = realServer()
+            val client = client(first.port)
+            assertEquals(Response.Ok, client.send(Command.Tree))
+            first.listener.close()
+            // The port refuses connections until a server listens on it again, a moment later
+            val executed = CopyOnWriteArrayList<Command>()
+            val restart = thread {
+                Thread.sleep(RESTART_AFTER_MS)
+                realServer(port = first.port, executed = executed)
+            }
+
+            assertEquals(Response.Ok, client.send(Command.Foreground))
+
+            restart.join()
+            assertEquals(listOf<Command>(Command.Foreground), executed)
+        }
+    }
+
+    @Test
+    fun aServerThatIsNotRunningIsFoundOutAtOnce() {
+        runBlocking {
+            val gone = realServer()
+            gone.listener.close()
+
+            val started = System.nanoTime()
+            val reachable = client(gone.port).isReachable()
+
+            assertFalse(reachable)
+            assertTrue(System.nanoTime() - started < REFUSAL_BUDGET_NANOS)
+        }
+    }
+
+    @Test
+    fun givesUpWhenTheServerStaysAway() {
+        runBlocking {
+            val first = realServer()
+            val client = client(first.port)
+            assertEquals(Response.Ok, client.send(Command.Tree))
+            first.listener.close()
+
+            val failure = assertFailsWith<Exception> { client.send(Command.Foreground) }
+
+            assertTrue(isConnectFailure(failure), "a connect failure was expected, got $failure")
+        }
+    }
+
+    @Test
     fun refusesAServerThatHoldsAnotherKey() {
         val server = realServer()
 
@@ -285,5 +335,7 @@ class SignedClientTest {
     private companion object {
         const val BIND_TIMEOUT_NANOS = 5_000_000_000L
         const val BIND_RETRY_MS = 10L
+        const val RESTART_AFTER_MS = 250L
+        const val REFUSAL_BUDGET_NANOS = 1_000_000_000L
     }
 }

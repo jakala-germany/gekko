@@ -8,6 +8,7 @@ import io.ktor.client.request.setBody
 import io.ktor.client.statement.bodyAsBytes
 import io.ktor.http.ContentType
 import io.ktor.http.contentType
+import kotlinx.coroutines.delay
 import okio.ByteString.Companion.toByteString
 
 /**
@@ -92,13 +93,35 @@ internal class SignedPeer(
         if (hello) {
             return open(body)
         }
-        val first = post(body, session ?: open(helloBody).session)
+        val first = postInSession(body, session ?: open(helloBody).session)
         if (!isStale(first)) {
             return first
         }
         // The refusal is signed, so the session it names is the real server's new one
         session = first.session
-        return post(body, first.session)
+        return postInSession(body, first.session)
+    }
+
+    /**
+     * Sends a request of a session that the server has answered in before. When the connection cannot be made (its port
+     * refused it for a moment: seen on Windows, where the next request got through) nothing of the request was sent, so
+     * it is sent again a few times instead of failing the step; any other failure may have run it and is not repeated.
+     * A request that opens a session is not sent again: it is how a server that is not running is found out.
+     */
+    private suspend fun postInSession(body: ByteArray, session: String): Reply {
+        var wait = CONNECT_RETRY_MS
+        repeat(CONNECT_RETRIES) {
+            try {
+                return post(body, session)
+            } catch (error: Exception) {
+                if (!isConnectFailure(error)) {
+                    throw error
+                }
+            }
+            delay(wait)
+            wait *= 2
+        }
+        return post(body, session)
     }
 
     private suspend fun open(helloBody: ByteArray): Reply {
@@ -146,5 +169,17 @@ internal class SignedPeer(
 
     private companion object {
         const val NONCE_BYTES = 16
+        const val CONNECT_RETRIES = 3
+        const val CONNECT_RETRY_MS = 100L
     }
+}
+
+/**
+ * True when the connection to the server could not be made: the request was never sent. Ktor names it by its message on
+ * the native targets ("Failed to connect to ...") and by the `ConnectException` of Java on the JVM, either of them
+ * maybe as the cause of another exception.
+ */
+internal fun isConnectFailure(error: Throwable): Boolean {
+    return generateSequence(error) { it.cause }
+        .any { it::class.simpleName == "ConnectException" || it.message?.startsWith("Failed to connect to") == true }
 }
