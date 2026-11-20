@@ -28,7 +28,7 @@ Without `-s`, Android uses the one attached device, iOS the one booted simulator
 | Command | Purpose |
 |---|---|
 | `gekko devices` | Attached adb devices, booted simulators and running web sessions, one per line: `android <serial>`, `ios <UDID>`, `web <browser>`; a TV (an Android TV, an Apple TV simulator) ends with ` tv`. On a TV `tap` and `scroll` fail (use `press-key`), and `type` needs the focus on the field |
-| `gekko tree [--json]` | The current UI as the active driver sees it: role, `id=`, `text=`, `desc=`, `actions=`, `disabled`, `focused` (the element that has the input focus; not on iOS system-runner trees). Lines that are an element of a pane (`panes/`) end with `<- pane.element`, and a last line `current pane: ...` names the panes whose identity is on screen (not with `--json`) |
+| `gekko tree [--json] [--system]` | The current UI as the active driver sees it (`--system`: as the system runner sees it, to compare it with the in-app agent): role, `id=`, `text=`, `desc=`, `actions=`, `disabled`, `focused` (the element that has the input focus; not on iOS system-runner trees). Lines that are an element of a pane (`panes/`) end with `<- pane.element`, and a last line `current pane: ...` names the panes whose identity is on screen (not with `--json`) |
 | `gekko tap SELECTOR` | Tap an element; when the in-app agent's accessibility tap is not handled, the tap is repeated as a real touch through the system runner |
 | `gekko type SELECTOR "text"` | Type into an element (replaces its text) |
 | `gekko type-focused "text"` | Type at the cursor of the field that has the focus (adds to its text); waits up to `--timeout` for a field to get the focus, `--system` uses the system runner |

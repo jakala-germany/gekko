@@ -25,6 +25,12 @@ data class UiNode(
     val text: String? = null,
     /** Accessibility label (content description); selectors on text match it as well. */
     val description: String? = null,
+    /**
+     * What the element is, in the names of its platform: the view class on Android, the ARIA role on the web. On iOS
+     * the in-app agent and the system runner use the same names (those of the XCUITest element types: `SearchField`,
+     * `TextView`, `NavigationBar`, `Text`, `View` for anything else), so a role means the same whichever of them reads
+     * the screen.
+     */
     val role: String? = null,
     val bounds: Bounds,
     val actions: List<String> = emptyList(),

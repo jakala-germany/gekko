@@ -36,6 +36,25 @@ if [ "$status" -ne 1 ] || ! grep -qi "no back key" <<<"$refusal"; then
   exit 1
 fi
 
+# The in-app agent and the system runner call every element by the same role (a client cannot choose which of them reads
+# the screen): compare both trees of the main screen and of a sheet with one of each kind of control
+DEVICE=(--project examples/sample-tests --platform ios -s "$UDID")
+read_trees() {
+  "$GEKKO" tree --json "${DEVICE[@]}" > "$OUT/$1-agent.json"
+  "$GEKKO" tree --json --system "${DEVICE[@]}" > "$OUT/$1-runner.json"
+}
+"$GEKKO" assert --id sample.controls "${DEVICE[@]}"
+read_trees main
+python3 -I scripts/check-roles.py "$OUT/main-agent.json" "$OUT/main-runner.json" \
+  sample.name=TextField sample.password=SecureTextField sample.greet=Button sample.list=ScrollView sample.time=DatePicker
+"$GEKKO" tap --id sample.controls "${DEVICE[@]}"
+"$GEKKO" assert --id sample.controls.done "${DEVICE[@]}"
+read_trees controls
+python3 -I scripts/check-roles.py "$OUT/controls-agent.json" "$OUT/controls-runner.json" \
+  Controls=NavigationBar Search=SearchField Inputs=Text sample.controls.notes=TextView sample.controls.switch=Switch \
+  sample.controls.slider=Slider sample.controls.stepper=Stepper sample.controls.done=Button
+"$GEKKO" tap --id sample.controls.done "${DEVICE[@]}"
+
 status=0
 "$GEKKO" run --project examples/sample-tests --platform ios -s "$UDID" --tags broken --exclude-tags tv --output "$OUT/failing" || status=$?
 if [ "$status" -ne 1 ]; then

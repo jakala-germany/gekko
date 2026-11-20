@@ -241,6 +241,7 @@ private class DevicesCommand : CliktCommand(name = "devices") {
 
 private class TreeCommand : DeviceCommand("tree") {
     val json by option("--json", help = "Print the raw tree as JSON").flag()
+    val system by option("--system", help = "Read the tree with the system runner instead of the in-app agent").flag()
 
     override fun help(context: Context): String {
 
@@ -249,7 +250,7 @@ private class TreeCommand : DeviceCommand("tree") {
 
     override fun run() {
         withDrivers { drivers, _, project ->
-            val response = drivers.send(Command.Tree)
+            val response = drivers.send(Command.Tree, system)
             if (response !is Response.TreeResult) fail("Unexpected response: $response", ExitCode.INFRASTRUCTURE)
             if (json) {
                 say(treeJson.encodeToString(ListSerializer(UiNode.serializer()), response.windows))
