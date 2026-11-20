@@ -9,6 +9,8 @@ found in both trees by its id, or by its text when it has no id. Two checks:
     more often, such as the placeholder text inside of a search field, cannot be told apart and is left out);
   - every `key=Role` that is given: both trees have an element with that key and that role. That is what keeps a screen
     that was not read from passing by comparing nothing, and it names the roles that matter, e.g. `Search=SearchField`.
+    `key?=Role` is for what only some iOS versions show (iOS 18 hides a search field until the list is pulled down): when
+    neither tree has the key it is fine, when one of them has it both must have it with that role.
 """
 import json
 import sys
@@ -41,14 +43,19 @@ def main(argv):
         return 2
     agent = roles_by_key(load(argv[1]))
     runner = roles_by_key(load(argv[2]))
-    expected = [item.rsplit("=", 1) for item in argv[3:]]
+    expected = []
+    for item in argv[3:]:
+        key, role = item.rsplit("=", 1)
+        expected.append((key[:-1] if key.endswith("?") else key, role, key.endswith("?")))
 
     compared = [key for key in sorted(agent.keys() & runner.keys()) if len(agent[key]) == len(runner[key])]
     failures = []
     for key in compared:
         if sorted(agent[key]) != sorted(runner[key]):
             failures.append(f"roles of {key}: agent {agent[key]}, runner {runner[key]}")
-    for key, role in expected:
+    for key, role, optional in expected:
+        if optional and key not in agent and key not in runner:
+            continue
         for name, roles in (("agent", agent), ("runner", runner)):
             if role not in roles.get(key, []):
                 failures.append(f"{key} is no {role} in the {name} tree, it has {roles.get(key)}")

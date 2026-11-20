@@ -254,7 +254,11 @@ enum TreeReader {
     /// its tests) calls the same element by the same name. A text is `Text` (a heading as well: XCUITest has no type
     /// for it) and what is nothing more specific is `View`, never the name of a (private) class.
     private static func role(of object: NSObject, parent: Element?) -> String {
-        return classRole(of: object) ?? traitRole(of: object.accessibilityTraits, parent: parent)
+        let role = classRole(of: object) ?? traitRole(of: object.accessibilityTraits, parent: parent)
+        // What a table or a collection holds is a cell, also where UIKit hands out a (private) accessibility element
+        // instead of the cell itself, as a table of iOS 18 does
+        if role == "View", parent?.role == "Table" || parent?.role == "CollectionView" { return "Cell" }
+        return role
     }
 
     /// The role of a UIKit class; the most specific one first (a table view is a scroll view, a search field a text field).
@@ -291,6 +295,11 @@ enum TreeReader {
         #endif
         // WebKit is not linked: the class is looked up by its name
         if let webView = NSClassFromString("WKWebView"), object.isKind(of: webView) { return "WebView" }
+        // The bar at the edge of the screen on iOS 26 and later is a container of UIKit's own, not a UIToolbar, that
+        // names itself `Toolbar`. There is no public class to ask; when its name changes, it is a `View` again.
+        if NSStringFromClass(type(of: object)).hasSuffix("FloatingBarContainerView"), identifier(of: object) == "Toolbar" {
+            return "Toolbar"
+        }
         return nil
     }
 

@@ -51,8 +51,9 @@ python3 -I scripts/check-roles.py "$OUT/main-agent.json" "$OUT/main-runner.json"
 "$GEKKO" assert --id sample.controls.done "${DEVICE[@]}"
 read_trees controls
 python3 -I scripts/check-roles.py "$OUT/controls-agent.json" "$OUT/controls-runner.json" \
-  Controls=NavigationBar Search=SearchField Inputs=Text sample.controls.notes=TextView sample.controls.switch=Switch \
-  sample.controls.slider=Slider sample.controls.stepper=Stepper sample.controls.done=Button
+  Controls=NavigationBar sample.controls.header=Text sample.controls.notes=TextView sample.controls.slider=Slider \
+  sample.controls.stepper=Stepper sample.controls.done=Button "Search?=SearchField" \
+  "sample.controls.switch?=Switch"
 "$GEKKO" tap --id sample.controls.done "${DEVICE[@]}"
 
 status=0
