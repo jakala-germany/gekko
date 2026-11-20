@@ -77,7 +77,7 @@ extension View {
 }
 
 /// One of each kind of control, for `scripts/check-roles.py`: the in-app agent and the system runner must call every
-/// one of them by the same role.
+/// one of them by the same role. The controls are not in a Form: its rows lose the ids of their controls on iOS 18.
 struct ControlsView: View {
     @Environment(\.dismiss) private var dismiss
     @State private var search = ""
@@ -89,21 +89,31 @@ struct ControlsView: View {
     var body: some View {
         // NavigationView: the sample is built for iOS 15, which has no NavigationStack
         NavigationView {
-            Form {
-                Section("Inputs") {
-                    TextEditor(text: $notes)
-                        .frame(height: 60)
-                        .accessibilityIdentifier("sample.controls.notes")
-                    Toggle("Enabled", isOn: $enabled)
-                        .accessibilityIdentifier("sample.controls.switch")
-                    Slider(value: $level)
-                        .accessibilityIdentifier("sample.controls.slider")
-                    Stepper("Count: \(count)", value: $count)
-                        .accessibilityIdentifier("sample.controls.stepper")
+            VStack(alignment: .leading, spacing: 12) {
+                Text("Inputs")
+                    .font(.headline)
+                    .accessibilityAddTraits(.isHeader)
+                    .accessibilityIdentifier("sample.controls.header")
+                TextEditor(text: $notes)
+                    .frame(height: 60)
+                    .accessibilityIdentifier("sample.controls.notes")
+                Toggle("Enabled", isOn: $enabled)
+                    .accessibilityIdentifier("sample.controls.switch")
+                Slider(value: $level)
+                    .accessibilityIdentifier("sample.controls.slider")
+                Stepper("Count: \(count)", value: $count)
+                    .accessibilityIdentifier("sample.controls.stepper")
+                // The rows of a table
+                List {
+                    Text("First row")
+                    Text("Second row")
                 }
+                .frame(height: 120)
             }
+            .padding()
             .navigationTitle("Controls")
-            .searchable(text: $search)
+            // Always shown: iOS 18 hides the search field until the list is pulled down
+            .searchable(text: $search, placement: .navigationBarDrawer(displayMode: .always))
             .toolbar {
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Done") { dismiss() }
