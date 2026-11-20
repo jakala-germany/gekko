@@ -10,6 +10,7 @@
 
 **Changed**
 
+- The CLI sends a request to the in-app agent, the system runner or the web bridge again (up to 3 times, after 0.1, 0.2 and 0.4 s) when the connection is refused for a moment, as seen once on Windows (`Failed to connect to InetSocketAddress(127.0.0.1:...)` in a web step); a refused connection never carried the request, so it cannot run twice. Any other failure is not repeated, and a server that is not running is still found out at once
 - iOS: the in-app agent and the system runner give the same element the same `role` ([#45](https://github.com/jakala-germany/gekko/issues/45), [#44](https://github.com/jakala-germany/gekko/issues/44)), so a client does not depend on which of them reads the screen. Both use the names of the XCUITest element types (`SearchField`, `TextView`, `NavigationBar`, `Slider`, `Icon`, ...; `Text` for a text and `View` for anything else). The agent no longer sends the name of a (private) class such as `UIKitNavigationBar` or `_UIFloatingBarContainerView`, a search field is no longer a `TextField` and a multi-line text view is a `TextView`, and a heading is `Text` instead of `Header`. The runner names every XCUITest element type, so an icon of the home screen is `Icon` and no longer `Element44`; `Element<n>` is left for a type that a later Xcode adds
 
 ## [1.4.0]
