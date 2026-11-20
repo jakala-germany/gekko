@@ -111,7 +111,7 @@ enum TreeReader {
             object: object,
             id: identifier(of: object),
             text: secure ? nil : text(of: object),
-            role: role(of: object),
+            role: role(of: object, parent: parent),
             frame: area,
             actions: actions(of: object),
             enabled: !object.accessibilityTraits.contains(.notEnabled) && ((object as? UIControl)?.isEnabled ?? true),
@@ -250,21 +250,70 @@ enum TreeReader {
         return actions
     }
 
-    private static func role(of object: NSObject) -> String {
-        let traits = object.accessibilityTraits
+    /// The name of what the element is: the name of its XCUITest type, so that the iOS system runner (see `roleName` in
+    /// its tests) calls the same element by the same name. A text is `Text` (a heading as well: XCUITest has no type
+    /// for it) and what is nothing more specific is `View`, never the name of a (private) class.
+    private static func role(of object: NSObject, parent: Element?) -> String {
+        return classRole(of: object) ?? traitRole(of: object.accessibilityTraits, parent: parent)
+    }
+
+    /// The role of a UIKit class; the most specific one first (a table view is a scroll view, a search field a text field).
+    private static func classRole(of object: NSObject) -> String? {
         switch object {
-        case is UITextField, is UITextView: return "TextField"
-        #if os(iOS)
-        case is UISwitch: return "Switch"
-        #endif
+        case is UIWindow: return "Window"
+        case let field as UITextField: return fieldRole(of: field)
+        case is UITextView: return "TextView"
+        case is UINavigationBar: return "NavigationBar"
+        case is UITabBar: return "TabBar"
+        case is UITableViewCell, is UICollectionViewCell: return "Cell"
+        case is UITableView: return "Table"
+        case is UICollectionView: return "CollectionView"
         case is UIScrollView: return "ScrollView"
+        case is UISegmentedControl: return "SegmentedControl"
+        case is UIPageControl: return "PageIndicator"
+        case is UIActivityIndicatorView: return "ActivityIndicator"
+        case is UIProgressView: return "ProgressIndicator"
+        case is UIButton: return "Button"
+        case is UILabel: return "Text"
+        case is UIImageView: return "Image"
         default: break
         }
-        if traits.contains(.button) || object is UIButton { return "Button" }
+        #if os(iOS)
+        switch object {
+        case is UISwitch: return "Switch"
+        case is UISlider: return "Slider"
+        case is UIStepper: return "Stepper"
+        case is UIDatePicker: return "DatePicker"
+        case is UIPickerView: return "Picker"
+        case is UIToolbar: return "Toolbar"
+        default: break
+        }
+        #endif
+        // WebKit is not linked: the class is looked up by its name
+        if let webView = NSClassFromString("WKWebView"), object.isKind(of: webView) { return "WebView" }
+        return nil
+    }
+
+    private static func fieldRole(of field: UITextField) -> String {
+        if field.isSecureTextEntry { return "SecureTextField" }
+        #if os(iOS)
+        if field is UISearchTextField { return "SearchField" }
+        #endif
+        return field.accessibilityTraits.contains(.searchField) ? "SearchField" : "TextField"
+    }
+
+    /// The role of what the accessibility traits tell: a SwiftUI element or a custom view has no class of its own to name.
+    private static func traitRole(of traits: UIAccessibilityTraits, parent: Element?) -> String {
+        // A wheel of a picker is an element that can be adjusted, as a slider is
+        if traits.contains(.adjustable), parent?.role == "Picker" { return "PickerWheel" }
+        if traits.contains(.searchField) { return "SearchField" }
+        // A toggle of SwiftUI is a button that can be on; XCUITest calls it a switch
+        if #available(iOS 17.0, tvOS 17.0, *), traits.contains(.toggleButton) { return "Switch" }
+        if traits.contains(.button) { return "Button" }
         if traits.contains(.link) { return "Link" }
         if traits.contains(.image) { return "Image" }
-        if traits.contains(.header) { return "Header" }
-        if traits.contains(.staticText) || object is UILabel { return "Text" }
-        return String(describing: type(of: object))
+        if traits.contains(.tabBar) { return "TabBar" }
+        if traits.contains(.staticText) || traits.contains(.header) { return "Text" }
+        return "View"
     }
 }

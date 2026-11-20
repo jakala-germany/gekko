@@ -76,6 +76,45 @@ extension View {
     }
 }
 
+/// One of each kind of control, for `scripts/check-roles.py`: the in-app agent and the system runner must call every
+/// one of them by the same role.
+struct ControlsView: View {
+    @Environment(\.dismiss) private var dismiss
+    @State private var search = ""
+    @State private var notes = ""
+    @State private var enabled = false
+    @State private var level = 0.5
+    @State private var count = 0
+
+    var body: some View {
+        // NavigationView: the sample is built for iOS 15, which has no NavigationStack
+        NavigationView {
+            Form {
+                Section("Inputs") {
+                    TextEditor(text: $notes)
+                        .frame(height: 60)
+                        .accessibilityIdentifier("sample.controls.notes")
+                    Toggle("Enabled", isOn: $enabled)
+                        .accessibilityIdentifier("sample.controls.switch")
+                    Slider(value: $level)
+                        .accessibilityIdentifier("sample.controls.slider")
+                    Stepper("Count: \(count)", value: $count)
+                        .accessibilityIdentifier("sample.controls.stepper")
+                }
+            }
+            .navigationTitle("Controls")
+            .searchable(text: $search)
+            .toolbar {
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Done") { dismiss() }
+                        .accessibilityIdentifier("sample.controls.done")
+                }
+            }
+        }
+        .navigationViewStyle(.stack)
+    }
+}
+
 struct ContentView: View {
     @State private var name = ""
     @State private var greeting = ""
@@ -86,6 +125,7 @@ struct ContentView: View {
     @State private var startup = "none"
     /// How far the list is scrolled, in points: the end-to-end tests compare what a drag and a swipe moved
     @State private var scrolled = 0
+    @State private var controlsShown = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -103,6 +143,9 @@ struct ContentView: View {
             HStack(spacing: 16) {
                 Button("Greet") { greeting = "Hello \(name)" }
                     .accessibilityIdentifier("sample.greet")
+                // The controls of the role check: it compares what the agent and the system runner call them
+                Button("Controls") { controlsShown = true }
+                    .accessibilityIdentifier("sample.controls")
                 // A password is never readable in the tree: the app tells how long it is, which a test can check
                 Text("Password: \(password.count)")
                     .accessibilityIdentifier("sample.password.length")
@@ -157,6 +200,7 @@ struct ContentView: View {
             .accessibilityIdentifier("sample.list")
         }
         .padding()
+        .sheet(isPresented: $controlsShown) { ControlsView() }
         // The first request is made while the app starts, so the tests can mock what an app asks for at startup
         .task { startup = await load("startup") }
     }

@@ -6,11 +6,11 @@
 
 **New**
 
-- Upcoming additions go here
+- `gekko tree --system` prints the tree the system runner reads instead of the in-app agent's, to compare them. `scripts/e2e-ios.sh` does that for the sample app (`scripts/check-roles.py`) and fails when the two give an element different roles
 
 **Changed**
 
-- Upcoming changes go here
+- iOS: the in-app agent and the system runner give the same element the same `role` ([#45](https://github.com/jakala-germany/gekko/issues/45), [#44](https://github.com/jakala-germany/gekko/issues/44)), so a client does not depend on which of them reads the screen. Both use the names of the XCUITest element types (`SearchField`, `TextView`, `NavigationBar`, `Slider`, `Icon`, ...; `Text` for a text and `View` for anything else). The agent no longer sends the name of a (private) class such as `UIKitNavigationBar` or `_UIFloatingBarContainerView`, a search field is no longer a `TextField` and a multi-line text view is a `TextView`, and a heading is `Text` instead of `Header`. The runner names every XCUITest element type, so an icon of the home screen is `Icon` and no longer `Element44`; `Element<n>` is left for a type that a later Xcode adds
 
 ## [1.4.0]
 
