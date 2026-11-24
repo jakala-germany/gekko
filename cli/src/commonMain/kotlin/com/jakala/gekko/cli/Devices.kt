@@ -164,6 +164,15 @@ interface Device {
         get() = false
 
     /**
+     * True when a system alert (a permission prompt) can cover the app while its agent still answers that the app is in
+     * front: on iOS the prompt belongs to SpringBoard and the app below it stays active, so the CLI asks the system
+     * runner ([Command.SystemAlert]) before it trusts the agent. The Android agent reports by itself that the app lost
+     * the focus, and a page has no system alerts.
+     */
+    val systemAlertCoversActiveApp: Boolean
+        get() = false
+
+    /**
      * True for an Android TV / Google TV device or an Apple TV simulator: a remote moves the focus there and nothing is
      * touched, see [TvRules].
      */
@@ -782,8 +791,9 @@ class AdbDevice(val serial: String?) : Device {
 }
 
 /**
- * Routes commands to the in-process agent while the app owns the focus and to the system runner (UiAutomator)
- * otherwise, e.g. for the browser or permission dialogs.
+ * Routes commands to the in-process agent while the app owns the focus and to the system runner (UiAutomator, XCUITest)
+ * otherwise, e.g. for the browser or permission dialogs, which on iOS leave the app active below them: the system
+ * runner says whether one is in front ([Command.SystemAlert]).
  */
 class Drivers(
     private val device: Device,
@@ -812,14 +822,55 @@ class Drivers(
             }
         }
         if (forceSystem) {
-            return sendToSystemRunner(command)
+            return withAlertHint(sendToSystemRunner(command))
         }
         if (device.supportsWaitFor) {
             return sendAgentFirst(command)
         }
-        val driver = pick()
-        debug(if (driver === system) "system runner" else "in-app agent", command)
-        return if (driver === system) sendToSystemRunner(command) else driver.send(command)
+        val route = pick(command)
+        debug(route.driver, command)
+        if (route == Route.AGENT) {
+            return agent.send(command)
+        }
+        return withAlertHint(sendToSystemRunner(command))
+    }
+
+    /** Where a command goes, and why the system runner gets it. */
+    private enum class Route(val driver: String) {
+        AGENT("in-app agent"),
+        SYSTEM("system runner"),
+        ALERT("system runner (a system alert is in front)"),
+    }
+
+    /**
+     * The sentence that names the system alert in front of the app, for a step that found no element: the system runner
+     * only sees the alert (and the agent only the app below it), so the element the test wanted is not where it looks.
+     * Null when this device has no alert in front or cannot have one over its app.
+     */
+    suspend fun systemAlertHint(): String? {
+        if (!device.systemAlertCoversActiveApp) {
+            return null
+        }
+        val tree =
+            try {
+                sendToSystemRunner(Command.Tree)
+            } catch (error: CancellationException) {
+                throw error
+            } catch (error: UntrustedServerException) {
+                throw error
+            } catch (error: Exception) {
+                return null
+            }
+        return SystemAlerts.hint((tree as? Response.TreeResult)?.windows.orEmpty())
+    }
+
+    /** The answer of the system runner, with the alert named when it found no element because one is in front. */
+    private suspend fun withAlertHint(response: Response): Response {
+        if (response !is Response.Error || response.kind !in ELEMENT_MISSING) {
+            return response
+        }
+        val hint = systemAlertHint() ?: return response
+        return response.copy(message = "${response.message}. $hint")
     }
 
     /**
@@ -917,6 +968,7 @@ class Drivers(
             Command.Metrics,
             Command.Tree,
             Command.Foreground,
+            Command.SystemAlert,
             Command.Screenshot -> 0L
         }
     }
@@ -976,13 +1028,54 @@ class Drivers(
         return response is Response.ForegroundResult && response.appInForeground
     }
 
-    private suspend fun pick(): CommandClient {
+    private suspend fun pick(command: Command): Route {
         val foreground = askForeground()
         if (foreground is Response.ForegroundResult && foreground.appInForeground) {
-            return agent
+            return if (alertCoversApp(command)) Route.ALERT else Route.AGENT
         }
-        ensureSystemRunner()
-        return system
+        return Route.SYSTEM
+    }
+
+    /**
+     * True when a system alert is in front although the agent says that the app is: the agent still reads the app below
+     * the prompt and a touch would go through it. Only the system runner can tell, so it is started when it does not
+     * run yet; whatever it answers other than "present" (an older runner says `unsupported`) leaves the command with
+     * the agent.
+     */
+    private suspend fun alertCoversApp(command: Command): Boolean {
+        return command.readsOrTouchesTheScreen() && systemAlertInFront()
+    }
+
+    /**
+     * True when a system alert is in front on a device where the agent cannot see it, see
+     * [Device.systemAlertCoversActiveApp]. A tap that the agent found without effect has one too when it opened a
+     * permission prompt: nothing changed in the app below it, so the prompt is what the tap did.
+     */
+    suspend fun systemAlertInFront(): Boolean {
+        if (!device.systemAlertCoversActiveApp) {
+            return false
+        }
+        val answer = sendToSystemRunner(Command.SystemAlert)
+        return answer is Response.SystemAlertResult && answer.present
+    }
+
+    /** What an alert in front changes: the commands that read the screen or touch it. */
+    private fun Command.readsOrTouchesTheScreen(): Boolean {
+        return when (this) {
+            Command.Tree,
+            is Command.Tap,
+            is Command.DoubleTap,
+            is Command.LongPress,
+            is Command.Type,
+            is Command.TypeFocused,
+            is Command.PressKey,
+            is Command.Scroll,
+            is Command.TapAt,
+            is Command.LongPressAt,
+            is Command.Swipe,
+            is Command.Drag -> true
+            else -> false
+        }
     }
 
     private suspend fun ensureSystemRunner() {
@@ -1034,5 +1127,8 @@ class Drivers(
         private const val FOREGROUND_GRACE_ATTEMPTS = 10
         private const val FOREGROUND_GRACE_POLL_MS = 100L
         private const val KEY_PRESS_BUDGET_MS = 1_000L
+
+        /** The answers of a server that looked for an element and did not find a usable one. */
+        private val ELEMENT_MISSING = setOf(ErrorKind.NOT_FOUND, ErrorKind.NOT_ON_SCREEN, ErrorKind.DISABLED)
     }
 }

@@ -56,6 +56,26 @@ python3 -I scripts/check-roles.py "$OUT/controls-agent.json" "$OUT/controls-runn
   "sample.controls.switch?=Switch"
 "$GEKKO" tap --id sample.controls.done "${DEVICE[@]}"
 
+# A permission prompt covers the app, which stays active below it, so its agent cannot see the prompt: gekko asks the
+# system runner, reads the prompt, does not tap through it to the app, and a plain tap answers it. A prompt that stays up
+# (a check below failed) blocks the next run, so it is answered whatever happens.
+trap '"$GEKKO" tap --text "Don’t Allow" --timeout 500 "${DEVICE[@]}" >/dev/null 2>&1 || true' EXIT
+"$GEKKO" launch --fresh "${DEVICE[@]}"
+"$GEKKO" tap --id sample.permission "${DEVICE[@]}"
+"$GEKKO" tree --json "${DEVICE[@]}" > "$OUT/alert.json"
+if ! grep -Eq '"role": ?"Alert"' "$OUT/alert.json"; then
+  echo "the tree while a permission prompt is up must be the prompt (role Alert), see $OUT/alert.json" >&2
+  exit 1
+fi
+status=0
+blocked="$("$GEKKO" tap --id sample.greet --timeout 1000 "${DEVICE[@]}" 2>&1)" || status=$?
+if [ "$status" -ne 1 ] || ! grep -q "system alert" <<<"$blocked"; then
+  echo "a tap on the app below a prompt must fail with exit 1 and name the alert, got $status: $blocked" >&2
+  exit 1
+fi
+"$GEKKO" tap --text "Allow While Using App" "${DEVICE[@]}"
+"$GEKKO" assert --id sample.permission.result --text "Location: allowed" "${DEVICE[@]}"
+
 status=0
 "$GEKKO" run --project examples/sample-tests --platform ios -s "$UDID" --tags broken --exclude-tags tv --output "$OUT/failing" || status=$?
 if [ "$status" -ne 1 ]; then

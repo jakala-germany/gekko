@@ -47,6 +47,7 @@ internal class CommandExecutor(private val application: Application, private val
             is Command.SetLocation,
             Command.ClearLocation -> unsupported("Mock locations are served by the system runner")
             is Command.Wheel -> unsupported("A mouse wheel only exists in a browser")
+            Command.SystemAlert -> unsupported("System alerts are read by the iOS system runner")
             is Command.WaitIdle -> waitIdle(command.timeoutMs)
             is Command.WaitFor -> waitFor(command)
             is Command.Tap -> tap(command)
@@ -487,7 +488,15 @@ internal class CommandExecutor(private val application: Application, private val
     private companion object {
         /** The commands this server answers with `unsupported`: the others are listed in its answer to `hello`. */
         val UNSUPPORTED_COMMANDS =
-            setOf("screenshot", "setOrientation", "hideKeyboard", "setLocation", "clearLocation", "wheel")
+            setOf(
+                "screenshot",
+                "setOrientation",
+                "hideKeyboard",
+                "setLocation",
+                "clearLocation",
+                "wheel",
+                "systemAlert",
+            )
 
         const val POLL_MS = 16L
         const val IDLE_WAIT_MS = 500L

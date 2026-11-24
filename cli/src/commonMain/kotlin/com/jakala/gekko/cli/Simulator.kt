@@ -41,6 +41,9 @@ class SimctlDevice(private val requestedUdid: String?) : Device {
         return SimulatorPorts.agent(udid) + 1
     }
 
+    override val systemAlertCoversActiveApp: Boolean
+        get() = true
+
     override val isTv: Boolean by lazy {
         bootedSimulators().firstOrNull { it.udid.equals(udid, ignoreCase = true) }?.isTv == true
     }

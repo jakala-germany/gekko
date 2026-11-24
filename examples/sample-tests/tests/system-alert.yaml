@@ -1,0 +1,15 @@
+name: A system alert over the running app is answered without system true
+tags: [ios-only]
+steps:
+  - say: Ask for the location, a prompt of the system covers the running app
+    platform: ios
+    do: { tap: { id: sample.permission } }
+  - say: The prompt is read although the app below it stays active
+    platform: ios
+    do: { assertVisible: { text: "Allow While Using App" } }
+  - say: Answer it with a plain tap, which reaches the prompt and not the app below
+    platform: ios
+    do: { tap: { text: "Allow While Using App" } }
+  - say: The app learned the answer
+    platform: ios
+    do: { assertVisible: { id: sample.permission.result, text: "Location: allowed" } }

@@ -225,9 +225,23 @@ class ProtocolTest {
         val names = Command.names()
 
         assertTrue(
-            names.containsAll(listOf("hello", "tree", "tap", "type", "typeFocused", "pressKey", "drag", "mockHits"))
+            names.containsAll(
+                listOf("hello", "tree", "tap", "type", "typeFocused", "pressKey", "drag", "mockHits", "systemAlert")
+            )
         )
         assertEquals(names.size, names.toSet().size)
+    }
+
+    @Test
+    fun theSystemAlertQuestionAndItsAnswerRoundTrip() {
+        val json = Json { classDiscriminator = "type" }
+        val question = json.encodeToString(Command.serializer(), Command.SystemAlert)
+        val answer = json.encodeToString(Response.serializer(), Response.SystemAlertResult(true))
+
+        assertEquals("""{"type":"systemAlert"}""", question)
+        assertEquals("""{"type":"systemAlert","present":true}""", answer)
+        assertEquals(Command.SystemAlert, json.decodeFromString(Command.serializer(), question))
+        assertEquals(Response.SystemAlertResult(true), json.decodeFromString(Response.serializer(), answer))
     }
 }
 

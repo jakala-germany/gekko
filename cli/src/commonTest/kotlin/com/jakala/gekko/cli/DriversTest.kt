@@ -1,9 +1,11 @@
 package com.jakala.gekko.cli
 
+import com.jakala.gekko.protocol.Bounds
 import com.jakala.gekko.protocol.Command
 import com.jakala.gekko.protocol.ErrorKind
 import com.jakala.gekko.protocol.Response
 import com.jakala.gekko.protocol.Selector
+import com.jakala.gekko.protocol.UiNode
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
@@ -329,6 +331,172 @@ class DriversTest {
 
             assertEquals(Response.Ok, response)
             assertEquals(listOf<Command>(tap), system.received)
+        }
+    }
+
+    private fun alertTree(): Response {
+        val button = { text: String -> UiNode(role = "Button", text = text, bounds = Bounds(0, 0, 1, 1)) }
+        val alert =
+            UiNode(
+                role = "Alert",
+                text = "Sample Would Like to Send You Notifications",
+                bounds = Bounds(0, 0, 10, 10),
+                children = listOf(button("Don’t Allow"), button("Allow")),
+            )
+        return Response.TreeResult(listOf(alert))
+    }
+
+    private fun appInFront(): FakeClient {
+        return FakeClient { if (it is Command.Foreground) Response.ForegroundResult(true) else Response.Ok }
+    }
+
+    private fun iosWithAlerts(): FakeDevice {
+        return FakeDevice(supportsWaitFor = false, systemAlertCoversActiveApp = true)
+    }
+
+    @Test
+    fun iosSendsACommandToTheSystemRunnerWhileAnAlertCoversTheApp() {
+        runTest {
+            val agent = appInFront()
+            val system = FakeClient { if (it == Command.SystemAlert) Response.SystemAlertResult(true) else Response.Ok }
+
+            val response = drivers(iosWithAlerts(), agent, system).send(tap)
+
+            assertEquals(Response.Ok, response)
+            assertEquals(listOf<Command>(Command.Foreground), agent.received)
+            assertEquals(listOf(Command.SystemAlert, tap), system.received)
+        }
+    }
+
+    @Test
+    fun iosKeepsTheCommandWithTheAgentWhenNoAlertCoversTheApp() {
+        runTest {
+            val agent = appInFront()
+            val system = FakeClient {
+                if (it == Command.SystemAlert) Response.SystemAlertResult(false) else Response.Ok
+            }
+
+            drivers(iosWithAlerts(), agent, system).send(tap)
+
+            assertEquals(listOf(Command.Foreground, tap), agent.received)
+            assertEquals(listOf<Command>(Command.SystemAlert), system.received)
+        }
+    }
+
+    @Test
+    fun iosKeepsTheCommandWithTheAgentWhenTheRunnerDoesNotKnowSystemAlerts() {
+        runTest {
+            val agent = appInFront()
+            val system = FakeClient { unsupported() }
+
+            drivers(iosWithAlerts(), agent, system).send(tap)
+
+            assertEquals(listOf(Command.Foreground, tap), agent.received)
+        }
+    }
+
+    @Test
+    fun iosStartsTheSystemRunnerToLookForAnAlert() {
+        runTest {
+            val device = iosWithAlerts()
+            val system = FakeClient {
+                if (it == Command.SystemAlert) Response.SystemAlertResult(false) else Response.Ok
+            }
+            system.reachable = { device.runnerStarts.isNotEmpty() }
+
+            drivers(device, appInFront(), system).send(tap)
+
+            assertEquals(listOf(false), device.runnerStarts)
+        }
+    }
+
+    @Test
+    fun iosDoesNotLookForAnAlertForWhatDoesNotReadOrTouchTheScreen() {
+        runTest {
+            val agent = appInFront()
+            val system = FakeClient { Response.SystemAlertResult(true) }
+
+            val drivers = drivers(iosWithAlerts(), agent, system)
+            drivers.send(Command.HideKeyboard)
+            drivers.send(Command.MockHits)
+            drivers.send(tap, forceSystem = true)
+
+            assertTrue(system.received.none { it == Command.SystemAlert })
+            assertEquals(listOf<Command>(tap), system.received)
+        }
+    }
+
+    @Test
+    fun aDeviceWithoutSystemAlertsNeverAsksTheSystemRunnerWhetherOneIsThere() {
+        runTest {
+            val agent = appInFront()
+            val system = FakeClient { Response.SystemAlertResult(true) }
+
+            drivers(FakeDevice(supportsWaitFor = false), agent, system).send(tap)
+            drivers(FakeDevice(supportsWaitFor = true), appInFront(), system).send(tap)
+
+            assertTrue(system.received.isEmpty())
+        }
+    }
+
+    @Test
+    fun theSystemRunnerIsAskedWhetherAnAlertIsInFrontOnlyOnADeviceThatNeedsIt() {
+        runTest {
+            val system = FakeClient { Response.SystemAlertResult(true) }
+
+            assertTrue(drivers(iosWithAlerts(), appInFront(), system).systemAlertInFront())
+            assertTrue(!drivers(FakeDevice(supportsWaitFor = false), appInFront(), system).systemAlertInFront())
+            assertEquals(1, system.received.size)
+        }
+    }
+
+    @Test
+    fun anElementThatIsNotFoundWhileAnAlertCoversTheAppNamesTheAlert() {
+        runTest {
+            val system = FakeClient {
+                when (it) {
+                    Command.SystemAlert -> Response.SystemAlertResult(true)
+                    Command.Tree -> alertTree()
+                    else -> Response.Error("Element not found: go", ErrorKind.NOT_FOUND)
+                }
+            }
+
+            val response = drivers(iosWithAlerts(), appInFront(), system).send(tap)
+
+            val message = (response as Response.Error).message
+            assertEquals(ErrorKind.NOT_FOUND, response.kind)
+            assertTrue(message.startsWith("Element not found: go. The system alert \"Sample Would Like"), message)
+            assertTrue(
+                message.endsWith("(buttons: Don’t Allow, Allow); answer it first, e.g. tap: { text: \"Don’t Allow\" }")
+            )
+        }
+    }
+
+    @Test
+    fun anElementThatIsNotFoundOnTheRunnerBecauseTheAppWentInactiveNamesTheAlertToo() {
+        runTest {
+            val agent = FakeClient { Response.ForegroundResult(false) }
+            val system = FakeClient {
+                if (it == Command.Tree) alertTree() else Response.Error("Element not found: go", ErrorKind.NOT_FOUND)
+            }
+
+            val response = drivers(iosWithAlerts(), agent, system).send(tap)
+
+            assertTrue((response as Response.Error).message.contains("The system alert"), response.message)
+        }
+    }
+
+    @Test
+    fun anotherFailureWhileAnAlertCoversTheAppIsLeftAlone() {
+        runTest {
+            val system = FakeClient {
+                if (it == Command.SystemAlert) Response.SystemAlertResult(true)
+                else Response.Error("boom", ErrorKind.REJECTED)
+            }
+
+            val response = drivers(iosWithAlerts(), appInFront(), system).send(tap)
+
+            assertEquals(Response.Error("boom", ErrorKind.REJECTED), response)
         }
     }
 

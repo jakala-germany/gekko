@@ -28,6 +28,8 @@ internal class FakeDevice(
     /** An emulator or simulator takes the location from its console; a physical device does not have one. */
     private val locationConsole: Boolean = true,
     override val isTv: Boolean = false,
+    /** An iOS simulator: a prompt of SpringBoard covers the app while its agent still says it is in front. */
+    override val systemAlertCoversActiveApp: Boolean = false,
 ) : Device {
     val locations = mutableListOf<Pair<Double, Double>>()
     var mockLocationAllowed = 0

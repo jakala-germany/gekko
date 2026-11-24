@@ -113,6 +113,8 @@ class SystemRunnerTest {
             Command.Screenshot -> Response.Error("Screenshot is handled by the host CLI", ErrorKind.UNSUPPORTED)
             Command.HideKeyboard -> Response.Error("The CLI closes the keyboard over adb", ErrorKind.UNSUPPORTED)
             is Command.Wheel -> Response.Error("A mouse wheel only exists in a browser", ErrorKind.UNSUPPORTED)
+            Command.SystemAlert ->
+                Response.Error("System alerts are read by the iOS system runner", ErrorKind.UNSUPPORTED)
             is Command.SetMocks,
             Command.ClearMocks,
             Command.MockHits -> Response.Error("Network mocks are served by the app", ErrorKind.UNSUPPORTED)
@@ -491,7 +493,8 @@ class SystemRunnerTest {
         const val KEY_SETTLE_MS = 500L
 
         /** The commands this server answers with `unsupported`: the others are listed in its answer to `hello`. */
-        val UNSUPPORTED_COMMANDS = setOf("screenshot", "hideKeyboard", "wheel", "setMocks", "clearMocks", "mockHits")
+        val UNSUPPORTED_COMMANDS =
+            setOf("screenshot", "hideKeyboard", "wheel", "setMocks", "clearMocks", "mockHits", "systemAlert")
         const val ROOT_RETRIES = 10
         const val ROOT_RETRY_MS = 50L
         const val MAX_SWIPE_FRACTION = 0.8f
