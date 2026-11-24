@@ -2,7 +2,19 @@
 
 ## [Snapshot]
 
-[Snapshot]: https://github.com/jakala-germany/gekko/compare/1.4.0...HEAD
+[Snapshot]: https://github.com/jakala-germany/gekko/compare/1.5.0...HEAD
+
+**New**
+
+- Upcoming additions go here
+
+**Changed**
+
+- Upcoming changes go here
+
+## [1.5.0]
+
+[1.5.0]: https://github.com/jakala-germany/gekko/compare/1.4.0...1.5.0
 
 **New**
 
@@ -14,6 +26,8 @@
 - iOS: a system alert over an app that stays active is no longer tapped through ([#51](https://github.com/jakala-germany/gekko/issues/51)). The prompt of SpringBoard (a permission) covers the app, which stays `active` below it, so its agent answered `foreground` with `appInForeground: true` and the CLI kept asking it: `gekko tree` showed the app and not the prompt, a tap on the prompt's button went to the app below it and the prompt stayed up. Before a command that reads the screen or touches it (a tree, a tap, a key, a scroll, a swipe, ...) the CLI now asks the system runner `systemAlert` and sends the command to the runner while an alert is up, so `tap: { text: Allow }` answers the prompt without `system: true`. This starts the system runner with the first such command of a run (once per simulator, usually 10-30 s; it keeps running afterwards). A step that wants an element of the app while an alert is up fails and names the alert (`Element not found: ... The system alert "..." is in front of the app (buttons: Don’t Allow, Allow); answer it first, e.g. tap: { text: "Don’t Allow" }`), as does an `assertVisible` that times out: a test that passed by tapping through the prompt has to answer it first. A runner of an older release answers `unsupported` and a command then stays with the agent as before: `gekko uninstall` replaces it
 - The CLI sends a request to the in-app agent, the system runner or the web bridge again (up to 3 times, after 0.1, 0.2 and 0.4 s) when the connection is refused for a moment, as seen once on Windows (`Failed to connect to InetSocketAddress(127.0.0.1:...)` in a web step); a refused connection never carried the request, so it cannot run twice. Any other failure is not repeated, and a server that is not running is still found out at once
 - iOS: the in-app agent and the system runner give the same element the same `role` ([#45](https://github.com/jakala-germany/gekko/issues/45), [#44](https://github.com/jakala-germany/gekko/issues/44)), so a client does not depend on which of them reads the screen. Both use the names of the XCUITest element types (`SearchField`, `TextView`, `NavigationBar`, `Slider`, `Icon`, ...; `Text` for a text and `View` for anything else). The agent no longer sends the name of a (private) class such as `UIKitNavigationBar` or `_UIFloatingBarContainerView`, a search field is no longer a `TextField` and a multi-line text view is a `TextView`, and a heading is `Text` instead of `Header`; a row of a table or collection is a `Cell` and the bar of iOS 26 and later a `Toolbar`. The runner names every XCUITest element type, so an icon of the home screen is `Icon` and no longer `Element44`; `Element<n>` is left for a type that a later Xcode adds
+- Web: a `fill` waits up to 10 s instead of 2 s for the element to be editable and stable, so a browser that is slow to start while others run no longer fails it
+- Web: a `goto` is tried again (up to 3 times, 0.5 s apart) when the page fails with `net::ERR_NO_BUFFER_SPACE`, a transient error of Windows that ran out of socket buffers; any other error is not repeated
 
 ## [1.4.0]
 
