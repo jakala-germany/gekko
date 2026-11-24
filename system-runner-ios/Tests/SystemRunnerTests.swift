@@ -15,11 +15,13 @@ final class SystemRunnerTests: XCTestCase {
     private static let changeSeconds = 1.0
     /// The commands this runner serves, as `hello` lists them. Keep in sync with the cases of `execute`.
     #if os(tvOS)
-    private static let servedCommands = ["hello", "metrics", "tree", "foreground", "waitIdle", "type", "typeFocused", "pressKey"]
+    private static let servedCommands = [
+        "hello", "metrics", "tree", "foreground", "systemAlert", "waitIdle", "type", "typeFocused", "pressKey",
+    ]
     #else
     private static let servedCommands = [
-        "hello", "metrics", "tree", "foreground", "waitIdle", "tap", "doubleTap", "longPress", "type", "typeFocused",
-        "pressKey", "tapAt", "longPressAt", "scroll", "swipe", "drag", "setOrientation",
+        "hello", "metrics", "tree", "foreground", "systemAlert", "waitIdle", "tap", "doubleTap", "longPress", "type",
+        "typeFocused", "pressKey", "tapAt", "longPressAt", "scroll", "swipe", "drag", "setOrientation",
     ]
     #endif
 
@@ -74,6 +76,8 @@ final class SystemRunnerTests: XCTestCase {
         case "metrics": return ["type": "metrics", "density": 1.0, "rtl": UIView.userInterfaceLayoutDirection(for: .unspecified) == .rightToLeft]
         case "tree": return ["type": "tree", "windows": [node(for: foremost().root)]]
         case "foreground": return ["type": "foreground", "appInForeground": false]
+        // The in-app agent cannot see a prompt of SpringBoard over an app that stays active: the CLI asks here
+        case "systemAlert": return ["type": "systemAlert", "present": springboard.alerts.firstMatch.exists]
         case "waitIdle": return ok()
         case "screenshot": return error("Screenshot is handled by the host CLI", ErrorKind.unsupported)
         #if os(tvOS)

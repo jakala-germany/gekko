@@ -31,6 +31,7 @@ cat > "$APP/Info.plist" <<PLIST
 <key>CFBundleVersion</key><string>1</string>
 <key>MinimumOSVersion</key><string>15.0</string>
 <key>UIDeviceFamily</key><array><integer>1</integer></array>
+<key>NSLocationWhenInUseUsageDescription</key><string>The sample app asks for the location to show a system prompt.</string>
 <key>UILaunchScreen</key><dict/>
 <key>UISupportedInterfaceOrientations</key><array><string>UIInterfaceOrientationPortrait</string></array>
 </dict></plist>

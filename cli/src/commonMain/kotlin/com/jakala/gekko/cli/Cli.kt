@@ -278,8 +278,9 @@ private class TapCommand : SelectorCommand("tap") {
             val command = Command.Tap(selector(), timeout, project.config.settleMs)
             var response = drivers.send(command, system)
             if (response is Response.Error && response.message.contains("Tap was not handled")) {
-                // The in-app agent only taps via accessibility actions; the system runner synthesizes a real touch
-                response = drivers.send(command, forceSystem = true)
+                // The in-app agent only taps via accessibility actions; the system runner synthesizes a real touch. A
+                // tap that opened a system alert needs none: nothing changed in the app below it
+                response = if (drivers.systemAlertInFront()) Response.Ok else drivers.send(command, forceSystem = true)
             }
             report(response)
         }

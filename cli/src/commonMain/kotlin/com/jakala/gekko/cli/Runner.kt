@@ -1065,6 +1065,10 @@ class TestRunner(
         tapPacer.beforeTap()
         val response = drivers.send(command, spec.system)
         if (response is Response.Error && response.message.contains("Tap was not handled") && !spec.system) {
+            // A tap that asks for a permission changes nothing in the app: the prompt over it is the effect
+            if (drivers.systemAlertInFront()) {
+                return
+            }
             tapPacer.beforeTap()
             expectOk(drivers.send(command, forceSystem = true))
             return
@@ -1560,7 +1564,8 @@ class TestRunner(
             )
             // Past the point where the screen is done a wait cannot help; only a loading screen gets the full timeout
             if (tracker.isSettled(nowMillis()) || nowMillis() > deadline) {
-                throw StepFailure(if (visible) "Expected visible: $selector" else "Expected not visible: $selector")
+                val failure = if (visible) "Expected visible: $selector" else "Expected not visible: $selector"
+                throw StepFailure(drivers.systemAlertHint()?.let { "$failure. $it" } ?: failure)
             }
             delay(POLL_MS)
         }

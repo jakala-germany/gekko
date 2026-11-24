@@ -1,3 +1,4 @@
+import CoreLocation
 import SwiftUI
 
 @main
@@ -125,7 +126,32 @@ struct ControlsView: View {
     }
 }
 
+/// Asks for the location, which puts a prompt of SpringBoard over the app that stays active below it: the tests answer
+/// it without `system: true`, because gekko sees that something covers the app.
+final class LocationAsker: NSObject, ObservableObject, CLLocationManagerDelegate {
+    @Published var status = "not asked"
+    private let manager = CLLocationManager()
+
+    override init() {
+        super.init()
+        manager.delegate = self
+    }
+
+    func ask() {
+        manager.requestWhenInUseAuthorization()
+    }
+
+    func locationManagerDidChangeAuthorization(_ manager: CLLocationManager) {
+        switch manager.authorizationStatus {
+        case .notDetermined: status = "not asked"
+        case .denied, .restricted: status = "denied"
+        default: status = "allowed"
+        }
+    }
+}
+
 struct ContentView: View {
+    @StateObject private var location = LocationAsker()
     @State private var name = ""
     @State private var greeting = ""
     @State private var password = ""
@@ -162,6 +188,13 @@ struct ContentView: View {
             }
             Text(greeting)
                 .accessibilityIdentifier("sample.greeting")
+            // Far from the date picker below: its wheel reaches over the rows above it and takes their touches
+            HStack(spacing: 16) {
+                Button("Location") { location.ask() }
+                    .accessibilityIdentifier("sample.permission")
+                Text("Location: \(location.status)")
+                    .accessibilityIdentifier("sample.permission.result")
+            }
             Text("Gesture target")
                 .padding(8)
                 .contentShape(Rectangle())

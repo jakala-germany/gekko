@@ -99,6 +99,7 @@ internal class WebAgentClient(
             Command.Tree -> Response.TreeResult(read()?.windows.orEmpty())
             Command.Foreground -> Response.ForegroundResult(true)
             Command.Screenshot -> unsupported("Screenshot is handled by the host CLI")
+            Command.SystemAlert -> unsupported("A page has no system alerts")
             is Command.SetMocks -> setMocks(command.rules)
             Command.ClearMocks -> setMocks(emptyList())
             Command.MockHits -> mockHits()
@@ -664,7 +665,7 @@ internal class WebAgentClient(
         const val CHANGE_WAIT_MS = 1_000L
 
         /** The commands this client answers with `unsupported`: the others are listed in its answer to `hello`. */
-        val UNSUPPORTED_COMMANDS = setOf("screenshot")
+        val UNSUPPORTED_COMMANDS = setOf("screenshot", "systemAlert")
         const val QUIET_LIMIT_MS = 1_500L
         const val QUIET_MS = 100L
         const val MAX_PAGE_SCROLLS = 3

@@ -278,6 +278,44 @@ class RunnerTest {
         assertTrue(seen.any { it is Command.Tap })
     }
 
+    /** An iOS app whose agent finds the tap without effect, because the prompt that it opened is not in the app. */
+    private fun unhandledTapRunner(alert: Boolean, systemSeen: MutableList<Command>): TestRunner {
+        val agentSeen = mutableListOf<Command>()
+        val agent = agent(Response.Error("Tap was not handled", ErrorKind.REJECTED), agentSeen)
+        val system = FakeClient { command ->
+            systemSeen += command
+            // The prompt only comes up once the agent was told to tap
+            val up = alert && agentSeen.any { it is Command.Tap }
+            if (command == Command.SystemAlert) Response.SystemAlertResult(up) else Response.Ok
+        }
+        val device = FakeDevice(supportsWaitFor = false, systemAlertCoversActiveApp = true)
+        return runner(Platform.Ios, agent, suggestIds = false, device = device, system = system)
+    }
+
+    @Test
+    fun aTapThatOpenedASystemAlertIsNotRepeatedAsARealTouch() = runTest {
+        val systemSeen = mutableListOf<Command>()
+
+        val result =
+            unhandledTapRunner(alert = true, systemSeen)
+                .run(test("name: Ask\nsteps:\n  - do: { tap: { id: Search.Button.Large } }"), "t.yaml")
+
+        assertNull(result.failure)
+        assertTrue(systemSeen.none { it is Command.Tap }, systemSeen.toString())
+    }
+
+    @Test
+    fun aTapWithoutEffectAndWithoutAnAlertIsRepeatedAsARealTouch() = runTest {
+        val systemSeen = mutableListOf<Command>()
+
+        val result =
+            unhandledTapRunner(alert = false, systemSeen)
+                .run(test("name: Ask\nsteps:\n  - do: { tap: { id: Search.Button.Large } }"), "t.yaml")
+
+        assertNull(result.failure)
+        assertEquals(1, systemSeen.filterIsInstance<Command.Tap>().size)
+    }
+
     @Test
     fun aTvTypesOnlyIntoAFieldThatHasTheFocus() = runTest {
         val seen = mutableListOf<Command>()

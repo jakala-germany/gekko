@@ -158,6 +158,14 @@ sealed interface Command {
 
     @Serializable @SerialName("foreground") data object Foreground : Command
 
+    /**
+     * Asks whether a system alert (a permission prompt) is on screen, answered by [Response.SystemAlertResult]. On iOS
+     * such a prompt belongs to SpringBoard and the app below it stays `active`, so its agent still says that the app is
+     * in front and cannot see the prompt; the CLI asks this before it trusts the agent. Only the iOS and tvOS system
+     * runner serves it, every other server answers `unsupported`.
+     */
+    @Serializable @SerialName("systemAlert") data object SystemAlert : Command
+
     @Serializable @SerialName("screenshot") data object Screenshot : Command
 
     /**

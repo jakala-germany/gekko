@@ -30,6 +30,9 @@ sealed interface Response {
 
     @Serializable @SerialName("foreground") data class ForegroundResult(val appInForeground: Boolean) : Response
 
+    /** [present] is true while a system alert covers the app, see [Command.SystemAlert]. */
+    @Serializable @SerialName("systemAlert") data class SystemAlertResult(val present: Boolean) : Response
+
     @Serializable @SerialName("screenshot") data class ScreenshotResult(val pngBase64: String) : Response
 
     /** The requests the network mocks answered since the last [Command.MockHits], oldest first. */
