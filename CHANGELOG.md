@@ -2,7 +2,19 @@
 
 ## [Snapshot]
 
-[Snapshot]: https://github.com/jakala-germany/gekko/compare/1.5.0...HEAD
+[Snapshot]: https://github.com/jakala-germany/gekko/compare/1.6.0...HEAD
+
+**New**
+
+- Upcoming additions go here
+
+**Changed**
+
+- Upcoming changes go here
+
+## [1.6.0]
+
+[1.6.0]: https://github.com/jakala-germany/gekko/compare/1.5.0...1.6.0
 
 **New**
 
@@ -10,10 +22,6 @@
 - The iOS system runner sends the accessibility label and value of an element apart (`description`, `value`); `UiNode` has an optional `value`
 - `gekko tree --format adb` prints an Android tree as the XML of `adb shell uiautomator dump` (byte for byte on Android 16), read with the system runner, so a script or tool written for the dump reads gekko's tree as it is; the app needs no gekko agent for it
 - Protocol: the command `uiDump` and its answer (`DumpNode`: the values the dump writes); only the Android system runner serves it
-
-**Changed**
-
-- Upcoming changes go here
 
 **Fixed**
 
