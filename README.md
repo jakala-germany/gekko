@@ -186,6 +186,7 @@ Every action, selector, variable and the rules of the format: [Test and flow for
 ```bash
 gekko devices                              # adb serials, booted simulators and running web sessions
 gekko tree                                 # what is on screen (ids, texts, actions, pane elements)
+gekko tree --format idb                    # the same, as idb (iOS) or uiautomator dump (Android, adb) writes it
 gekko check                                # read all tests, flows and panes, no device needed
 gekko run                                  # every test on the attached device
 gekko run --tags smoke --junit out.xml     # tagged tests only, with a JUnit file
