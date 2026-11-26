@@ -529,8 +529,12 @@ final class SystemRunnerTests: XCTestCase {
         if !snapshot.identifier.isEmpty { json["id"] = snapshot.identifier }
         // A password field's value is never sent
         if !secure {
+            let value = Self.valueText(snapshot)
             let text = !snapshot.label.isEmpty ? snapshot.label : (snapshot.value as? String ?? "")
             if !text.isEmpty { json["text"] = text }
+            // The label and the value apart, as the accessibility tree has them (see `gekko tree --format idb`)
+            if !snapshot.label.isEmpty { json["description"] = snapshot.label }
+            if !value.isEmpty { json["value"] = value }
         }
         if let checked = Self.checked(snapshot) { json["checked"] = checked }
         if let selected = Self.selected(snapshot, inSelectionGroup: inSelectionGroup) { json["selected"] = selected }
@@ -634,6 +638,13 @@ final class SystemRunnerTests: XCTestCase {
     }
 
     /// Label, title and value: what the old text selectors looked at. A password field has none.
+    /// The accessibility value as text: a switch reports it as a number on some systems and as `"0"` / `"1"` on others.
+    fileprivate static func valueText(_ snapshot: XCUIElementSnapshot) -> String {
+        if let text = snapshot.value as? String { return text }
+        if let number = snapshot.value as? NSNumber { return number.stringValue }
+        return ""
+    }
+
     fileprivate static func texts(of snapshot: XCUIElementSnapshot) -> [String] {
         if snapshot.elementType == .secureTextField { return [] }
         return [snapshot.label, snapshot.title, snapshot.value as? String ?? ""].filter { !$0.isEmpty }

@@ -242,6 +242,14 @@ private class DevicesCommand : CliktCommand(name = "devices") {
 private class TreeCommand : DeviceCommand("tree") {
     val json by option("--json", help = "Print the raw tree as JSON").flag()
     val system by option("--system", help = "Read the tree with the system runner instead of the in-app agent").flag()
+    val format by
+        option(
+                "--format",
+                help =
+                    "Print the tree in the shape of another tool: idb (iOS: idb's accessibility tree, COMPLETE format, " +
+                        "read with the system runner)",
+            )
+            .choice("idb")
 
     override fun help(context: Context): String {
 
@@ -249,9 +257,18 @@ private class TreeCommand : DeviceCommand("tree") {
     }
 
     override fun run() {
+        if (format == "idb") {
+            if (json) fail("--format idb is JSON already; leave out --json")
+            if (platform != Platform.Ios) fail("--format idb is for iOS")
+        }
         withDrivers { drivers, _, project ->
-            val response = drivers.send(Command.Tree, system)
+            // idb reads the accessibility tree, and so does the system runner: the in-app agent reads its own
+            val response = drivers.send(Command.Tree, system || format == "idb")
             if (response !is Response.TreeResult) fail("Unexpected response: $response", ExitCode.INFRASTRUCTURE)
+            if (format == "idb") {
+                say(IdbTree.encode(response.windows))
+                return@withDrivers
+            }
             if (json) {
                 say(treeJson.encodeToString(ListSerializer(UiNode.serializer()), response.windows))
                 return@withDrivers
