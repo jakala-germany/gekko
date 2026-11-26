@@ -28,7 +28,7 @@ Without `-s`, Android uses the one attached device, iOS the one booted simulator
 | Command | Purpose |
 |---|---|
 | `gekko devices` | Attached adb devices, booted simulators and running web sessions, one per line: `android <serial>`, `ios <UDID>`, `web <browser>`; a TV (an Android TV, an Apple TV simulator) ends with ` tv`. On a TV `tap` and `scroll` fail (use `press-key`), and `type` needs the focus on the field |
-| `gekko tree [--json] [--system] [--format idb]` | The current UI as the active driver sees it (`--system`: as the system runner sees it, to compare it with the in-app agent): role, `id=`, `text=`, `desc=`, `actions=`, `disabled`, `focused` (the element that has the input focus; not on iOS system-runner trees). Lines that are an element of a pane (`panes/`) end with `<- pane.element`, and a last line `current pane: ...` names the panes whose identity is on screen (not with `--json`). `--format idb` (iOS) prints the tree in the shape of idb's accessibility tree (`accessibility_info`, `COMPLETE` format), read with the system runner, so scripts and tools written for idb read it as they are: see "idb format" below. |
+| `gekko tree [--json] [--system] [--format idb\|adb]` | The current UI as the active driver sees it (`--system`: as the system runner sees it, to compare it with the in-app agent): role, `id=`, `text=`, `desc=`, `actions=`, `disabled`, `focused` (the element that has the input focus; not on iOS system-runner trees). Lines that are an element of a pane (`panes/`) end with `<- pane.element`, and a last line `current pane: ...` names the panes whose identity is on screen (not with `--json`). `--format idb` (iOS) prints the tree in the shape of idb's accessibility tree (`accessibility_info`, `COMPLETE` format), read with the system runner, so scripts and tools written for idb read it as they are: see "idb format" below. `--format adb` (Android) prints the XML of `adb shell uiautomator dump`: see "adb format" below |
 | `gekko tap SELECTOR` | Tap an element; when the in-app agent's accessibility tap is not handled, the tap is repeated as a real touch through the system runner |
 | `gekko type SELECTOR "text"` | Type into an element (replaces its text) |
 | `gekko type-focused "text"` | Type at the cursor of the field that has the focus (adds to its text); waits up to `--timeout` for a field to get the focus, `--system` uses the system runner |
@@ -72,6 +72,20 @@ Where it differs from idb, because XCUITest does not know it:
 - `pid` is null.
 
 An older system runner (1.5.0 and before) sends no `value` and no label apart: the label is then the element's text and `value` is null.
+
+### adb format
+
+`gekko tree --format adb` (Android) prints the XML that `adb shell uiautomator dump` writes to `window_dump.xml`, so a script or tool that reads the dump reads gekko's unchanged: the same `hierarchy` and `node` elements, the same attributes in the same order (`NAF`, `index`, `text`, `resource-id` with the package, `class`, `package`, `content-desc`, the flags, `bounds`, `drawing-order`, `hint`), the same escaping, one line. On Android 16 it is the dump byte for byte, apart from the line break at the end. It is read with the system runner, which reads the same accessibility tree as the dump (the window in front, views that are not important for accessibility included); the app needs no gekko agent for it. Not with `--json`.
+
+What the dump does, gekko does too: a child that is not visible to the user is left out (with everything below it) but still counts for `index`; `bounds` are cut to the display; a clickable node that says nothing (no text, no description, none below it) is marked `NAF="true"`, apart from lists and grids; control characters are written as `.`.
+
+- A WebView describes its page once something that stays connected to the screen has read it (an accessibility service, a test, gekko), and from then on to the dump as well. Gekko has read it, so the page is below the WebView; a dump of a WebView that only dumps have read shows the WebView empty (`NAF="true"`, with the resource id the app gave it).
+- A password field has its hint while it is empty and a `•` for every character after that, as in the dump; where a device shows the last typed character for a moment, gekko writes a `•` for it too.
+- The characters a terminal acts on (U+0085, the direction marks, the line and paragraph separators) are written as character references (`&#8238;`); an XML reader reads the same text.
+- Older Android versions write fewer attributes (`drawing-order` and `hint` are newer); gekko writes those of Android 16.
+- With no window in front the command fails, as the dump does.
+
+A system runner of an older gekko, still running on the device, cannot write it: stop it (`adb shell am force-stop com.jakala.gekko.runner`) and the next command starts the runner of the CLI.
 
 ### `gekko run`
 

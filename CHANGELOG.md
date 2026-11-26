@@ -8,6 +8,8 @@
 
 - `gekko tree --format idb` prints an iOS tree in the shape of idb's accessibility tree (`COMPLETE` format: `type`, `label`, `identifier`, `value`, `frame`, `traits`, `children`), read with the system runner, so a script or tool written for idb reads gekko's tree as it is
 - The iOS system runner sends the accessibility label and value of an element apart (`description`, `value`); `UiNode` has an optional `value`
+- `gekko tree --format adb` prints an Android tree as the XML of `adb shell uiautomator dump` (byte for byte on Android 16), read with the system runner, so a script or tool written for the dump reads gekko's tree as it is; the app needs no gekko agent for it
+- Protocol: the command `uiDump` and its answer (`DumpNode`: the values the dump writes); only the Android system runner serves it
 
 **Changed**
 

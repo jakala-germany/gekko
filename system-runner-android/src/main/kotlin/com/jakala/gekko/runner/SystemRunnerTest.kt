@@ -1,6 +1,10 @@
 package com.jakala.gekko.runner
 
 import android.accessibilityservice.AccessibilityServiceInfo
+import android.graphics.Point
+import android.hardware.display.DisplayManager
+import android.os.Build
+import android.view.Display
 import android.view.KeyEvent
 import android.view.View
 import android.view.ViewConfiguration
@@ -18,6 +22,7 @@ import com.jakala.gekko.device.Waiting
 import com.jakala.gekko.device.intersect
 import com.jakala.gekko.protocol.Bounds
 import com.jakala.gekko.protocol.Command
+import com.jakala.gekko.protocol.DumpNode
 import com.jakala.gekko.protocol.ErrorKind
 import com.jakala.gekko.protocol.GekkoVersion
 import com.jakala.gekko.protocol.Keys
@@ -29,6 +34,7 @@ import com.jakala.gekko.transport.CommandServer
 import com.jakala.gekko.transport.ServerAuth
 import java.util.IdentityHashMap
 import java.util.concurrent.CountDownLatch
+import java.util.concurrent.TimeoutException
 import org.junit.Test
 
 /**
@@ -41,6 +47,7 @@ class SystemRunnerTest {
     private val device = UiDevice.getInstance(instrumentation)
     private val mockLocation by lazy { MockLocation(instrumentation.targetContext) }
     private val touches = Touches { instrumentation.uiAutomation }
+    private val dumpLock = Any()
 
     @Test
     fun serve() {
@@ -109,6 +116,7 @@ class SystemRunnerTest {
                 )
             Command.Metrics -> Response.MetricsResult(density(), isRtl())
             Command.Tree -> Response.TreeResult(snapshot().windows)
+            Command.UiDump -> uiDump()
             Command.Foreground -> Response.ForegroundResult(false)
             Command.Screenshot -> Response.Error("Screenshot is handled by the host CLI", ErrorKind.UNSUPPORTED)
             Command.HideKeyboard -> Response.Error("The CLI closes the keyboard over adb", ErrorKind.UNSUPPORTED)
@@ -485,8 +493,108 @@ class SystemRunnerTest {
         return uiNode
     }
 
+    /**
+     * What `adb shell uiautomator dump` reads: the root of the window in front after the screen went idle, and the
+     * rotation and the real size of the display. The bounds are cut to the display (not to the window), and are empty
+     * when nothing of the node is on it, as the dump writes them.
+     */
+    private fun uiDump(): Response {
+        val automation = instrumentation.uiAutomation
+        try {
+            automation.waitForIdle(DUMP_IDLE_MS, Command.UI_DUMP_IDLE_TIMEOUT_MS)
+        } catch (_: TimeoutException) {
+            // The dump gives up here; a screen that keeps moving is still worth reading
+        }
+        val display =
+            instrumentation.context.getSystemService(DisplayManager::class.java).getDisplay(Display.DEFAULT_DISPLAY)
+        val size = Point()
+        @Suppress("DEPRECATION") display.getRealSize(size)
+        val screen = android.graphics.Rect(0, 0, size.x, size.y)
+        // A WebView tells a service that retrieves the interactive windows that what lies outside of its viewport is
+        // not visible to the user, and the connection of the dump does not retrieve them: read with its flags, then
+        // go back to those of the runner (the commands that act on a screen need the windows). One dump at a time, so
+        // a second one cannot take the flags of the first for those of the runner
+        val windows =
+            synchronized(dumpLock) {
+                val info = automation.serviceInfo
+                val runnerFlags = info.flags or AccessibilityServiceInfo.FLAG_RETRIEVE_INTERACTIVE_WINDOWS
+                info.flags = runnerFlags and AccessibilityServiceInfo.FLAG_RETRIEVE_INTERACTIVE_WINDOWS.inv()
+                automation.serviceInfo = info
+                try {
+                    clearNodeCache()
+                    roots().take(1).map { toDumpNode(it, 0, screen) }
+                } finally {
+                    info.flags = runnerFlags
+                    automation.serviceInfo = info
+                    clearNodeCache()
+                }
+            }
+        if (windows.isEmpty()) {
+            // The dump fails here as well, rather than writing an empty screen
+            return Response.Error("No window in front to dump")
+        }
+        return Response.UiDumpResult(display.rotation, windows)
+    }
+
+    /** The nodes read with other flags must not answer the next question. */
+    private fun clearNodeCache() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+            instrumentation.uiAutomation.clearCache()
+        }
+    }
+
+    private fun toDumpNode(node: AccessibilityNodeInfo, index: Int, screen: android.graphics.Rect): DumpNode {
+        val rect = android.graphics.Rect().also { node.getBoundsInScreen(it) }
+        if (!rect.intersect(screen)) {
+            rect.setEmpty()
+        }
+        val text = node.text?.toString()
+        val description = node.contentDescription?.toString()
+        val hint = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) node.hintText?.toString() else null
+        // A password field shows its hint while it is empty, and a dot for every character after that; Android hands
+        // out the same (the last character for a moment, when the device shows it while typing). Never what was typed
+        val password = node.isPassword
+        val showsHint =
+            Build.VERSION.SDK_INT >= Build.VERSION_CODES.O && (node.isShowingHintText || (hint != null && text == hint))
+        val shownText =
+            when {
+                !password || text == null || showsHint -> text
+                else -> PASSWORD_DOT.toString().repeat(text.length)
+            }
+        return DumpNode(
+            index = index,
+            text = shownText,
+            resourceId = node.viewIdResourceName,
+            className = node.className?.toString(),
+            packageName = node.packageName?.toString(),
+            contentDescription =
+                if (password && !showsHint) NodeFacts.safeDescription(description, listOf(text)) else description,
+            checkable = node.isCheckable,
+            checked = node.isChecked,
+            clickable = node.isClickable,
+            enabled = node.isEnabled,
+            focusable = node.isFocusable,
+            focused = node.isFocused,
+            scrollable = node.isScrollable,
+            longClickable = node.isLongClickable,
+            password = password,
+            selected = node.isSelected,
+            bounds = Bounds(rect.left, rect.top, rect.right, rect.bottom),
+            drawingOrder = node.drawingOrder,
+            hint = hint,
+            visible = node.isVisibleToUser,
+            // The index counts the children Android could not hand out, as the dump's does
+            children =
+                (0 until node.childCount).mapNotNull { i -> node.getChild(i)?.let { toDumpNode(it, i, screen) } },
+        )
+    }
+
     private companion object {
         const val SOCKET_NAME = "gekko-system-runner"
+        /** What `uiautomator dump` waits for: a second without events (at most [Command.UI_DUMP_IDLE_TIMEOUT_MS]). */
+        const val DUMP_IDLE_MS = 1_000L
+        /** What a password field shows for a character (Android's PasswordTransformationMethod). */
+        const val PASSWORD_DOT = '•'
         const val PROGRESS_BAR = "android.widget.ProgressBar"
         const val POLL_MS = 50L
         const val CHANGE_WAIT_MS = 1_000L

@@ -34,6 +34,7 @@ internal class CommandExecutor(private val application: Application, private val
             Command.Hello -> hello()
             Command.Metrics -> metrics()
             Command.Tree -> Response.TreeResult(snapshotNodes())
+            Command.UiDump -> unsupported("The dump of uiautomator is written by the system runner")
             Command.Foreground -> Response.ForegroundResult(isForeground())
             Command.Screenshot -> unsupported("Screenshot is handled by the host CLI")
             is Command.SetMocks -> setMocks(command)
@@ -496,6 +497,7 @@ internal class CommandExecutor(private val application: Application, private val
                 "clearLocation",
                 "wheel",
                 "systemAlert",
+                "uiDump",
             )
 
         const val POLL_MS = 16L

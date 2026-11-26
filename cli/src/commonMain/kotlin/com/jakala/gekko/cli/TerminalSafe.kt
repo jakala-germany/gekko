@@ -26,6 +26,11 @@ object Terminal {
         return escape(text, keepLayout = false)
     }
 
+    /** A character [safe] escapes: one a terminal or an editor acts on, apart from line breaks and tabs. */
+    fun actsOn(char: Char): Boolean {
+        return needsEscape(char, keepLayout = true)
+    }
+
     private fun escape(text: String, keepLayout: Boolean): String {
         if (text.none { needsEscape(it, keepLayout) }) {
             return text

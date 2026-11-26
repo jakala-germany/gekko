@@ -243,6 +243,34 @@ class ProtocolTest {
         assertEquals(Command.SystemAlert, json.decodeFromString(Command.serializer(), question))
         assertEquals(Response.SystemAlertResult(true), json.decodeFromString(Response.serializer(), answer))
     }
+
+    @Test
+    fun theUiDumpQuestionAndItsAnswerRoundTrip() {
+        val json = Json { classDiscriminator = "type" }
+        val child =
+            DumpNode(
+                index = 2,
+                text = "Send",
+                resourceId = "com.example:id/send",
+                className = "android.widget.Button",
+                clickable = true,
+                bounds = Bounds(0, 10, 100, 60),
+                hint = "Message",
+                visible = false,
+            )
+        val dump =
+            Response.UiDumpResult(
+                1,
+                listOf(DumpNode(index = 0, bounds = Bounds(0, 0, 100, 200), children = listOf(child))),
+            )
+
+        assertEquals("""{"type":"uiDump"}""", json.encodeToString(Command.serializer(), Command.UiDump))
+        assertTrue("uiDump" in Command.names())
+        assertEquals(
+            dump,
+            json.decodeFromString(Response.serializer(), json.encodeToString(Response.serializer(), dump)),
+        )
+    }
 }
 
 class VisibilityWaiterTest {

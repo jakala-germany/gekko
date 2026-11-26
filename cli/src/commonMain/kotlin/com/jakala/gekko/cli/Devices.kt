@@ -955,6 +955,7 @@ class Drivers(
             is Command.LongPressAt -> holdMs
             is Command.Swipe -> durationMs
             is Command.Drag -> Gestures.DRAG_MOVE_MS + Gestures.DRAG_REST_MS
+            Command.UiDump -> Command.UI_DUMP_IDLE_TIMEOUT_MS
             is Command.Wheel,
             is Command.TapAt,
             is Command.SetOrientation,
@@ -1063,6 +1064,7 @@ class Drivers(
     private fun Command.readsOrTouchesTheScreen(): Boolean {
         return when (this) {
             Command.Tree,
+            Command.UiDump,
             is Command.Tap,
             is Command.DoubleTap,
             is Command.LongPress,
