@@ -8,9 +8,12 @@ import com.jakala.gekko.transport.ServerAuth
 import com.jakala.gekko.transport.TcpListener
 import com.sun.net.httpserver.HttpExchange
 import com.sun.net.httpserver.HttpServer
+import java.io.IOException
 import java.net.BindException
+import java.net.ConnectException
 import java.net.HttpURLConnection
 import java.net.InetSocketAddress
+import java.net.Socket
 import java.net.URL
 import java.util.concurrent.CopyOnWriteArrayList
 import kotlin.concurrent.thread
@@ -75,6 +78,27 @@ class SignedClientTest {
             .start()
         cleanup += { listener.close() }
         return Real(listener, auth, executed)
+    }
+
+    /**
+     * Shuts [server] down the way a process that dies does: until its port refuses connections. A closed listener keeps
+     * accepting until its accepting thread has woken up (seen on Linux), so a request sent right after the close could
+     * still be served by it.
+     */
+    private fun stop(server: Real) {
+        server.listener.close()
+        val deadline = System.nanoTime() + BIND_TIMEOUT_NANOS
+        while (true) {
+            try {
+                Socket("127.0.0.1", server.port).close()
+            } catch (error: ConnectException) {
+                return
+            } catch (error: IOException) {
+                // Taken while the listener went away and reset; it may still be listening a moment longer
+            }
+            check(System.nanoTime() < deadline) { "Port ${server.port} still accepts connections after its close" }
+            Thread.sleep(BIND_RETRY_MS)
+        }
     }
 
     private fun client(port: Int, clientKey: ByteArray = key, endpoint: String = port.toString()): GekkoClient {
@@ -158,7 +182,7 @@ class SignedClientTest {
             val first = realServer()
             val client = client(first.port)
             assertEquals(Response.Ok, client.send(Command.Tree))
-            first.listener.close()
+            stop(first)
             val restarted = realServer(port = first.port)
 
             assertEquals(Response.Ok, client.send(Command.Foreground))
@@ -173,7 +197,7 @@ class SignedClientTest {
             val first = realServer()
             val client = client(first.port)
             assertEquals(Response.Ok, client.send(Command.Tree))
-            first.listener.close()
+            stop(first)
             // The port refuses connections until a server listens on it again, a moment later
             val executed = CopyOnWriteArrayList<Command>()
             val restart = thread {
@@ -192,7 +216,7 @@ class SignedClientTest {
     fun aServerThatIsNotRunningIsFoundOutAtOnce() {
         runBlocking {
             val gone = realServer()
-            gone.listener.close()
+            stop(gone)
 
             val started = System.nanoTime()
             val reachable = client(gone.port).isReachable()
@@ -208,7 +232,7 @@ class SignedClientTest {
             val first = realServer()
             val client = client(first.port)
             assertEquals(Response.Ok, client.send(Command.Tree))
-            first.listener.close()
+            stop(first)
 
             val failure = assertFailsWith<Exception> { client.send(Command.Foreground) }
 
@@ -311,7 +335,7 @@ class SignedClientTest {
         val nonce = "b".repeat(32)
         val recorded = post(first.port, treeBody, session = first.auth.session, nonce = nonce)
         assertEquals(200, recorded.responseCode)
-        first.listener.close()
+        stop(first)
         val restarted = realServer(port = first.port)
 
         // The same bytes, played to the server that started afterwards
