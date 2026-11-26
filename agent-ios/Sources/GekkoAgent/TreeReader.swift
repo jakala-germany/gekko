@@ -130,6 +130,11 @@ enum TreeReader {
                 child.children.forEach { $0.parent = element }
                 return child.children
             }
+        // A collection view hands out its cells (as subviews and as accessibility elements) in the order it reuses
+        // them, not in the order they are on screen; VoiceOver and XCUITest read them in reading order
+        if let list = object as? UICollectionView {
+            element.children = readingOrder(element.children, rightToLeft: list.effectiveUserInterfaceLayoutDirection == .rightToLeft)
+        }
         let isBoring = element.id == nil && element.text == nil && element.actions.isEmpty && element.children.isEmpty
         return isBoring ? nil : element
     }
@@ -232,6 +237,30 @@ enum TreeReader {
             return (0..<count).compactMap { object.accessibilityElement(at: $0) as? NSObject }
         }
         return (object as? UIView)?.subviews ?? []
+    }
+
+    /// [elements] in the order they are read: rows from the top, in a row from the leading edge. An element starts a
+    /// new row unless its middle lies above the bottom of the row so far; elements at the same place keep their order.
+    static func readingOrder(_ elements: [Element], rightToLeft: Bool) -> [Element] {
+        var rows: [[(index: Int, element: Element)]] = []
+        var rowBottom = -CGFloat.infinity
+        let byTop = elements.enumerated().sorted { ($0.element.frame.minY, $0.offset) < ($1.element.frame.minY, $1.offset) }
+        for (index, element) in byTop {
+            if let last = rows.indices.last, element.frame.midY < rowBottom {
+                rows[last].append((index, element))
+                rowBottom = max(rowBottom, element.frame.maxY)
+            } else {
+                rows.append([(index, element)])
+                rowBottom = element.frame.maxY
+            }
+        }
+        return rows.flatMap { row in
+            row.sorted {
+                let (a, b) = rightToLeft
+                    ? (-$0.element.frame.maxX, -$1.element.frame.maxX) : ($0.element.frame.minX, $1.element.frame.minX)
+                return (a, $0.index) < (b, $1.index)
+            }.map { $0.element }
+        }
     }
 
     private static func identifier(of object: NSObject) -> String? {
