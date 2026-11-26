@@ -241,29 +241,39 @@ enum TreeReader {
     }
 
     /// [elements] in the order they are read: rows from the top, in a row from the leading edge, and what is in one
-    /// column of a row from the top. A row is the band of its first element (the tallest of those with the same top):
-    /// an element whose middle lies inside that band is in the row, so a tall element (a featured tile, a background)
-    /// does not draw the rows below it into its own. Elements at the same place keep their order.
+    /// column of a row from the top. An element is in the row so far when its top lies above the bottom of the
+    /// shortest element in that row (by more than a point, so that cells which overlap by a rounding error do not
+    /// join): a tall element (a featured tile, a background) does not draw the rows below it into its own, and a cell
+    /// of a waterfall that starts a little lower than its neighbour is still in its row. Of elements at the same place
+    /// the larger comes first; elements without an area (not laid out) have no place on screen and come last. Elements
+    /// that are the same in all of that keep their order.
     static func readingOrder(_ elements: [Element], rightToLeft: Bool) -> [Element] {
-        var rows: [(bottom: CGFloat, items: [(index: Int, element: Element)])] = []
-        let byTop = elements.enumerated().sorted {
-            ($0.element.frame.minY, -$0.element.frame.height, $0.offset)
-                < ($1.element.frame.minY, -$1.element.frame.height, $1.offset)
+        let indexed = elements.enumerated().map { (index: $0.offset, element: $0.element) }
+        let unplaced = indexed.filter { $0.element.frame.isEmpty }.map { $0.element }
+        let byTop = indexed.filter { !$0.element.frame.isEmpty }.sorted {
+            ($0.element.frame.minY, -$0.element.frame.height, $0.index)
+                < ($1.element.frame.minY, -$1.element.frame.height, $1.index)
         }
-        for (index, element) in byTop {
-            if let last = rows.indices.last, element.frame.midY < rows[last].bottom {
-                rows[last].items.append((index, element))
+        var rows: [(bottom: CGFloat, items: [(index: Int, element: Element)])] = []
+        for item in byTop {
+            let frame = item.element.frame
+            if let last = rows.indices.last, frame.minY < rows[last].bottom - 1 {
+                rows[last].bottom = min(rows[last].bottom, frame.maxY)
+                rows[last].items.append(item)
             } else {
-                rows.append((bottom: element.frame.maxY, items: [(index, element)]))
+                rows.append((bottom: frame.maxY, items: [item]))
             }
         }
-        return rows.flatMap { row in
+        let placed = rows.flatMap { row in
             row.items.sorted {
-                let a = rightToLeft ? -$0.element.frame.maxX : $0.element.frame.minX
-                let b = rightToLeft ? -$1.element.frame.maxX : $1.element.frame.minX
-                return (a, $0.element.frame.minY, $0.index) < (b, $1.element.frame.minY, $1.index)
+                let a = $0.element.frame
+                let b = $1.element.frame
+                let leadingA = rightToLeft ? -a.maxX : a.minX
+                let leadingB = rightToLeft ? -b.maxX : b.minX
+                return (leadingA, a.minY, -a.height, $0.index) < (leadingB, b.minY, -b.height, $1.index)
             }.map { $0.element }
         }
+        return placed + unplaced
     }
 
     private static func identifier(of object: NSObject) -> String? {
