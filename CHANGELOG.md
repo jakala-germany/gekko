@@ -15,6 +15,7 @@
 **Fixed**
 
 - iOS in-app agent: a row of a UIKit table (iOS 18 and later) and a bar button were in the tree twice, the second time as a child of the first with the same role and text, so a selector on that text matched two elements. A child that only repeats its parent (same role, text, id and state, inside its frame) is now one element with it, as for VoiceOver and XCUITest
+- iOS in-app agent: the cells of a collection view (a UIKit collection view, a SwiftUI `List`) were in the order the collection view reuses them, not in the order they are on screen: after scrolling back, a lower row came before a higher one, and `index` picked another element than the one on screen. They are now in reading order (rows from the top, in a row from the leading edge), as for VoiceOver and XCUITest
 
 ## [1.5.0]
 
