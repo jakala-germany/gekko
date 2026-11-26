@@ -123,9 +123,31 @@ enum TreeReader {
         )
         element.parent = parent
         let nextVisited = visited.union([identity])
-        element.children = accessibleChildren(of: object).compactMap { build($0, parent: element, visited: nextVisited, secureFrames: secureFrames, focus: focus, focusedFrame: focusedFrame) }
+        element.children = accessibleChildren(of: object)
+            .compactMap { build($0, parent: element, visited: nextVisited, secureFrames: secureFrames, focus: focus, focusedFrame: focusedFrame) }
+            .flatMap { child -> [Element] in
+                guard repeats(child, parent: element) else { return [child] }
+                child.children.forEach { $0.parent = element }
+                return child.children
+            }
         let isBoring = element.id == nil && element.text == nil && element.actions.isEmpty && element.children.isEmpty
         return isBoring ? nil : element
+    }
+
+    /// A child that only repeats its parent, and is one element with it for accessibility and for XCUITest: a row of a
+    /// table is an element of UIKit's own with one more below it that speaks the same text (iOS 18 and later), a bar
+    /// button a control around a button with the same label. The parent stays, as it is what VoiceOver activates; the
+    /// child goes when it tells nothing the parent does not (no id of its own, no other state, inside its frame), and
+    /// what is below it moves up.
+    private static func repeats(_ child: Element, parent: Element) -> Bool {
+        guard child.text != nil, child.text == parent.text, child.role == parent.role else { return false }
+        guard child.id == nil || child.id == parent.id else { return false }
+        guard child.checked == nil || child.checked == parent.checked else { return false }
+        guard child.selected == nil || child.selected == parent.selected else { return false }
+        guard child.enabled == parent.enabled, child.secure == parent.secure else { return false }
+        guard !child.focused || parent.focused, !child.busy || parent.busy else { return false }
+        guard Set(child.actions).isSubset(of: parent.actions) else { return false }
+        return parent.frame.insetBy(dx: -2, dy: -2).contains(child.frame)
     }
 
     private static func isSecureInput(_ object: NSObject) -> Bool {
