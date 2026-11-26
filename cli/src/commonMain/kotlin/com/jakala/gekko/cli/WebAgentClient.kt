@@ -97,6 +97,7 @@ internal class WebAgentClient(
                 )
             Command.Metrics -> Response.MetricsResult(1f, read()?.rtl ?: lastRtl)
             Command.Tree -> Response.TreeResult(read()?.windows.orEmpty())
+            Command.UiDump -> unsupported("A page has no uiautomator dump")
             Command.Foreground -> Response.ForegroundResult(true)
             Command.Screenshot -> unsupported("Screenshot is handled by the host CLI")
             Command.SystemAlert -> unsupported("A page has no system alerts")
@@ -665,7 +666,7 @@ internal class WebAgentClient(
         const val CHANGE_WAIT_MS = 1_000L
 
         /** The commands this client answers with `unsupported`: the others are listed in its answer to `hello`. */
-        val UNSUPPORTED_COMMANDS = setOf("screenshot", "systemAlert")
+        val UNSUPPORTED_COMMANDS = setOf("screenshot", "systemAlert", "uiDump")
         const val QUIET_LIMIT_MS = 1_500L
         const val QUIET_MS = 100L
         const val MAX_PAGE_SCROLLS = 3

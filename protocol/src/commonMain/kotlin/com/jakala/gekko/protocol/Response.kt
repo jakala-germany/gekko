@@ -28,6 +28,14 @@ sealed interface Response {
 
     @Serializable @SerialName("tree") data class TreeResult(val windows: List<UiNode>) : Response
 
+    /**
+     * The answer to [Command.UiDump]: [rotation] is the rotation of the display (0 to 3, a quarter turn each),
+     * [windows] the root of the window in front, as the dump reads it.
+     */
+    @Serializable
+    @SerialName("uiDump")
+    data class UiDumpResult(val rotation: Int, val windows: List<DumpNode>) : Response
+
     @Serializable @SerialName("foreground") data class ForegroundResult(val appInForeground: Boolean) : Response
 
     /** [present] is true while a system alert covers the app, see [Command.SystemAlert]. */

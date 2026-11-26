@@ -15,6 +15,12 @@ sealed interface Command {
 
     @Serializable @SerialName("tree") data object Tree : Command
 
+    /**
+     * The screen as `adb shell uiautomator dump` describes it ([Response.UiDumpResult]), for `gekko tree --format adb`.
+     * Only the Android system runner serves it; the other servers answer `unsupported`.
+     */
+    @Serializable @SerialName("uiDump") data object UiDump : Command
+
     @Serializable
     @SerialName("tap")
     data class Tap(
@@ -184,6 +190,9 @@ sealed interface Command {
         const val DEFAULT_TIMEOUT_MS = 5_000L
         const val DEFAULT_HOLD_MS = 700L
         const val DEFAULT_SCROLL_DP = 400
+
+        /** How long [UiDump] waits for the screen to go idle (a second without events), as `uiautomator dump` does. */
+        const val UI_DUMP_IDLE_TIMEOUT_MS = 10_000L
 
         /** The wire names of all commands: what `hello` lists of a server that serves every one of them. */
         @OptIn(ExperimentalSerializationApi::class)

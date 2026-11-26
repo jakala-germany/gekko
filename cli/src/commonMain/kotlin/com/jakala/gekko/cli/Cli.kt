@@ -18,6 +18,7 @@ import com.github.ajalt.clikt.parameters.types.choice
 import com.github.ajalt.clikt.parameters.types.int
 import com.github.ajalt.clikt.parameters.types.long
 import com.jakala.gekko.protocol.Command
+import com.jakala.gekko.protocol.ErrorKind
 import com.jakala.gekko.protocol.GekkoVersion
 import com.jakala.gekko.protocol.Keys
 import com.jakala.gekko.protocol.Response
@@ -246,10 +247,10 @@ private class TreeCommand : DeviceCommand("tree") {
         option(
                 "--format",
                 help =
-                    "Print the tree in the shape of another tool: idb (iOS: idb's accessibility tree, COMPLETE format, " +
-                        "read with the system runner)",
+                    "Print the tree in the shape of another tool: idb (iOS: idb's accessibility tree, COMPLETE format), " +
+                        "adb (Android: the XML of adb shell uiautomator dump); both are read with the system runner",
             )
-            .choice("idb")
+            .choice("idb", "adb")
 
     override fun help(context: Context): String {
 
@@ -261,7 +262,30 @@ private class TreeCommand : DeviceCommand("tree") {
             if (json) fail("--format idb is JSON already; leave out --json")
             if (platform != Platform.Ios) fail("--format idb is for iOS")
         }
+        if (format == "adb") {
+            if (json) fail("--format adb is the XML of uiautomator dump; leave out --json")
+            if (platform != Platform.Android) fail("--format adb is for Android")
+        }
         withDrivers { drivers, _, project ->
+            if (format == "adb") {
+                // The dump reads the accessibility tree, and so does the system runner
+                when (val response = drivers.send(Command.UiDump, forceSystem = true)) {
+                    is Response.UiDumpResult -> say(AdbTree.encode(response))
+                    is Response.Error ->
+                        if (response.kind == ErrorKind.UNSUPPORTED) {
+                            fail(
+                                "The system runner on the device is from an older gekko and cannot write the dump. " +
+                                    "Stop it (adb shell am force-stop ${Drivers.RUNNER_PACKAGE}); the next command " +
+                                    "starts the runner of this gekko.",
+                                ExitCode.INFRASTRUCTURE,
+                            )
+                        } else {
+                            fail(response.message, ExitCode.INFRASTRUCTURE)
+                        }
+                    else -> fail("Unexpected response: $response", ExitCode.INFRASTRUCTURE)
+                }
+                return@withDrivers
+            }
             // idb reads the accessibility tree, and so does the system runner: the in-app agent reads its own
             val response = drivers.send(Command.Tree, system || format == "idb")
             if (response !is Response.TreeResult) fail("Unexpected response: $response", ExitCode.INFRASTRUCTURE)
