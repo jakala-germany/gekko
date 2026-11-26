@@ -35,6 +35,9 @@ import com.jakala.gekko.transport.ServerAuth
 import java.util.IdentityHashMap
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeoutException
+import java.util.concurrent.locks.ReentrantReadWriteLock
+import kotlin.concurrent.read
+import kotlin.concurrent.write
 import org.junit.Test
 
 /**
@@ -47,7 +50,12 @@ class SystemRunnerTest {
     private val device = UiDevice.getInstance(instrumentation)
     private val mockLocation by lazy { MockLocation(instrumentation.targetContext) }
     private val touches = Touches { instrumentation.uiAutomation }
-    private val dumpLock = Any()
+    /**
+     * A dump switches the accessibility flags of the whole runner for a moment; every connection is served on its own
+     * thread, so the other commands share the lock to read and act with the flags of the runner, and a dump has it
+     * alone.
+     */
+    private val flagsLock = ReentrantReadWriteLock()
 
     @Test
     fun serve() {
@@ -106,6 +114,13 @@ class SystemRunnerTest {
     }
 
     private fun execute(command: Command): Response {
+        if (command == Command.UiDump) {
+            return uiDump()
+        }
+        return flagsLock.read { executeWithRunnerFlags(command) }
+    }
+
+    private fun executeWithRunnerFlags(command: Command): Response {
         return when (command) {
             Command.Hello ->
                 Response.HelloResult(
@@ -116,7 +131,7 @@ class SystemRunnerTest {
                 )
             Command.Metrics -> Response.MetricsResult(density(), isRtl())
             Command.Tree -> Response.TreeResult(snapshot().windows)
-            Command.UiDump -> uiDump()
+            Command.UiDump -> error("A dump is served by execute")
             Command.Foreground -> Response.ForegroundResult(false)
             Command.Screenshot -> Response.Error("Screenshot is handled by the host CLI", ErrorKind.UNSUPPORTED)
             Command.HideKeyboard -> Response.Error("The CLI closes the keyboard over adb", ErrorKind.UNSUPPORTED)
@@ -513,22 +528,21 @@ class SystemRunnerTest {
         // A WebView tells a service that retrieves the interactive windows that what lies outside of its viewport is
         // not visible to the user, and the connection of the dump does not retrieve them: read with its flags, then
         // go back to those of the runner (the commands that act on a screen need the windows). One dump at a time, so
-        // a second one cannot take the flags of the first for those of the runner
-        val windows =
-            synchronized(dumpLock) {
-                val info = automation.serviceInfo
-                val runnerFlags = info.flags or AccessibilityServiceInfo.FLAG_RETRIEVE_INTERACTIVE_WINDOWS
-                info.flags = runnerFlags and AccessibilityServiceInfo.FLAG_RETRIEVE_INTERACTIVE_WINDOWS.inv()
+        // a second one cannot take the flags of the first for those of the runner, and no other command runs meanwhile
+        val windows = flagsLock.write {
+            val info = automation.serviceInfo ?: return Response.Error("The accessibility service is not connected")
+            val runnerFlags = info.flags or AccessibilityServiceInfo.FLAG_RETRIEVE_INTERACTIVE_WINDOWS
+            info.flags = runnerFlags and AccessibilityServiceInfo.FLAG_RETRIEVE_INTERACTIVE_WINDOWS.inv()
+            automation.serviceInfo = info
+            try {
+                clearNodeCache()
+                roots().take(1).map { toDumpNode(it, 0, screen) }
+            } finally {
+                info.flags = runnerFlags
                 automation.serviceInfo = info
-                try {
-                    clearNodeCache()
-                    roots().take(1).map { toDumpNode(it, 0, screen) }
-                } finally {
-                    info.flags = runnerFlags
-                    automation.serviceInfo = info
-                    clearNodeCache()
-                }
+                clearNodeCache()
             }
+        }
         if (windows.isEmpty()) {
             // The dump fails here as well, rather than writing an empty screen
             return Response.Error("No window in front to dump")
@@ -536,7 +550,10 @@ class SystemRunnerTest {
         return Response.UiDumpResult(display.rotation, windows)
     }
 
-    /** The nodes read with other flags must not answer the next question. */
+    /**
+     * The nodes read with other flags must not answer the next question. Before Android 14 a service cannot clear the
+     * cache: there a node read by a dump can answer until its window changes.
+     */
     private fun clearNodeCache() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
             instrumentation.uiAutomation.clearCache()
@@ -554,8 +571,8 @@ class SystemRunnerTest {
         // A password field shows its hint while it is empty, and a dot for every character after that; Android hands
         // out the same (the last character for a moment, when the device shows it while typing). Never what was typed
         val password = node.isPassword
-        val showsHint =
-            Build.VERSION.SDK_INT >= Build.VERSION_CODES.O && (node.isShowingHintText || (hint != null && text == hint))
+        // Only the flag, not a text that equals the hint: a typed password can be the same as the hint
+        val showsHint = showsHint(node)
         val shownText =
             when {
                 !password || text == null || showsHint -> text
