@@ -26,6 +26,11 @@ data class UiNode(
     /** Accessibility label (content description); selectors on text match it as well. */
     val description: String? = null,
     /**
+     * The accessibility value, apart from the label: the state of a switch (`0`, `1`), the position of a slider, the
+     * value a cell announces. Only the iOS system runner sends it; selectors do not match it. Left out when null.
+     */
+    @EncodeDefault(EncodeDefault.Mode.NEVER) val value: String? = null,
+    /**
      * What the element is, in the names of its platform: the view class on Android, the ARIA role on the web. On iOS
      * the in-app agent and the system runner use the same names (those of the XCUITest element types: `SearchField`,
      * `TextView`, `NavigationBar`, `Text`, `View` for anything else), so a role means the same whichever of them reads

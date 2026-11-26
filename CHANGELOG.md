@@ -6,7 +6,8 @@
 
 **New**
 
-- Upcoming additions go here
+- `gekko tree --format idb` prints an iOS tree in the shape of idb's accessibility tree (`COMPLETE` format: `type`, `label`, `identifier`, `value`, `frame`, `traits`, `children`), read with the system runner, so a script or tool written for idb reads gekko's tree as it is
+- The iOS system runner sends the accessibility label and value of an element apart (`description`, `value`); `UiNode` has an optional `value`
 
 **Changed**
 
