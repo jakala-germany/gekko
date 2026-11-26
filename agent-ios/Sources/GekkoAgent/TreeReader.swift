@@ -131,8 +131,9 @@ enum TreeReader {
                 return child.children
             }
         // A collection view hands out its cells (as subviews and as accessibility elements) in the order it reuses
-        // them, not in the order they are on screen; VoiceOver and XCUITest read them in reading order
-        if let list = object as? UICollectionView {
+        // them, not in the order they are on screen, and so does the scroll view of a section of it that scrolls on
+        // its own (sideways); VoiceOver and XCUITest read them in reading order
+        if let list = object as? UIScrollView, list is UICollectionView || list.superview is UICollectionView {
             element.children = readingOrder(element.children, rightToLeft: list.effectiveUserInterfaceLayoutDirection == .rightToLeft)
         }
         let isBoring = element.id == nil && element.text == nil && element.actions.isEmpty && element.children.isEmpty
@@ -239,26 +240,28 @@ enum TreeReader {
         return (object as? UIView)?.subviews ?? []
     }
 
-    /// [elements] in the order they are read: rows from the top, in a row from the leading edge. An element starts a
-    /// new row unless its middle lies above the bottom of the row so far; elements at the same place keep their order.
+    /// [elements] in the order they are read: rows from the top, in a row from the leading edge, and what is in one
+    /// column of a row from the top. A row is the band of its first element (the tallest of those with the same top):
+    /// an element whose middle lies inside that band is in the row, so a tall element (a featured tile, a background)
+    /// does not draw the rows below it into its own. Elements at the same place keep their order.
     static func readingOrder(_ elements: [Element], rightToLeft: Bool) -> [Element] {
-        var rows: [[(index: Int, element: Element)]] = []
-        var rowBottom = -CGFloat.infinity
-        let byTop = elements.enumerated().sorted { ($0.element.frame.minY, $0.offset) < ($1.element.frame.minY, $1.offset) }
+        var rows: [(bottom: CGFloat, items: [(index: Int, element: Element)])] = []
+        let byTop = elements.enumerated().sorted {
+            ($0.element.frame.minY, -$0.element.frame.height, $0.offset)
+                < ($1.element.frame.minY, -$1.element.frame.height, $1.offset)
+        }
         for (index, element) in byTop {
-            if let last = rows.indices.last, element.frame.midY < rowBottom {
-                rows[last].append((index, element))
-                rowBottom = max(rowBottom, element.frame.maxY)
+            if let last = rows.indices.last, element.frame.midY < rows[last].bottom {
+                rows[last].items.append((index, element))
             } else {
-                rows.append([(index, element)])
-                rowBottom = element.frame.maxY
+                rows.append((bottom: element.frame.maxY, items: [(index, element)]))
             }
         }
         return rows.flatMap { row in
-            row.sorted {
-                let (a, b) = rightToLeft
-                    ? (-$0.element.frame.maxX, -$1.element.frame.maxX) : ($0.element.frame.minX, $1.element.frame.minX)
-                return (a, $0.index) < (b, $1.index)
+            row.items.sorted {
+                let a = rightToLeft ? -$0.element.frame.maxX : $0.element.frame.minX
+                let b = rightToLeft ? -$1.element.frame.maxX : $1.element.frame.minX
+                return (a, $0.element.frame.minY, $0.index) < (b, $1.element.frame.minY, $1.index)
             }.map { $0.element }
         }
     }
