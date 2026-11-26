@@ -637,7 +637,6 @@ final class SystemRunnerTests: XCTestCase {
         }
     }
 
-    /// Label, title and value: what the old text selectors looked at. A password field has none.
     /// The accessibility value as text: a switch reports it as a number on some systems and as `"0"` / `"1"` on others.
     fileprivate static func valueText(_ snapshot: XCUIElementSnapshot) -> String {
         if let text = snapshot.value as? String { return text }
@@ -645,6 +644,7 @@ final class SystemRunnerTests: XCTestCase {
         return ""
     }
 
+    /// Label, title and value: what the old text selectors looked at. A password field has none.
     fileprivate static func texts(of snapshot: XCUIElementSnapshot) -> [String] {
         if snapshot.elementType == .secureTextField { return [] }
         return [snapshot.label, snapshot.title, snapshot.value as? String ?? ""].filter { !$0.isEmpty }
