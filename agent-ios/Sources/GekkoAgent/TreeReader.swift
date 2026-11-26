@@ -138,14 +138,16 @@ enum TreeReader {
     /// table is an element of UIKit's own with one more below it that speaks the same text (iOS 18 and later), a bar
     /// button a control around a button with the same label. The parent stays, as it is what VoiceOver activates; the
     /// child goes when it tells nothing the parent does not (the same id or none on both, no other state, inside its
-    /// frame), and what is below it moves up. A parent with an id keeps a child without one: a selector can name the
-    /// child `within` the parent, which never matches the parent itself.
+    /// frame; a child that is not enabled below a parent that is still goes), and what is below it moves up. A parent
+    /// with an id keeps a child without one: a selector can name the child `within` the parent, which never matches the
+    /// parent itself.
     private static func repeats(_ child: Element, parent: Element) -> Bool {
         guard child.text != nil, child.text == parent.text, child.role == parent.role else { return false }
         guard child.id == parent.id else { return false }
         guard child.checked == nil || child.checked == parent.checked else { return false }
         guard child.selected == nil || child.selected == parent.selected else { return false }
-        guard child.enabled == parent.enabled, child.secure == parent.secure else { return false }
+        // The button inside of a bar button calls itself not enabled while the bar button, which takes the tap, is
+        guard !child.enabled || parent.enabled, child.secure == parent.secure else { return false }
         guard !child.focused || parent.focused, !child.busy || parent.busy else { return false }
         guard Set(child.actions).isSubset(of: parent.actions) else { return false }
         return parent.frame.insetBy(dx: -2, dy: -2).contains(child.frame)
