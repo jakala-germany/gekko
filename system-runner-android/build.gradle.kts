@@ -6,6 +6,7 @@ plugins {
 android {
     namespace = "com.jakala.gekko.runner"
     compileSdk = 37
+    compileSdkMinor = 1
 
     defaultConfig {
         applicationId = "com.jakala.gekko.runner"

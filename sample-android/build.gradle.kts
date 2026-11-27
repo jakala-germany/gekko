@@ -14,10 +14,11 @@ gekko {
 android {
     namespace = "com.jakala.gekko.sample"
     compileSdk = 37
+    compileSdkMinor = 1
 
     defaultConfig {
         applicationId = "com.jakala.gekko.sample"
-        minSdk = 23
+        minSdk = 24
         targetSdk = 37
         versionCode = 1
         versionName = "1.0"
