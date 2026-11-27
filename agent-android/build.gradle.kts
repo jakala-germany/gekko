@@ -9,6 +9,7 @@ plugins {
 android {
     namespace = "com.jakala.gekko.agent"
     compileSdk = 37
+    compileSdkMinor = 1
 
     defaultConfig { minSdk = 21 }
 
